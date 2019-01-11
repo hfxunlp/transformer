@@ -1,0 +1,18 @@
+<html>
+<head>
+  <title>Translate</title>
+</head>
+<body>
+<p style="font-size:50px;color:blue;font-weight:bold;font-style:italic">Transformer</p>
+<div align="center">
+  <form action="/" method="post">
+    <legend style="font-size:30px">Input:</legend>
+    <p><textarea rows="6" cols="50" type="text" style="font-size:30px" name="src">{{ src }}</textarea></p>
+    <p><button type="submit" style="font-size:30px">Translate</button></p>
+  </form>
+  {% if tgt %}
+  <p><textarea rows="6" cols="50" type="text" style="font-size:30px">{{ tgt }}</textarea></p>
+  {% endif %}
+</div>
+</body>
+</html>
