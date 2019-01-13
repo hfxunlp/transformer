@@ -21,8 +21,8 @@ class DecoderLayer(nn.Module):
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.self_attn = MultiHeadAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
-		self.cross_attn = MultiHeadAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
+		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
+		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 
 		self.ff = PositionwiseFF(isize, _fhsize, dropout, True)
 
@@ -30,8 +30,8 @@ class DecoderLayer(nn.Module):
 		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
 
 		if dropout > 0:
-			self.d1 = nn.Dropout(dropout)
-			self.d2 = nn.Dropout(dropout)
+			self.d1 = nn.Dropout(dropout, inplace=True)
+			self.d2 = nn.Dropout(dropout, inplace=True)
 		else:
 			self.d1 = None
 			self.d2 = None
@@ -50,7 +50,7 @@ class DecoderLayer(nn.Module):
 
 			states_return = None
 
-			context = self.self_attn(_inputo, _inputo, _inputo, mask=tgt_pad_mask)
+			context = self.self_attn(_inputo, mask=tgt_pad_mask)
 
 			if self.d1 is not None:
 				context = self.d1(context)
@@ -69,7 +69,7 @@ class DecoderLayer(nn.Module):
 
 			states_return = _inputo
 
-			context = self.self_attn(_query_unit, _inputo, _inputo)
+			context = self.self_attn(_query_unit, iK=_inputo)
 
 			if self.d1 is not None:
 				context = self.d1(context)
@@ -77,7 +77,7 @@ class DecoderLayer(nn.Module):
 			context = context + query_unit
 
 		_context = self.layer_normer2(context)
-		_context = self.cross_attn(_context, inpute, inpute, mask=src_pad_mask)
+		_context = self.cross_attn(_context, inpute, mask=src_pad_mask)
 
 		if self.d2 is not None:
 			_context = self.d2(_context)
@@ -112,7 +112,7 @@ class Decoder(nn.Module):
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.drop = nn.Dropout(dropout) if dropout > 0.0 else None
+		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.xseql = xseql
 		self.register_buffer('mask', torch.triu(torch.ones(xseql, xseql, dtype=torch.uint8), 1).unsqueeze(0))

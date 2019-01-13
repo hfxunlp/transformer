@@ -78,7 +78,7 @@ share_emb = False
 
 nhead = 8
 
-cache_len = 512
+cache_len = 272
 
 warm_step = 8000
 

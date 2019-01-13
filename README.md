@@ -188,7 +188,7 @@ share_emb = False
 nhead = 8
 
 # maximum steps cached for the positional embedding.
-cache_len = 512
+cache_len = 272
 
 # warm up steps for the training.
 warm_step = 8000

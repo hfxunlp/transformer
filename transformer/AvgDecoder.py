@@ -26,7 +26,7 @@ class DecoderLayer(nn.Module):
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.self_attn = AverageAttn(isize, _fhsize, dropout)
-		self.cross_attn = MultiHeadAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
+		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 
 		self.ff = PositionwiseFF(isize, _fhsize, dropout, True)
 
@@ -34,8 +34,8 @@ class DecoderLayer(nn.Module):
 		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
 
 		if dropout > 0:
-			self.d1 = nn.Dropout(dropout)
-			self.d2 = nn.Dropout(dropout)
+			self.d1 = nn.Dropout(dropout, inplace=True)
+			self.d2 = nn.Dropout(dropout, inplace=True)
 		else:
 			self.d1 = None
 			self.d2 = None
@@ -78,7 +78,7 @@ class DecoderLayer(nn.Module):
 			context = context + query_unit
 
 		_context = self.layer_normer2(context)
-		_context = self.cross_attn(_context, inpute, inpute, mask=src_pad_mask)
+		_context = self.cross_attn(_context, inpute, mask=src_pad_mask)
 
 		if self.d2 is not None:
 			_context = self.d2(_context)

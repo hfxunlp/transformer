@@ -28,20 +28,20 @@ class EncoderLayer(nn.Module):
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.attn = MultiHeadAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
+		self.attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 
 		self.ff = PositionwiseFF(isize, _fhsize, dropout, True)
 
 		self.layer_normer = nn.LayerNorm(isize, eps=1e-06)
 
-		self.drop = nn.Dropout(dropout) if dropout > 0.0 else None
+		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 	# inputs: input of this layer (bsize, seql, isize)
 
 	def forward(self, inputs, mask=None):
 
 		_inputs = self.layer_normer(inputs)
-		context = self.attn(_inputs, _inputs, _inputs, mask=mask)
+		context = self.attn(_inputs, mask=mask)
 
 		if self.drop is not None:
 			context = self.drop(context)
@@ -71,7 +71,7 @@ class Encoder(nn.Module):
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.drop = nn.Dropout(dropout) if dropout > 0.0 else None
+		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
 

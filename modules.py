@@ -3,6 +3,7 @@
 from math import sqrt, log, exp, pi
 import torch
 from torch import nn
+from torch.nn import functional as nnFunc
 from torch.autograd import Function
 
 class PositionwiseFF(nn.Sequential):
@@ -16,14 +17,14 @@ class PositionwiseFF(nn.Sequential):
 
 		if norm_input:
 			if dropout > 0.0:
-				super(PositionwiseFF, self).__init__(nn.LayerNorm(isize, eps=1e-06), nn.Linear(isize, _hsize), nn.Dropout(dropout), GeLU_BERT() if use_GeLU else nn.ReLU(), nn.Linear(_hsize, isize), nn.Dropout(dropout))
+				super(PositionwiseFF, self).__init__(nn.LayerNorm(isize, eps=1e-06), nn.Linear(isize, _hsize), nn.Dropout(dropout, inplace=True), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize), nn.Dropout(dropout, inplace=True))
 			else:
-				super(PositionwiseFF, self).__init__(nn.LayerNorm(isize, eps=1e-06), nn.Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(), nn.Linear(_hsize, isize))
+				super(PositionwiseFF, self).__init__(nn.LayerNorm(isize, eps=1e-06), nn.Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize))
 		else:
 			if dropout > 0.0:
-				super(PositionwiseFF, self).__init__(nn.Linear(isize, _hsize), nn.Dropout(dropout), GeLU_BERT() if use_GeLU else nn.ReLU(), nn.Linear(_hsize, isize), nn.Dropout(dropout))
+				super(PositionwiseFF, self).__init__(nn.Linear(isize, _hsize), nn.Dropout(dropout, inplace=True), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize), nn.Dropout(dropout, inplace=True))
 			else:
-				super(PositionwiseFF, self).__init__(nn.Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(), nn.Linear(_hsize, isize))
+				super(PositionwiseFF, self).__init__(nn.Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize))
 
 
 class PositionalEmb(nn.Module):
@@ -92,7 +93,7 @@ class MultiHeadAttn(nn.Module):
 	# dropout: dropout probability
 	# sparsenorm: using sparse normer or standard softmax
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, sparsenorm=False):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=False, sparsenorm=False):
 
 		super(MultiHeadAttn, self).__init__()
 
@@ -100,16 +101,16 @@ class MultiHeadAttn(nn.Module):
 		self.hsize = self.attn_dim * num_head
 		self.num_head = num_head
 
-		self.query_adaptor = nn.Linear(isize, self.hsize)
-		self.value_adaptor = nn.Linear(isize, self.hsize)
-		self.key_adaptor = nn.Linear(isize, self.hsize)
+		self.query_adaptor = nn.Linear(isize, self.hsize, bias=enable_bias)
+		self.value_adaptor = nn.Linear(isize, self.hsize, bias=enable_bias)
+		self.key_adaptor = nn.Linear(isize, self.hsize, bias=enable_bias)
 
-		self.outer = nn.Linear(self.hsize, osize)
+		self.outer = nn.Linear(self.hsize, osize, bias=enable_bias)
 
 		#self.normer = MHSparseNormer(num_head, dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 		self.normer = SparseNormer(dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 
-		self.drop = nn.Dropout(dropout) if dropout > 0.0 else None
+		self.drop = nn.Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
 	# iQ: query (bsize, num_query, vsize)
 	# iK: keys (bsize, seql, vsize)
@@ -211,6 +212,147 @@ class AverageAttn(nn.Module):
 		_tmp = (1.0 / torch.arange(1, npos + 1, dtype=self.w.dtype, device=self.w.device)).unsqueeze(1).repeat(1, npos)
 
 		return torch.tril(_tmp, 0)
+
+# Accelerated MultiHeadAttn for self attention, use when Q == K == V
+class SelfAttn(nn.Module):
+
+	# isize: input dimension
+	# hsize: hidden dimension
+	# osize: output size of this layer
+	# num_head: number of heads
+	# dropout: dropout probability
+	# sparsenorm: using sparse normer or standard softmax
+
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=False, sparsenorm=False):
+
+		super(SelfAttn, self).__init__()
+
+		self.attn_dim = hsize // num_head
+		self.hsize = self.attn_dim * num_head
+		self.num_head = num_head
+
+		self.adaptor = nn.Linear(isize, self.hsize * 3, bias=enable_bias)
+
+		self.outer = nn.Linear(self.hsize, osize, bias=enable_bias)
+
+		#self.normer = MHSparseNormer(num_head, dim=-1) if sparsenorm else nn.Softmax(dim=-1)
+		self.normer = SparseNormer(dim=-1) if sparsenorm else nn.Softmax(dim=-1)
+
+		self.drop = nn.Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
+
+	# iQ: query (bsize, num_query, vsize)
+	# mask (bsize, num_query, seql)
+	# iK: key/value (bsize, seql, vsize), in case key != query, for efficient decoding
+
+	def forward(self, iQ, mask=None, iK=None):
+
+		bsize, nquery, _ = iQ.size()
+		nheads = self.num_head
+		adim = self.attn_dim
+
+		# real_iQ: MultiHead iQ (bsize, num_query, vsize) => (bsize, nheads, nquery, adim)
+		# real_iK: MultiHead iK (bsize, nquery, vsize) => (bsize, nheads, nquery, adim)
+		# real_iV: MultiHead iV (bsize, nquery, vsize) => (bsize, nheads, nquery, adim)
+
+		if iK is None:
+
+			_out = self.adaptor(iQ)
+
+			real_iQ, real_iK, real_iV = _out.narrow(-1, 0, self.hsize).contiguous().view(bsize, nquery, nheads, adim).transpose(1, 2), _out.narrow(-1, self.hsize, self.hsize).contiguous().view(bsize, nquery, nheads, adim).transpose(1, 2), _out.narrow(-1, self.hsize + self.hsize, self.hsize).contiguous().view(bsize, nquery, nheads, adim).transpose(1, 2)
+		else:
+
+			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), self.adaptor.bias.narrow(0, 0, self.hsize) if self.adaptor.bias else None), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize) if self.adaptor.bias else None)
+
+			seql = iK.size(1)
+
+			real_iK, real_iV = _out.narrow(-1, 0, self.hsize).contiguous().view(bsize, seql, nheads, adim).transpose(1, 2), _out.narrow(-1, self.hsize, self.hsize).contiguous().view(bsize, seql, nheads, adim).transpose(1, 2)
+
+		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, nquery, adim)' => (bsize, nheads, nquery, nquery)
+
+		scores = torch.div(torch.matmul(real_iQ, real_iK.transpose(2, 3)), sqrt(adim))
+
+		if mask is not None:
+			scores.masked_fill_(torch.unsqueeze(mask, 1).expand_as(scores), -1e32)
+
+		scores = self.normer(scores)
+
+		if self.drop is not None:
+			scores = self.drop(scores)
+
+		# oMA: output of MultiHeadAttention T((bsize, nheads, nquery, nquery) * (bsize, nheads, nquery, adim)) => (bsize, nquery, nheads, adim)
+
+		oMA = torch.matmul(scores, real_iV).transpose(1, 2).contiguous()
+
+		# output of this layer (bsize, nquery, nheads, adim) => (bsize, nquery, osize)
+
+		return self.outer(oMA.view(bsize, nquery, self.hsize))
+
+# Accelerated MultiHeadAttn for cross attention, use when K == V
+class CrossAttn(nn.Module):
+
+	# isize: input dimension
+	# hsize: hidden dimension
+	# osize: output size of this layer
+	# num_head: number of heads
+	# dropout: dropout probability
+	# sparsenorm: using sparse normer or standard softmax
+
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=False, sparsenorm=False):
+
+		super(CrossAttn, self).__init__()
+
+		self.attn_dim = hsize // num_head
+		self.hsize = self.attn_dim * num_head
+		self.num_head = num_head
+
+		self.query_adaptor = nn.Linear(isize, self.hsize, bias=enable_bias)
+		self.kv_adaptor = nn.Linear(isize, self.hsize * 2, bias=enable_bias)
+
+		self.outer = nn.Linear(self.hsize, osize, bias=enable_bias)
+
+		#self.normer = MHSparseNormer(num_head, dim=-1) if sparsenorm else nn.Softmax(dim=-1)
+		self.normer = SparseNormer(dim=-1) if sparsenorm else nn.Softmax(dim=-1)
+
+		self.drop = nn.Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
+
+	# iQ: query (bsize, num_query, vsize)
+	# iK: keys (bsize, seql, vsize)
+	# mask (bsize, num_query, seql)
+
+	def forward(self, iQ, iK, mask=None):
+
+		bsize, nquery, _ = iQ.size()
+		seql = iK.size(1)
+		nheads = self.num_head
+		adim = self.attn_dim
+
+		# real_iQ: MultiHead iQ (bsize, num_query, vsize) => (bsize, nheads, nquery, adim)
+		# real_iK: MultiHead iK (bsize, seql, vsize) => (bsize, nheads, seql, adim)
+		# real_iV: MultiHead iV (bsize, seql, vsize) => (bsize, nheads, seql, adim)
+
+		real_iQ, _out = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2), self.kv_adaptor(iK)
+
+		real_iK, real_iV = _out.narrow(-1, 0, self.hsize).contiguous().view(bsize, seql, nheads, adim).transpose(1, 2), _out.narrow(-1, self.hsize, self.hsize).contiguous().view(bsize, seql, nheads, adim).transpose(1, 2)
+
+		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, seql, adim)' => (bsize, nheads, nquery, seql)
+
+		scores = torch.div(torch.matmul(real_iQ, real_iK.transpose(2, 3)), sqrt(adim))
+
+		if mask is not None:
+			scores.masked_fill_(torch.unsqueeze(mask, 1).expand_as(scores), -1e32)
+
+		scores = self.normer(scores)
+
+		if self.drop is not None:
+			scores = self.drop(scores)
+
+		# oMA: output of MultiHeadAttention T((bsize, nheads, nquery, seql) * (bsize, nheads, seql, adim)) => (bsize, nquery, nheads, adim)
+
+		oMA = torch.matmul(scores, real_iV).transpose(1, 2).contiguous()
+
+		# output of this layer (bsize, nquery, nheads, adim) => (bsize, nquery, osize)
+
+		return self.outer(oMA.view(bsize, nquery, self.hsize))
 
 def freeze_module(module):
 
@@ -327,6 +469,69 @@ class GradientReversalLayer(nn.Module):
 
 		return (GradientReversalFunction.apply(inputu) for inputu in inputs) if len(inputs) > 1 else GradientReversalFunction.apply(inputs[0])
 
+
+# SparseMax (https://arxiv.org/pdf/1602.02068) borrowed form OpenNMT-py( https://github.com/OpenNMT/OpenNMT-py/blob/master/onmt/modules/sparse_activations.py)
+class SparsemaxFunction(Function):
+
+	@staticmethod
+	def forward(ctx, input, dim=0):
+
+		def _threshold_and_support(input, dim=0):
+
+			def _make_ix_like(input, dim=0):
+
+				d = input.size(dim)
+				rho = torch.arange(1, d + 1, device=input.device, dtype=input.dtype)
+				view = [1] * input.dim()
+				view[0] = -1
+
+				return rho.view(view).transpose(0, dim)
+
+			input_srt, _ = torch.sort(input, descending=True, dim=dim)
+			input_cumsum = input_srt.cumsum(dim) - 1
+			rhos = _make_ix_like(input, dim)
+			support = rhos * input_srt > input_cumsum
+
+			support_size = support.sum(dim=dim).unsqueeze(dim)
+			tau = input_cumsum.gather(dim, support_size - 1)
+			tau /= support_size.to(input.dtype)
+
+			return tau, support_size
+
+		ctx.dim = dim
+		max_val, _ = input.max(dim=dim, keepdim=True)
+		input -= max_val
+		tau, supp_size = _threshold_and_support(input, dim=dim)
+		output = torch.clamp(input - tau, min=0)
+		ctx.save_for_backward(supp_size, output)
+
+		return output
+
+	@staticmethod
+	def backward(ctx, grad_output):
+
+		supp_size, output = ctx.saved_tensors
+		dim = ctx.dim
+		grad_input = grad_output.clone()
+		grad_input[output == 0] = 0
+
+		v_hat = grad_input.sum(dim=dim) / supp_size.to(output.dtype).squeeze()
+		v_hat = v_hat.unsqueeze(dim)
+		grad_input = torch.where(output != 0, grad_input - v_hat, grad_input)
+
+		return grad_input, None
+
+class Sparsemax(nn.Module):
+
+	def __init__(self, dim=0):
+
+		super(Sparsemax, self).__init__()
+		self.dim = dim
+
+	def forward(self, input):
+
+		return SparsemaxFunction.apply(input, self.dim)
+
 class SigmoidIncremental:
 
 	# warm_steps: increase from 0.0 to about (0.9866 * target_value) in warm_steps
@@ -424,13 +629,13 @@ class SparseNormer(nn.Module):
 
 		self.dim = dim
 		self.bias = nn.Parameter(torch.zeros(1))
-		self.act = nn.ReLU()
+		self.act = nn.ReLU(inplace=True)
 		self.ieps = ieps
 
-	def forward(self, x, temp=None):
+	def forward(self, x):
 
 		_tmp = self.act(x + self.bias)
-		_tmp = _tmp * _tmp# if temp is None else torch.pow(_tmp, temp)
+		_tmp = _tmp * _tmp
 
 		# fix zero-devision in case all elements in _tmp are 0.
 		return _tmp / (_tmp.sum(self.dim, keepdim=True) + self.ieps)
@@ -446,14 +651,14 @@ class MHSparseNormer(nn.Module):
 
 		self.dim = dim
 		self.bias = nn.Parameter(torch.zeros(1, nheads, 1, 1))
-		self.act = nn.ReLU()
+		self.act = nn.ReLU(inplace=True)
 		self.ieps = ieps
 
 	# input should be: (bsize, nheads, nquery, seql)
-	def forward(self, x, temp=None):
+	def forward(self, x):
 
 		_tmp = self.act(x + self.bias)
-		_tmp = _tmp * _tmp# if temp is None else torch.pow(_tmp, temp)
+		_tmp = _tmp * _tmp
 
 		# fix zero-devision in case all elements in _tmp are 0.
 		return _tmp / (_tmp.sum(self.dim, keepdim=True) + self.ieps)
@@ -464,23 +669,51 @@ class MHSparseNormer(nn.Module):
 
 class Scorer(nn.Module):
 
-	def __init__(self, isize):
+	def __init__(self, isize, bias=True):
 
 		super(Scorer, self).__init__()
 
-		self.w = nn.Parameter(torch.randn(isize))
-		self.bias = nn.Parameter(torch.zeros(1))
+		self.w = nn.Parameter(torch.Tensor(isize).uniform_(-1.0 / sqrt(isize), 1.0 / sqrt(isize)))
+		self.bias = nn.Parameter(torch.zeros(1)) if bias else None
 
 	def forward(self, x):
 
 		xsize = x.size()
 
-		out = torch.addmv(self.bias, x.view(-1, xsize[-1]), self.w)
+		out = torch.addmv(self.bias, x.view(-1, xsize[-1]), self.w) if self.bias else torch.mv(x.view(-1, xsize[-1]), self.w)
 
 		rsize = list(xsize)
 		rsize[-1] = 1
 
 		return out.view(rsize)
+
+class MHAttnSummer(nn.Module):
+
+	def __init__(self, isize, ahsize=None, num_head=8, attn_drop=0.0):
+
+		super(MHAttnSummer, self).__init__()
+
+		self.w = nn.Parameter(torch.Tensor(1, 1, isize).uniform_(-1.0 / sqrt(isize), 1.0 / sqrt(isize)))
+		self.attn = CrossAttn(isize, isize if ahsize is None else ahsize, isize, num_head, dropout=attn_drop)
+
+	# x: (bsize, seql, isize)
+	def forward(self, x):
+
+		return self.attn(self.w, x).squeeze(1)
+
+class FertSummer(nn.Module):
+
+	def __init__(self, isize):
+
+		super(FertSummer, self).__init__()
+
+		self.net = nn.Sequential(Scorer(isize), nn.Sigmoid())
+
+	# x: (bsize, seql, isize)
+	def forward(self, x):
+
+		# (bsize, seql, 1)' * (bsize, seql, isize) => (bsize, 1, isize)
+		return torch.bmm(self.net(x).transpose(1, 2), x).squeeze(1)
 
 class Temperature(nn.Module):
 
@@ -488,7 +721,7 @@ class Temperature(nn.Module):
 
 		super(Temperature, self).__init__()
 
-		self.w = nn.Parameter(torch.randn(isize))
+		self.w = nn.Parameter(torch.Tensor(isize).uniform_(-1.0 / sqrt(isize), 1.0 / sqrt(isize)))
 		self.bias = nn.Parameter(torch.zeros(1))
 		self.act = nn.Tanh()
 		self.k = nn.Parameter(torch.ones(1))

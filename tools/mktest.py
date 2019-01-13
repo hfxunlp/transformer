@@ -118,7 +118,7 @@ def batch_mapper(finput, vocabi, bsize, maxpad, maxpart, maxtoken, minbsize):
 		rsi = []
 		for lined in i_d:
 			tmp = [1]
-			tmp.extend([vocabi.get(wd, 3) for wd in lined] if has_unk else no_unk_mapper(vocabi, lined))
+			tmp.extend([vocabi.get(wd, 3) for wd in lined] if has_unk else no_unk_mapper(vocabi, lined))#[vocabi[wd] for wd in lined if wd in vocabi]
 			tmp.append(2)
 			rsi.append(tmp)
 		yield rsi, mlen_i + 2

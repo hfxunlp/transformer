@@ -27,24 +27,49 @@ def handle(srcfs, srcft, tgtfs, tgtft, max_len=256):
 					else:
 						data[ls] = {lt: 1}
 
+	_clean = {}
+	for ls, v in data.items():
+		if len(v) > 1:
+			rlt = []
+			_maxf = 0
+			for key, value in v.items():
+				if value > _maxf:
+					_maxf = value
+					rlt = [key]
+				elif value == _maxf:
+					rlt.append(key)
+			for lt in rlt:
+				if lt in _clean:
+					_clean[lt][ls] = _clean[lt].get(ls, 0) + 1
+				else:
+					_clean[lt] = {ls: 1}
+		else:
+			lt = list(v.keys())[0]
+			if lt in _clean:
+				_clean[lt][ls] = _clean[lt].get(ls, 0) + 1
+			else:
+				_clean[lt] = {ls: 1}
+
+	data = _clean
+
 	ens = "\n".encode("utf-8")
 
 	with open(tgtfs, "wb") as fs, open(tgtft, "wb") as ft:
-		for ls, v in data.items():
+		for lt, v in data.items():
 			if len(v) > 1:
-				rlt = []
+				rls = []
 				_maxf = 0
 				for key, value in v.items():
 					if value > _maxf:
 						_maxf = value
-						rlt = [key]
+						rls = [key]
 					elif value == _maxf:
-						rlt.append(key)
-				rls = "\n".join([ls for i in range(len(rlt))])
-				rlt = "\n".join(rlt)
+						rls.append(key)
+				rlt = "\n".join([lt for i in range(len(rls))])
+				rls = "\n".join(rls)
 			else:
-				rls = ls
-				rlt = list(v.keys())[0]
+				rlt = lt
+				rls = list(v.keys())[0]
 			fs.write(rls.encode("utf-8"))
 			fs.write(ens)
 			ft.write(rlt.encode("utf-8"))

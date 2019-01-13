@@ -34,7 +34,7 @@ class Encoder(nn.Module):
 
 		self.num_layer = num_layer
 
-		self.drop = nn.Dropout(dropout) if dropout > 0.0 else None
+		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
 
