@@ -72,6 +72,8 @@ attn_drop = 0.1
 
 label_smoothing = 0.1
 
+weight_decay = 0
+
 length_penalty = 0.0
 
 share_emb = False

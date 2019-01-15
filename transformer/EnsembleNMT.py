@@ -63,7 +63,7 @@ class NMT(nn.Module):
 
 		done_trans = None
 
-		for i in range(0, _max_len):
+		for i in range(0, max_len):
 
 			_out = self.dec(ence, out, mask)
 
@@ -107,7 +107,7 @@ class NMT(nn.Module):
 		beam_size2 = beam_size * beam_size
 		bsizeb2 = bsize * beam_size2
 
-		for step in range(1, _max_len + 1):
+		for step in range(1, max_len + 1):
 
 			_out = self.dec(ence, out, mask)
 

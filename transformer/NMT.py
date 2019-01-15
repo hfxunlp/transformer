@@ -34,6 +34,7 @@ class NMT(nn.Module):
 		emb_w = self.enc.wemb.weight if global_emb else None
 
 		self.dec = Decoder(isize, tnwd, num_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
+		#self.dec = Decoder(isize, tnwd, num_layer + 2, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
 
 	# inpute: source sentences from encoder (bsize, seql)
 	# inputo: decoded translation (bsize, nquery)

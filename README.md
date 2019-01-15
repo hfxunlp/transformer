@@ -178,6 +178,9 @@ attn_drop = 0.1
 # label smoothing settings for the KL divergence.
 label_smoothing = 0.1
 
+# L2 regularization, 1e-5 for not very large dataset from The Best of BothWorlds: Combining Recent Advances in Neural Machine Translation
+weight_decay = 0
+
 # length penalty applied to translating
 length_penalty = 0.0
 

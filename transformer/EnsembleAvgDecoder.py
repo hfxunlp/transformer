@@ -264,14 +264,6 @@ class Decoder(DecoderBase):
 
 			trans = torch.cat((trans.index_select(0, _inds), wds), 1)
 
-			# update the corresponding hidden states
-			# states[i][j]: (bsize * beam_size, nquery, isize)
-			# _inds: (bsize, beam_size) => (bsize * beam_size)
-
-			for key, value in states.items():
-				for _key, _value in value.items():
-					value[_key] = _value.index_select(0, _inds)
-
 			done_trans = torch.gt(done_trans.view(real_bsize).index_select(0, _inds) + wds.eq(2).squeeze(1), 0).view(bsize, beam_size)
 
 			# check early stop for beam search
@@ -288,6 +280,14 @@ class Decoder(DecoderBase):
 
 			if _done or (done_trans.sum().item() == real_bsize):
 				break
+
+			# update the corresponding hidden states
+			# states[i][j]: (bsize * beam_size, nquery, isize)
+			# _inds: (bsize, beam_size) => (bsize * beam_size)
+
+			for key, value in states.items():
+				for _key, _value in value.items():
+					value[_key] = _value.index_select(0, _inds)
 
 		# if length penalty is only applied in the last step, apply length penalty
 		if (not clip_beam) and (length_penalty > 0.0):

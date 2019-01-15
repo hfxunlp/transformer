@@ -352,7 +352,7 @@ if fine_tune_m is None:
 	mymodel.apply(init_fixing)
 
 # lr will be over written by GoogleLR before used
-optimizer = optim.Adam(mymodel.parameters(), lr=1e-4, betas=(0.9, 0.98), eps=1e-9, amsgrad=use_ams)
+optimizer = optim.Adam(mymodel.parameters(), lr=1e-4, betas=(0.9, 0.98), eps=1e-9, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
 
 if multi_gpu:
 	#mymodel = nn.DataParallel(mymodel, device_ids=cuda_devices, output_device=cuda_device.index)

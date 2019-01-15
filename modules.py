@@ -392,29 +392,6 @@ class ResidueCombiner(nn.Module):
 
 		return self.out_normer(out)
 
-# Actually ATR from: Simplifying Neural Machine Translation with Addition-Subtraction Twin-Gated Recurrent Networks
-class GatedCombiner(nn.Module):
-
-	# isize: input size of Feed-forward NN
-
-	def __init__(self, isize):
-
-		super(GatedCombiner, self).__init__()
-
-		self.t1 = nn.Linear(isize, isize)
-		self.t2 = nn.Linear(isize, isize)
-
-	# x: input to the cell
-	# cell: cell to update
-
-	def forward(self, x, cell):
-
-		p, q = self.t1(x), self.t2(cell)
-
-		igate, fgate = torch.sigmoid(p + q), torch.sigmoid(p - q)
-
-		return igate * p + fgate * q
-
 class ACTLossFunction(Function):
 
 	# Note that both forward and backward are @staticmethods
@@ -673,7 +650,7 @@ class Scorer(nn.Module):
 
 		super(Scorer, self).__init__()
 
-		self.w = nn.Parameter(torch.Tensor(isize).uniform_(-1.0 / sqrt(isize), 1.0 / sqrt(isize)))
+		self.w = nn.Parameter(torch.Tensor(isize).uniform_(sqrt(6.0 / isize), sqrt(6.0 / isize)))
 		self.bias = nn.Parameter(torch.zeros(1)) if bias else None
 
 	def forward(self, x):
@@ -693,7 +670,7 @@ class MHAttnSummer(nn.Module):
 
 		super(MHAttnSummer, self).__init__()
 
-		self.w = nn.Parameter(torch.Tensor(1, 1, isize).uniform_(-1.0 / sqrt(isize), 1.0 / sqrt(isize)))
+		self.w = nn.Parameter(torch.Tensor(1, 1, isize).uniform_(sqrt(6.0 / isize), sqrt(6.0 / isize)))
 		self.attn = CrossAttn(isize, isize if ahsize is None else ahsize, isize, num_head, dropout=attn_drop)
 
 	# x: (bsize, seql, isize)
@@ -707,13 +684,18 @@ class FertSummer(nn.Module):
 
 		super(FertSummer, self).__init__()
 
-		self.net = nn.Sequential(Scorer(isize), nn.Sigmoid())
+		self.net = Scorer(isize, False)
+		self.normer = nn.Softmax(dim=1)
 
 	# x: (bsize, seql, isize)
-	def forward(self, x):
+	def forward(self, x, mask=None):
+
+		_weight = self.net(x)
+		if mask is not None:
+			_weight.masked_fill_(mask, -1e32)
 
 		# (bsize, seql, 1)' * (bsize, seql, isize) => (bsize, 1, isize)
-		return torch.bmm(self.net(x).transpose(1, 2), x).squeeze(1)
+		return torch.bmm(self.normer(_weight).transpose(1, 2), x).squeeze(1)
 
 class Temperature(nn.Module):
 
@@ -721,7 +703,7 @@ class Temperature(nn.Module):
 
 		super(Temperature, self).__init__()
 
-		self.w = nn.Parameter(torch.Tensor(isize).uniform_(-1.0 / sqrt(isize), 1.0 / sqrt(isize)))
+		self.w = nn.Parameter(torch.Tensor(isize).uniform_(sqrt(6.0 / isize), sqrt(6.0 / isize)))
 		self.bias = nn.Parameter(torch.zeros(1))
 		self.act = nn.Tanh()
 		self.k = nn.Parameter(torch.ones(1))
