@@ -305,7 +305,8 @@ nwordt = int(td["nwordt"][:][0])
 _rseed = torch.initial_seed() if cnfg.seed is None else cnfg.seed
 rpyseed(_rseed)
 torch.manual_seed(_rseed)
-torch.cuda.manual_seed_all(_rseed)
+if use_cuda:
+	torch.cuda.manual_seed_all(_rseed)
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
 mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)

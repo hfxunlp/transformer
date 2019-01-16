@@ -398,7 +398,7 @@ Measured with `multi-bleu-detok.perl`:
 
 ## Acknowledgements
 
-The project starts when Hongfei XU (the developer) was a postgraduate student at [Zhengzhou University](http://www5.zzu.edu.cn/nlp/), and continues when he is a PhD candidate at [Saarland University](https://www.uni-saarland.de/nc/en/home.html) and a guest at [DFKI (German Research Center for Artificial Intelligence)](https://www.dfki.de/en/web/research/research-departments-and-groups/multilingual-technologies/). Hongfei XU enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project. 
+The project starts when Hongfei XU (the developer) was a postgraduate student at [Zhengzhou University](http://www5.zzu.edu.cn/nlp/), and continues when he is a PhD candidate at [Saarland University](https://www.uni-saarland.de/nc/en/home.html) and a Junior Researcher at [DFKI (German Research Center for Artificial Intelligence)](https://www.dfki.de/en/web/research/research-departments-and-groups/multilingual-technologies/). Hongfei XU enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project. 
 
 ## Contributor(s)
 

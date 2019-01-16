@@ -6,9 +6,7 @@ from torch import nn
 from modules import *
 from rnncell import *
 
-def prepare_initState(statein, bsize):
-
-	hx, cx = statein
+def prepare_initState(hx, cx, bsize):
 
 	return hx.expand(bsize, -1), cx.expand(bsize, -1)
 
@@ -23,7 +21,8 @@ class FirstLayer(nn.Module):
 		osize = isize if osize is None else osize
 
 		self.net = LSTMCell(isize, osize, norm_pergate=True)
-		self.init_state = (nn.Parameter(torch.zeros(1, isize)), nn.Parameter(torch.zeros(1, isize)))
+		self.init_hx = nn.Parameter(torch.zeros(1, osize))
+		self.init_cx = nn.Parameter(torch.zeros(1, osize))
 
 	# inputo: embedding of decoded translation (bsize, nquery, isize)
 	# query_unit: single query to decode, used to support decoding for given step
@@ -31,7 +30,7 @@ class FirstLayer(nn.Module):
 	def forward(self, inputo, state=None, first_step=False):
 
 		if state is None:
-			hx, cx = prepare_initState(self.init_state, inputo.size(0))
+			hx, cx = prepare_initState(self.init_hx, self.init_cx, inputo.size(0))
 			outs = []
 
 			for i in range(inputo.size(1)):
@@ -40,7 +39,7 @@ class FirstLayer(nn.Module):
 
 			return torch.stack(outs, 1)
 		else:
-			hx, cx = self.net(inputo, prepare_initState(self.init_state, inputo.size(0)) if first_step else state)
+			hx, cx = self.net(inputo, prepare_initState(self.init_hx, self.init_cx, inputo.size(0)) if first_step else state)
 
 			return hx, (hx, cx)
 
@@ -55,7 +54,8 @@ class DecoderLayer(nn.Module):
 		osize = isize if osize is None else osize
 
 		self.net = LSTMCell(isize + osize, osize, norm_pergate=True)
-		self.init_state = (nn.Parameter(torch.zeros(1, isize)), nn.Parameter(torch.zeros(1, isize)))
+		self.init_hx = nn.Parameter(torch.zeros(1, osize))
+		self.init_cx = nn.Parameter(torch.zeros(1, osize))
 
 		self.drop = nn.Dropout(dropout, inplace=False) if dropout > 0.0 else None
 
@@ -67,7 +67,7 @@ class DecoderLayer(nn.Module):
 	def forward(self, inputo, attn, state=None, first_step=False):
 
 		if state is None:
-			hx, cx = prepare_initState(self.init_state, inputo.size(0))
+			hx, cx = prepare_initState(self.init_hx, self.init_cx, inputo.size(0))
 			outs = []
 
 			_inputo = torch.cat((inputo, attn), -1)
@@ -84,7 +84,7 @@ class DecoderLayer(nn.Module):
 			return outs + inputo if self.residue else outs
 		else:
 
-			hx, cx = self.net(torch.cat((inputo, attn), -1), prepare_initState(self.init_state, inputo.size(0)) if first_step else state)
+			hx, cx = self.net(torch.cat((inputo, attn), -1), prepare_initState(self.init_hx, self.init_cx, inputo.size(0)) if first_step else state)
 
 			out = hx if self.drop is None else self.drop(hx)
 
