@@ -154,7 +154,7 @@ def batch_padder(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtok
 		#ld.reverse()
 		yield rid, rtd
 
-def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulgpu=True, bsize=512, maxpad=16, maxpart=4, maxtoken=2560, minfreq = False, vsize = False):
+def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulgpu=True, bsize=768, maxpad=16, maxpart=4, maxtoken=3920, minfreq = False, vsize = False):
 	vcbi, nwordi = ldvocab(fvocab_i, minfreq, vsize)
 	vcbt, nwordt = ldvocab(fvocab_t, minfreq, vsize)
 	if expand_for_mulgpu:

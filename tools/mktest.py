@@ -137,7 +137,7 @@ def batch_padder(finput, vocabi, bsize, maxpad, maxpart, maxtoken, minbsize):
 		yield rid
 
 # maxtoken should be the maxtoken in mkiodata.py / 2 / beam size roughly, similar for bsize
-def handle(finput, fvocab_i, frs, minbsize=1, expand_for_mulgpu=True, bsize=64, maxpad=16, maxpart=4, maxtoken=1536, minfreq = False, vsize = False):
+def handle(finput, fvocab_i, frs, minbsize=1, expand_for_mulgpu=True, bsize=192, maxpad=16, maxpart=4, maxtoken=2560, minfreq = False, vsize = False):
 	vcbi, nwordi = ldvocab(fvocab_i, minfreq, vsize)
 	if expand_for_mulgpu:
 		_bsize = bsize * minbsize

@@ -41,8 +41,8 @@ class PositionalEmb(nn.Module):
 		self.num_pos = num_pos
 		self.num_dim = num_dim
 		self.poff = pos_offset
+		self.doff = dim_offset
 		self.register_buffer('w', torch.Tensor(num_pos, num_dim))
-		self.register_buffer("rdiv_term", torch.exp(torch.arange(dim_offset, num_dim + dim_offset, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / num_dim)))
 		self.reset_parameters()
 
 	# x: input (bsize, seql)
@@ -61,7 +61,8 @@ class PositionalEmb(nn.Module):
 
 		poff = self.poff
 		pos = torch.arange(poff, self.num_pos + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
-		self.w[:, 0::2], self.w[:, 1::2] = torch.sin(pos * self.rdiv_term), torch.cos(pos * self.rdiv_term)
+		rdiv_term = torch.exp(torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim))
+		self.w[:, 0::2], self.w[:, 1::2] = torch.sin(pos * rdiv_term), torch.cos(pos * rdiv_term)
 
 	def get_ext(self, length, step_pick=False):
 
@@ -74,7 +75,8 @@ class PositionalEmb(nn.Module):
 			npos = self.num_pos
 			pos = torch.arange(npos + poff, length + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
 			ed = self.w.new(length - npos, self.num_dim)
-		ed[:, 0::2], ed[:, 1::2] = torch.sin(pos * self.rdiv_term), torch.cos(pos * self.rdiv_term)
+		rdiv_term = torch.exp(torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim))
+		ed[:, 0::2], ed[:, 1::2] = torch.sin(pos * rdiv_term), torch.cos(pos * rdiv_term)
 
 		return ed
 

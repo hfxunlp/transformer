@@ -13,13 +13,13 @@ rsm = torch.load(sys.argv[2], map_location='cpu')
 nmodel = 1
 
 for modelf in sys.argv[3:]:
-	for k, v in torch.load(modelf, map_location='cpu').items():
-		rsm[k].add_(v)
+	for basep, mpload in zip(rsm, torch.load(modelf, map_location='cpu')):
+		basep.add_(mpload)
 	nmodel += 1
 
 nmodel = float(nmodel)
 
-for k, v in rsm.items():
-	v.div_(nmodel)
+for basep in rsm:
+	basep.div_(nmodel)
 
 torch.save(rsm, sys.argv[1])

@@ -133,6 +133,15 @@ def data_loader(sentences_iter, vcbi, minbsize=1, bsize=64, maxpad=16, maxpart=4
 	for i_d in batch_padder(sentences_iter, vcbi, bsize, maxpad, maxpart, maxtoken, minbsize):
 		yield torch.tensor(i_d, dtype=torch.long)
 
+def load_model_cpu(modf, base_model):
+
+	mpg = torch.load(modf, map_location='cpu')
+
+	for para, mp in zip(base_model.parameters(), mpg):
+		para.data = mp.data
+
+	return base_model
+
 def load_fixing(module):
 	if "fix_load" in dir(module):
 		module.fix_load()
@@ -160,7 +169,7 @@ class TranslatorCore:
 			for modelf in modelfs:
 				tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
-				tmp.load_state_dict(torch.load(modelf, map_location='cpu'))
+				tmp = load_model_cpu(modelf, tmp)
 				tmp.apply(load_fixing)
 
 				models.append(tmp)
@@ -169,7 +178,7 @@ class TranslatorCore:
 		else:
 			model = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
-			model.load_state_dict(torch.load(modelfs, map_location='cpu'))
+			model = load_model_cpu(modelfs, model)
 			model.apply(load_fixing)
 				
 		cuda_device = torch.device(cnfg.gpuid)

@@ -17,12 +17,16 @@ from parallel.parallelMT import DataParallelMT
 has_unk = True
 
 def list_reader(fname):
+
 	def clear_list(lin):
+
 		rs = []
 		for tmpu in lin:
 			if tmpu:
 				rs.append(tmpu)
+
 		return rs
+
 	with open(fname, "rb") as frd:
 		for line in frd:
 			tmp = line.strip()
@@ -31,7 +35,9 @@ def list_reader(fname):
 				yield tmp
 
 def ldvocab(vfile, minf = False, omit_vsize = False):
+
 	global has_unk
+
 	if has_unk:
 		rs = {"<pad>":0, "<sos>":1, "<eos>":2, "<unk>":3}
 		cwd = 4
@@ -65,15 +71,28 @@ def ldvocab(vfile, minf = False, omit_vsize = False):
 					cwd += 1
 		else:
 			break
+
 	return rs, cwd
 
 def reverse_dict(din):
+
 	rs = {}
 	for k, v in din.items():
 		rs[v] = k
+
 	return rs
 
+def load_model_cpu(modf, base_model):
+
+	mpg = torch.load(modf, map_location='cpu')
+
+	for para, mp in zip(base_model.parameters(), mpg):
+		para.data = mp.data
+
+	return base_model
+
 def load_fixing(module):
+
 	if "fix_load" in dir(module):
 		module.fix_load()
 
@@ -89,7 +108,7 @@ cuda_device = torch.device(cnfg.gpuid)
 if len(sys.argv) == 4:
 	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
-	mymodel.load_state_dict(torch.load(sys.argv[3], map_location='cpu'))
+	mymodel = load_model_cpu(sys.argv[3], mymodel)
 	mymodel.apply(load_fixing)
 
 else:
@@ -97,7 +116,7 @@ else:
 	for modelf in sys.argv[3:]:
 		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
-		tmp.load_state_dict(torch.load(modelf, map_location='cpu'))
+		tmp = load_model_cpu(modelf, tmp)
 		tmp.apply(load_fixing)
 
 		models.append(tmp)

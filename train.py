@@ -225,11 +225,22 @@ def load_states(fname):
 						rs.append(tmpu)
 	return [("i" + tmpu, "t" + tmpu) for tmpu in rs]
 
+def load_model_cpu(modf, base_model):
+
+	mpg = torch.load(modf, map_location='cpu')
+
+	for para, mp in zip(base_model.parameters(), mpg):
+		para.data = mp.data
+
+	return base_model
+
+
 def save_model(model, fname, sub_module):
+
 	if sub_module:
-		torch.save(model.module.state_dict(), fname)
+		torch.save([t.data for t in model.module.parameters()], fname)
 	else:
-		torch.save(model.state_dict(), fname)
+		torch.save([t.data for t in model.parameters()], fname)
 
 def init_fixing(module):
 	if "fix_init" in dir(module):
@@ -317,7 +328,7 @@ tl = [("i" + str(i), "t" + str(i)) for i in range(ntrain)]
 
 if fine_tune_m is not None:
 	logger.info("Load pre-trained model from: " + fine_tune_m)
-	mymodel.load_state_dict(torch.load(fine_tune_m, map_location='cpu'))
+	mymodel = load_model_cpu(fine_tune_m, mymodel)
 
 #lw = torch.ones(nwordt).float()
 #lw[0] = 0.0
@@ -336,6 +347,8 @@ if fine_tune_m is None:
 		_emb = torch.load(cnfg.src_emb, map_location='cpu')
 		if nwordi < _emb.size(0):
 			_emb = _emb.narrow(0, 0, nwordi).contiguous()
+		if use_cuda:
+			_emb = _emb.to(cuda_device)
 		mymodel.enc.wemb.weight.data = _emb
 		if cnfg.freeze_srcemb:
 			mymodel.enc.wemb.weight.requires_grad_(False)
@@ -345,6 +358,8 @@ if fine_tune_m is None:
 		_emb = torch.load(cnfg.tgt_emb, map_location='cpu')
 		if nwordt < _emb.size(0):
 			_emb = _emb.narrow(0, 0, nwordt).contiguous()
+		if use_cuda:
+			_emb = _emb.to(cuda_device)
 		mymodel.dec.wemb.weight.data = _emb
 		if cnfg.freeze_tgtemb:
 			mymodel.dec.wemb.weight.requires_grad_(False)
