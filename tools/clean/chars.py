@@ -31,7 +31,7 @@ def handle(srcfs, srcft, tgtfs, tgtft, cratio=0.8, bratio=5.0, sratio=0.8, prati
 		nrule = 0
 		if float(nchars) / ntokens > cratio:
 			nrule += 1
-		if ntokens / lorigin > bratio > cratio:
+		if ntokens / lorigin > bratio:
 			nrule += 1
 		if float(nsp) / lorigin > sratio:
 			nrule += 1
