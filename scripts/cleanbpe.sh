@@ -12,8 +12,6 @@ export maxtokens=256
 export srcvf=06.tok.zh
 export tgtvf=06.tok.en0
 
-export vratio=0.2
-
 # options for cleaning the data processed by bpe,
 # advised values except numrules can be calculated by:
 #	python tools/check/charatio.py $tgtd/src.dev.bpe $tgtd/tgt.dev.bpe, and
@@ -33,15 +31,9 @@ export tgtd=$cachedir/$dataid
 # cleaning bpe results and bpe again
 python tools/clean/chars.py $tgtd/src.train.bpe $tgtd/tgt.train.bpe $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp $charatio $bperatio $seperatio $bibperatio $bioratio $numrules
 
-python tools/vocab.py $tgtd/src.clean.tmp $tgtd/src.full.vcb 1048576
-python tools/vocab.py $tgtd/tgt.clean.tmp $tgtd/tgt.full.vcb 1048576
-python tools/clean/vocab.py $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp $tgtd/src.train.tok.clean $tgtd/tgt.train.tok.clean $tgtd/src.full.vcb $tgtd/tgt.full.vcb $vratio
-
-sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/src.train.tok.clean > $tgtd/src.clean.tmp
-sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/tgt.train.tok.clean > $tgtd/tgt.clean.tmp
-mv $tgtd/src.clean.tmp $tgtd/src.train.tok.clean
-mv $tgtd/tgt.clean.tmp $tgtd/tgt.train.tok.clean
-rm -fr $tgtd/src.full.vcb $tgtd/tgt.full.vcb
+sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/src.clean.tmp > $tgtd/src.train.tok.clean
+sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/tgt.clean.tmp > $tgtd/tgt.train.tok.clean
+rm -fr $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp
 
 # to learn joint bpe
 subword-nmt learn-joint-bpe-and-vocab --input $tgtd/src.train.tok.clean $tgtd/tgt.train.tok.clean -s $bpeops -o $tgtd/bpe.cds --write-vocabulary $tgtd/src.vcb.bpe $tgtd/tgt.vcb.bpe

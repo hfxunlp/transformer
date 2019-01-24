@@ -1,5 +1,7 @@
 #encoding: utf-8
 
+# Difference: RNMT decoder concat attention and decoder layer output and directly classify with it, which makes the sharing parameters between classifier and embedding impossible, this implementation reduce the concatenated dimension with another Linear transform followed by tanh like GlobalAttention
+
 import torch
 from torch import nn
 
@@ -20,7 +22,7 @@ class FirstLayer(nn.Module):
 
 		osize = isize if osize is None else osize
 
-		self.net = LSTMCell(isize, osize, norm_pergate=True)
+		self.net = LSTMCell4RNMT(isize, osize)
 		self.init_hx = nn.Parameter(torch.zeros(1, osize))
 		self.init_cx = nn.Parameter(torch.zeros(1, osize))
 
@@ -53,7 +55,7 @@ class DecoderLayer(nn.Module):
 
 		osize = isize if osize is None else osize
 
-		self.net = LSTMCell(isize + osize, osize, norm_pergate=True)
+		self.net = LSTMCell4RNMT(isize + osize, osize)
 		self.init_hx = nn.Parameter(torch.zeros(1, osize))
 		self.init_cx = nn.Parameter(torch.zeros(1, osize))
 
@@ -187,7 +189,7 @@ class Decoder(nn.Module):
 
 		bsize, seql, _ = inpute.size()
 
-		sos_emb = self.get_sos_emb(inpute)
+		out = self.get_sos_emb(inpute)
 
 		# out: input to the decoder for the first step (bsize, 1, isize)
 
@@ -268,7 +270,7 @@ class Decoder(nn.Module):
 		bsizeb2 = bsize * beam_size2
 		real_bsize = bsize * beam_size
 
-		sos_emb = self.get_sos_emb(inpute)
+		out = self.get_sos_emb(inpute)
 		isize = sos_emb.size(-1)
 
 		if length_penalty > 0.0:

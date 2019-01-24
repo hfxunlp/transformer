@@ -7,7 +7,7 @@ This project is developed with python 3.7.
 
 Try `pip install -r requirements.txt` after you clone the repository.
 
-If you want to use [BPE](https://github.com/rsennrich/subword-nmt), to try the simple MT server and to support Chinese word segmentation supported by [pynlpir](https://github.com/tsroten/pynlpir) in this implementation, you should also install those dependencies in `requirements.opt.txt` with `pip install -r requirements.opt.txt`.
+If you want to use [BPE](https://github.com/rsennrich/subword-nmt), to enable convertion to C libraries, to try the simple MT server and to support Chinese word segmentation supported by [pynlpir](https://github.com/tsroten/pynlpir) in this implementation, you should also install those dependencies in `requirements.opt.txt` with `pip install -r requirements.opt.txt`.
 
 ## Data preprocessing
 
@@ -228,6 +228,18 @@ export rsf=trans.txt
 
 ```
 
+## Exporting python files to C libraries
+
+You can convert python classes into C libraries with `python mkcy.py build_ext --inplace`, and codes will be checked before compling, which can serve as a simple to way to find typo and bugs as well. This function is supported by [Cython](https://cython.org/). These files can be removed with `rm -fr *.c *.so parallel/*.c parallel/*.so transformer/*.c transformer/*.so build/`. Loading modules from compiled C libraries may also accelerate, but not significantly.
+
+## Ranking
+
+You can rank your corpus with pre-trained model, per token perplexity will be given for each sequence pair. Use it with:
+
+`python rank.py rsf h5f models`
+
+where `rsf` is the result file, `h5f` is HDF5 formatted input of file of your corpus (genrated like training set with `tools/mkiodata.py` like in `scripts/mktrain.sh`), `models` is a (list of) model file(s) to make perplexity evaluation.
+
 ## The other files' discription
 
 ### `modules.py`
@@ -317,6 +329,10 @@ Codes to encapsulate moses scripts, you have to define `moses_scripts`(path to m
 Chinese segmentation is different from tokenization, a tool is provided to support Chinese based on [pynlpir](https://github.com/tsroten/pynlpir).
 
 ### `tools/`
+
+#### `fbindexes.py`
+
+When you using a shared vocabulary for source side and target side, there are still some words which only appear at the source side even joint BPE is applied. Those words take up probabilities in the label smoothing classifier, and this tool can prevent this through generating a larger and well covered forbidden indexes list which can be concatnated to `forbidden_indexes` in `cnfg.py`.
 
 #### `average_model.py`
 

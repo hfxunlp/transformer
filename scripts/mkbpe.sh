@@ -15,12 +15,19 @@ export tgttf=tok.en
 export srcvf=06.tok.zh
 export tgtvf=06.tok.en0
 
+export vratio=0.2
+
 export tgtd=$cachedir/$dataid
 
 mkdir -p $tgtd
 
 # clean the data first by removing different translations with lower frequency of same sentences
-python tools/clean/maxkeeper.py $srcd/$srctf $srcd/$tgttf $tgtd/src.train.tok.clean $tgtd/tgt.train.tok.clean $maxtokens
+python tools/clean/maxkeeper.py $srcd/$srctf $srcd/$tgttf $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp $maxtokens
+
+python tools/vocab.py $tgtd/src.clean.tmp $tgtd/src.full.vcb 1048576
+python tools/vocab.py $tgtd/tgt.clean.tmp $tgtd/tgt.full.vcb 1048576
+python tools/clean/vocab.py $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp $tgtd/src.train.tok.clean $tgtd/tgt.train.tok.clean $tgtd/src.full.vcb $tgtd/tgt.full.vcb $vratio
+rm -fr $tgtd/src.full.vcb $tgtd/tgt.full.vcb $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp
 
 # to learn joint bpe
 subword-nmt learn-joint-bpe-and-vocab --input $tgtd/src.train.tok.clean $tgtd/tgt.train.tok.clean -s $bpeops -o $tgtd/bpe.cds --write-vocabulary $tgtd/src.vcb.bpe $tgtd/tgt.vcb.bpe

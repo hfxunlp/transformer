@@ -795,14 +795,14 @@ class CoordinateEmb(nn.Module):
 
 class Noiser(nn.Module):
 
-        def __init__(self, power):
+	def __init__(self, power):
 
-                super(Noiser, self).__init__()
-                self.power = power
+		super(Noiser, self).__init__()
+		self.power = power
 
-        def forward(self, inpute):
+	def forward(self, inpute):
 
-                if self.training:
-                        return torch.randn(inpute.size(), dtype=inpute.dtype, device=inpute.device) * (self.power * inpute.data.abs().mean()) + inpute
+		if self.training:
+			return torch.randn(inpute.size(), dtype=inpute.dtype, device=inpute.device) * (self.power * inpute.data.abs().mean()) + inpute
 
-                return inpute
+		return inpute

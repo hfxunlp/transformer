@@ -12,6 +12,9 @@ def handle(srcfs, srcft):
 
 	bmaxratio = 0.0
 	omaxratio = 0.0
+	bmeanratio = 0.0
+	omeanratio = 0.0
+	ndata = 0
 	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft:
 		for sline, tline in zip(fs, ft):
 			sline, tline = sline.strip(), tline.strip()
@@ -20,11 +23,19 @@ def handle(srcfs, srcft):
 				bratio = ratio_bilingual(len(sline.split()), len(tline.split()))
 				if bratio > bmaxratio:
 					bmaxratio = bratio
+				bmeanratio += bratio
 				oratio = ratio_bilingual(len(sline.replace("@@ ", "").split()), len(tline.replace("@@ ", "").split()))
 				if oratio > omaxratio:
 					omaxratio = oratio
+				omeanratio += oratio
 
-	print("Maximum bpe bilingual ratio is: %f\nMaximum original bilingual ratio is: %f" % (bmaxratio, omaxratio))
+				ndata += 1
+
+	ndata = float(ndata)
+	bmeanratio /= ndata
+	omeanratio /= ndata
+
+	print("Max/mean bpe bilingual ratio is: %.3f / %.3f\nMax/mean original bilingual ratio is: %.3f / %.3f" % (bmaxratio, bmeanratio, omaxratio, omeanratio))
 
 if __name__ == "__main__":
 	handle(sys.argv[1], sys.argv[2])

@@ -4,6 +4,8 @@ import torch
 
 from parallel.parallel import DataParallelModel
 
+from threading import Lock, Thread
+
 class DataParallelMT(DataParallelModel):
 
 	def decode(self, *inputs, **kwargs):

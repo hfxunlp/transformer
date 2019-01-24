@@ -2,6 +2,8 @@
 
 import sys
 
+has_unk = True
+
 def handle(srcf):
 
 	def clean(lin):
@@ -20,7 +22,7 @@ def handle(srcf):
 					if not token in vocab:
 						vocab.add(token)
 
-	print("The size of the vocabulary is: %d (with special tokens counted)" % (len(vocab) + 4))
+	print("The size of the vocabulary is: %d (with special tokens counted)" % (len(vocab) + 4 if has_unk else 3))
 
 if __name__ == "__main__":
 	handle(sys.argv[1])

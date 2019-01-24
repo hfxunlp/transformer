@@ -46,9 +46,9 @@ class Decoder(nn.Module):
 			if model.out_normer is not None:
 				out = model.out_normer(out)
 
-			outs.append(model.lsm(model.classifier(out)))
+			outs.append(model.classifier(out).softmax(dim=-1))
 
-		return torch.stack(outs).mean(0)
+		return torch.stack(outs).mean(0).log()
 
 	# inpute: encoded representation from encoders [(bsize, seql, isize)...]
 	# src_pad_mask: mask for given encoding source sentence (bsize, seql), see Encoder, get by:
@@ -95,9 +95,9 @@ class Decoder(nn.Module):
 
 			# outs: [(bsize, 1, nwd)...]
 
-			outs.append(model.lsm(model.classifier(out)))
+			outs.append(model.classifier(out).softmax(dim=-1))
 
-		out = torch.stack(outs).mean(0)
+		out = torch.stack(outs).mean(0).log()
 
 		# wds: (bsize, 1)
 
@@ -128,9 +128,9 @@ class Decoder(nn.Module):
 					out = model.out_normer(out)
 
 				# outs: [(bsize, 1, nwd)...]
-				outs.append(model.lsm(model.classifier(out)))
+				outs.append(model.classifier(out).softmax(dim=-1))
 
-			out = torch.stack(outs).mean(0)
+			out = torch.stack(outs).mean(0).log()
 
 			wds = torch.argmax(out, dim=-1)
 
@@ -185,9 +185,9 @@ class Decoder(nn.Module):
 
 			# outs: [(bsize, 1, nwd)]
 
-			outs.append(model.lsm(model.classifier(out)))
+			outs.append(model.classifier(out).softmax(dim=-1))
 
-		out = torch.stack(outs).mean(0)
+		out = torch.stack(outs).mean(0).log()
 
 		# scores: (bsize, 1, beam_size) => (bsize, beam_size)
 		# wds: (bsize * beam_size, 1)
@@ -237,9 +237,9 @@ class Decoder(nn.Module):
 
 				# outs: [(bsize, beam_size, nwd)...]
 
-				outs.append(model.lsm(model.classifier(out)).view(bsize, beam_size, -1))
+				outs.append(model.classifier(out).softmax(dim=-1).view(bsize, beam_size, -1))
 
-			out = torch.stack(outs).mean(0)
+			out = torch.stack(outs).mean(0).log()
 
 			# find the top k ** 2 candidates and calculate route scores for them
 			# _scores: (bsize, beam_size, beam_size)

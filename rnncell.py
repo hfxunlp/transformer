@@ -8,16 +8,17 @@ from modules import *
 # per gate layer normalization is applied in this implementation
 
 # actually FastLSTM
-class LSTMCell(nn.Module):
+class LSTMCell4RNMT(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, osize, norm_pergate=False, use_GeLU=False):
+	def __init__(self, isize, osize, use_GeLU=False):
 
-		super(LSTMCell, self).__init__()
+		super(LSTMCell4RNMT, self).__init__()
 
 		# layer normalization is also applied for the computation of hidden for efficiency
-		self.trans = nn.Sequential(nn.LayerNorm(isize + osize, eps=1e-06), nn.Linear(isize + osize, osize * 4)) if norm_pergate else nn.Linear(isize + osize, osize * 4)
+		self.trans = nn.Linear(isize + osize, osize * 4)
+		self.normer = nn.LayerNorm((4, osize), eps=1e-06)
 
 		self.act = nn.Tanh() if use_GeLU else nn.Tanh()
 
@@ -27,28 +28,30 @@ class LSTMCell(nn.Module):
 
 		_out, _cell = state
 
-		_comb = self.trans(torch.cat((inpute, _out), -1))
+		_comb = self.normer(self.trans(torch.cat((inpute, _out), -1)).view(-1, 4, self.osize))
 
-		_combg, hidden = _comb.narrow(-1, 0, self.osize * 3).sigmoid(), self.act(_comb.narrow(-1, self.osize * 3, self.osize))
+		_combg, hidden = _comb.narrow(-2, 0, 3).sigmoid(), self.act(_comb.select(-2, 3))
 
-		ig, fg, og = _combg.narrow(-1, 0, self.osize), _combg.narrow(-1, self.osize, self.osize), _combg.narrow(-1, self.osize + self.osize, self.osize)
+		ig, fg, og = _combg.select(-2, 0), _combg.select(-2, 1), _combg.select(-2, 2)
 
 		_cell = fg * _cell + ig * hidden
-		_out = og * self.act(_cell)
+		_out = og * _cell
 
 		return _out, _cell
 
-class GRUCell(nn.Module):
+class GRUCell4RNMT(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, osize, norm_pergate=False, use_GeLU=False):
+	def __init__(self, isize, osize, use_GeLU=False):
 
-		super(GRUCell, self).__init__()
+		super(GRUCell4RNMT, self).__init__()
 
-		self.trans = nn.Sequential(nn.LayerNorm(isize + osize, eps=1e-06), nn.Linear(isize + osize, osize * 2)) if norm_pergate else nn.Linear(isize + osize, osize * 2)
+		self.trans = nn.Linear(isize + osize, osize * 2)
 		self.transi = nn.Linear(isize, osize)
 		self.transh = nn.Linear(osize, osize)
+
+		self.normer = nn.LayerNorm((2, osize), eps=1e-06)
 
 		self.act = nn.Tanh() if use_GeLU else nn.Tanh()
 
@@ -56,9 +59,9 @@ class GRUCell(nn.Module):
 
 	def forward(self, inpute, state):
 
-		_comb = self.trans(torch.cat((inpute, state), -1)).sigmoid()
+		_comb = self.normer(self.trans(torch.cat((inpute, state), -1)).view(-1, 2, self.osize)).sigmoid()
 
-		ig, fg = _comb.narrow(-1, 0, self.osize), _comb.narrow(-1, self.osize, self.osize)
+		ig, fg = _comb.select(-2, 0), _comb.select(-2, 1)
 
 		hidden = self.act(self.transi(inpute) + ig * self.transh(state))
 		_out = (1.0 - fg) * hidden + fg * state
@@ -70,12 +73,12 @@ class ATRCell(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, norm_pergate=False):
+	def __init__(self, isize):
 
 		super(ATRCell, self).__init__()
 
-		self.t1 = nn.Sequential(nn.LayerNorm(isize, eps=1e-06), nn.Linear(isize, isize)) if norm_pergate else nn.Linear(isize, isize)
-		self.t2 = nn.Sequential(nn.LayerNorm(isize, eps=1e-06), nn.Linear(isize, isize)) if norm_pergate else nn.Linear(isize, isize)
+		self.t1 = nn.Linear(isize, isize)
+		self.t2 = nn.Linear(isize, isize)
 
 	# x: input to the cell
 	# cell: cell to update

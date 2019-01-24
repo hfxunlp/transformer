@@ -1,3 +1,4 @@
+Cython>=0.29.3
 subword-nmt>=0.3.5
 Flask>=1.0.2
 PyNLPIR>=0.5.2
