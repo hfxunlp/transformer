@@ -82,6 +82,12 @@ def reverse_dict(din):
 
 	return rs
 
+def load_model_cpu_old(modf, base_model):
+
+	base_model.load_state_dict(torch.load(modf, map_location='cpu'))
+
+	return base_model
+
 def load_model_cpu(modf, base_model):
 
 	mpg = torch.load(modf, map_location='cpu')

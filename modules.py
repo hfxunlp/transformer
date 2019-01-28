@@ -263,7 +263,7 @@ class SelfAttn(nn.Module):
 			real_iQ, real_iK, real_iV = _out.narrow(-1, 0, self.hsize).contiguous().view(bsize, nquery, nheads, adim).transpose(1, 2), _out.narrow(-1, self.hsize, self.hsize).contiguous().view(bsize, nquery, nheads, adim).transpose(1, 2), _out.narrow(-1, self.hsize + self.hsize, self.hsize).contiguous().view(bsize, nquery, nheads, adim).transpose(1, 2)
 		else:
 
-			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), self.adaptor.bias.narrow(0, 0, self.hsize) if self.adaptor.bias else None), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize) if self.adaptor.bias else None)
+			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), self.adaptor.bias.narrow(0, 0, self.hsize) if self.adaptor.bias else None).view(bsize, nquery, nheads, adim).transpose(1, 2), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize) if self.adaptor.bias else None)
 
 			seql = iK.size(1)
 
@@ -355,23 +355,6 @@ class CrossAttn(nn.Module):
 		# output of this layer (bsize, nquery, nheads, adim) => (bsize, nquery, osize)
 
 		return self.outer(oMA.view(bsize, nquery, self.hsize))
-
-def freeze_module(module):
-
-	for p in module.parameters():
-		if p.requires_grad:
-			p.requires_grad_(False)
-
-def unfreeze_module(module):
-
-	def unfreeze_fixing(mod):
-		if "fix_unfreeze" in dir(mod):
-			mod.fix_unfreeze()
-
-	for p in module.parameters():
-		p.requires_grad_(True)
-
-	module.apply(unfreeze_fixing)
 
 # Aggregation from: Exploiting Deep Representations for Neural Machine Translation
 class ResidueCombiner(nn.Module):

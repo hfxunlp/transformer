@@ -4,6 +4,8 @@ import torch
 
 from parallel.parallel import DataParallelModel
 
+from utils import pad_tensors
+
 from threading import Lock, Thread
 
 class DataParallelMT(DataParallelModel):
@@ -39,20 +41,6 @@ class DataParallelMT(DataParallelModel):
 			replicas = self.nets[:nbatch]
 		outputs = parallel_apply_train_decode(replicas, inputs, devices, kwargs)
 		return self.gather(pad_tensors(outputs), self.output_device) if self.gather_output else outputs
-
-def pad_tensors(tensor_list):
-
-	def get_pad_size(tsize, stdlen):
-		nsize = list(tsize)
-		nsize[-1] = stdlen - tsize[-1]
-		return nsize
-
-	maxlen = 0
-	for tensor in tensor_list:
-		tlen = tensor.size(-1)
-		if tlen > maxlen:
-			maxlen = tlen
-	return [tensor if tensor.size(-1) == maxlen else torch.cat((tensor, tensor.new_zeros(get_pad_size(tensor.size(), maxlen))), -1) for tensor in tensor_list]
 
 # update these two functions with the update of parallel_apply(https://github.com/pytorch/pytorch/blob/master/torch/nn/parallel/parallel_apply.py)
 

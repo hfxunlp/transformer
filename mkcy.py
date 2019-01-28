@@ -17,7 +17,7 @@ if __name__ == "__main__":
 
 	eccargs = ["-Ofast", "-march=native", "-pipe", "-fomit-frame-pointer"]
 
-	baselist = ["modules.py", "loss.py", "lrsch.py", "rnncell.py", "translator.py", "discriminator.py"]
+	baselist = ["modules.py", "loss.py", "lrsch.py", "utils.py","rnncell.py", "translator.py", "discriminator.py"]
 
 	extlist = [Extension(get_name(pyf), [pyf], extra_compile_args=eccargs) for pyf in baselist]
 

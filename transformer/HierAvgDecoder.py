@@ -250,6 +250,9 @@ class Decoder(DecoderBase):
 		# if length penalty is only applied in the last step, apply length penalty
 		if (not clip_beam) and (length_penalty > 0.0):
 			scores = scores / lpv.view(bsize, beam_size)
+			scores, _inds = torch.topk(scores, beam_size, dim=-1)
+			_inds = (_inds + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+			trans = trans.view(real_bsize, -1).index_select(0, _inds).view(bsize, beam_size, -1)
 
 		if return_all:
 

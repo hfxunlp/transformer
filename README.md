@@ -230,7 +230,7 @@ export rsf=trans.txt
 
 ## Exporting python files to C libraries
 
-You can convert python classes into C libraries with `python mkcy.py build_ext --inplace`, and codes will be checked before compling, which can serve as a simple to way to find typo and bugs as well. This function is supported by [Cython](https://cython.org/). These files can be removed with `rm -fr *.c *.so parallel/*.c parallel/*.so transformer/*.c transformer/*.so build/`. Loading modules from compiled C libraries may also accelerate, but not significantly.
+You can convert python classes into C libraries with `python mkcy.py build_ext --inplace`, and codes will be checked before compiling, which can serve as a simple to way to find typo and bugs as well. This function is supported by [Cython](https://cython.org/). These files can be removed with `rm -fr *.c *.so parallel/*.c parallel/*.so transformer/*.c transformer/*.so build/`. Loading modules from compiled C libraries may also accelerate, but not significantly.
 
 ## Ranking
 
@@ -414,7 +414,7 @@ Measured with `multi-bleu-detok.perl`:
 
 ## Acknowledgements
 
-The project starts when Hongfei XU (the developer) was a postgraduate student at [Zhengzhou University](http://www5.zzu.edu.cn/nlp/), and continues when he is a PhD candidate at [Saarland University](https://www.uni-saarland.de/nc/en/home.html) and a Junior Researcher at [DFKI (German Research Center for Artificial Intelligence)](https://www.dfki.de/en/web/research/research-departments-and-groups/multilingual-technologies/). Hongfei XU enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project. 
+The project starts when Hongfei XU (the developer) was a postgraduate student at [Zhengzhou University](http://www5.zzu.edu.cn/nlp/), and continues when he is a PhD candidate at [Saarland University](https://www.uni-saarland.de/nc/en/home.html) supervised by [Prof. Dr. Josef van Genabith](https://www.dfki.de/en/web/about-us/employee/person/jova02/) and a Junior Researcher at [DFKI, MLT (German Research Center for Artificial Intelligence, Multilinguality and Language Technology)](https://www.dfki.de/en/web/research/research-departments-and-groups/multilinguality-and-language-technology/). Hongfei XU enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project. 
 
 ## Contributor(s)
 
