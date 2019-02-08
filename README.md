@@ -254,6 +254,10 @@ Implementation of label smoothing loss function required by the training of tran
 
 Learning rate schedule model needed according to the paper.
 
+### `utils.py`
+
+Functions for basic features, for example, freeze / unfreeze parameters of models, padding list of tensors to same size on assigned dimension.
+
 ### `translator.py`
 
 Provide an encapsulation for the whole translation procedure with which you can use the trained model in your application easier.

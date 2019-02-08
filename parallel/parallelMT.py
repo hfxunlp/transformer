@@ -13,10 +13,10 @@ class DataParallelMT(DataParallelModel):
 	def decode(self, *inputs, **kwargs):
 
 		if not self.device_ids:
-			return [self.module(*inputs, **kwargs)]
+			return self.module.decode(*inputs, **kwargs) if self.gather_output else [self.module.decode(*inputs, **kwargs)]
 		inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids)
 		if (len(self.device_ids) == 1) or (len(inputs) == 1):
-			return [self.module(*inputs[0], **kwargs[0])]
+			return self.module.decode(*inputs[0], **kwargs[0]) if self.gather_output else [self.module.decode(*inputs[0], **kwargs[0])]
 		nbatch = len(inputs)
 		devices = self.device_ids[:nbatch]
 		if self.nets is None:
@@ -29,10 +29,10 @@ class DataParallelMT(DataParallelModel):
 	def train_decode(self, *inputs, **kwargs):
 
 		if not self.device_ids:
-			return [self.module(*inputs, **kwargs)]
+			return self.module.train_decode(*inputs, **kwargs) if self.gather_output else [self.module.train_decode(*inputs, **kwargs)]
 		inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids)
 		if (len(self.device_ids) == 1) or (len(inputs) == 1):
-			return [self.module(*inputs[0], **kwargs[0])]
+			return self.module.train_decode(*inputs[0], **kwargs[0]) if self.gather_output else [self.module.train_decode(*inputs[0], **kwargs[0])]
 		nbatch = len(inputs)
 		devices = self.device_ids[:nbatch]
 		if self.nets is None:
