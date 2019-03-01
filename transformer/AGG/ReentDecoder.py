@@ -5,9 +5,63 @@ from torch import nn
 from modules import *
 from math import sqrt
 
+from utils import pad_tensors
+
+from transformer.Decoder import DecoderLayer as DecoderLayerUnit
 from transformer.Decoder import Decoder as DecoderBase
 
-# Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network(https://arxiv.org/abs/1805.00631)
+class DecoderLayerBase(nn.Module):
+
+	# isize: input size
+	# fhsize: hidden size of PositionwiseFeedForward
+	# attn_drop: dropout for MultiHeadAttention
+	# num_head: number of heads in MultiHeadAttention
+	# ahsize: hidden size of MultiHeadAttention
+
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, num_sub=1):
+
+		_ahsize = isize if ahsize is None else ahsize
+
+		_fhsize = _ahsize * 4 if fhsize is None else fhsize
+
+		super(DecoderLayerBase, self).__init__()
+
+		self.nets = nn.ModuleList([DecoderLayerUnit(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_sub)])
+
+		self.combiner = ResidueCombiner(isize, num_sub, _fhsize)
+
+	# inpute: encoded representation from encoder (bsize, seql, isize)
+	# inputo: embedding of decoded translation (bsize, nquery, isize)
+	# src_pad_mask: mask for given encoding source sentence (bsize, nquery, seql), see Encoder, expanded after generated with:
+	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	# tgt_pad_mask: mask to hide the future input
+	# query_unit: single query to decode, used to support decoding for given step
+
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, concat_query=False):
+
+		outs = []
+		if query_unit is None:
+			out = inputo
+			states_return = None
+			for net in self.nets:
+				out = net(inpute, out, src_pad_mask, tgt_pad_mask)
+				outs.append(out)
+		else:
+			out = query_unit
+			states_return = []
+			for _tmp, net in enumerate(self.nets):
+				out, _state = net(inpute, None if inputo is None else inputo.select(-2, _tmp), src_pad_mask, tgt_pad_mask, out, concat_query)
+				outs.append(out)
+				states_return.append(_state)
+
+			states_return = torch.stack(states_return, -2)
+
+		out = self.combiner(*outs)
+
+		if states_return is None:
+			return out
+		else:
+			return out, states_return
 
 class DecoderLayer(nn.Module):
 
@@ -17,86 +71,53 @@ class DecoderLayer(nn.Module):
 	# num_head: number of heads in MultiHeadAttention
 	# ahsize: hidden size of MultiHeadAttention
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
-
-		super(DecoderLayer, self).__init__()
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, num_sub=1, num_unit=1):
 
 		_ahsize = isize if ahsize is None else ahsize
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.self_attn = AverageAttn(isize, _fhsize, dropout)
-		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
+		super(DecoderLayer, self).__init__()
 
-		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residue)
+		self.nets = nn.ModuleList([DecoderLayerBase(isize, _fhsize, dropout, attn_drop, num_head, _ahsize, num_unit) for i in range(num_sub)])
 
-		self.layer_normer1 = nn.LayerNorm(isize, eps=1e-06)
-		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
-
-		if dropout > 0:
-			self.d1 = nn.Dropout(dropout, inplace=True)
-			self.d2 = nn.Dropout(dropout, inplace=True)
-		else:
-			self.d1 = None
-			self.d2 = None
-
-		self.norm_residue = norm_residue
+		self.combiner = ResidueCombiner(isize, num_sub, _fhsize)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
-	# inputo: embedding of decoded translation (bsize, nquery, isize) during training, layer normed summed previous states for decoding
+	# inputo: embedding of decoded translation (bsize, nquery, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, nquery, seql), see Encoder, expanded after generated with:
 	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	# tgt_pad_mask: mask to hide the future input
 	# query_unit: single query to decode, used to support decoding for given step
-	# step: current decoding step, used to average over the sum.
 
-	def forward(self, inpute, inputo, src_pad_mask=None, query_unit=None, step=1):
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, concat_query=False):
 
+		outs = []
 		if query_unit is None:
-			_inputo = self.layer_normer1(inputo)
-
+			out = inputo
 			states_return = None
-
-			context = self.self_attn(_inputo, _inputo)
-
-			if self.d1 is not None:
-				context = self.d1(context)
-
-			context = context + (_inputo if self.norm_residue else inputo)
+			for net in self.nets:
+				out = net(inpute, out, src_pad_mask, tgt_pad_mask)
+				outs.append(out)
 		else:
-			_query_unit = self.layer_normer1(query_unit)
+			out = query_unit
+			states_return = []
+			for _tmp, net in enumerate(self.nets):
+				out, _state = net(inpute, None if inputo is None else inputo.select(-2, _tmp), src_pad_mask, tgt_pad_mask, out, concat_query)
+				outs.append(out)
+				states_return.append(_state)
 
-			if step == 1:
-				states_return = _query_unit
+			# states_return: (bsize, seql, num_unit, num_sub, isize)
+			states_return = torch.stack(states_return, -2)
 
-				context = self.self_attn(_query_unit, _query_unit, True)
-			else:
-				states_return = inputo + _query_unit
-
-				context = self.self_attn(_query_unit, states_return / step, True)
-
-			if self.d1 is not None:
-				context = self.d1(context)
-
-			context = context + (_query_unit if self.norm_residue else query_unit)
-
-		_context = self.layer_normer2(context)
-		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
-
-		if self.d2 is not None:
-			_context_new = self.d2(_context_new)
-
-		context = _context_new + (_context if self.norm_residue else context)
-
-		context = self.ff(context)
+		out = self.combiner(*outs)
 
 		if states_return is None:
-			return context
+			return out
 		else:
-			return context, states_return
+			return out, states_return
 
 class Decoder(DecoderBase):
-
-	# construction function is needed, since DecoderLayer should be re-assigned.
 
 	# isize: size of word embedding
 	# nwd: number of words
@@ -109,7 +130,7 @@ class Decoder(DecoderBase):
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=False, bindemb=False, forbidden_index=None, num_sub=1, num_unit=1):
 
 		_ahsize = isize if ahsize is None else ahsize
 
@@ -117,7 +138,8 @@ class Decoder(DecoderBase):
 
 		super(Decoder, self).__init__(isize, nwd, num_layer, _fhsize, dropout, attn_drop, emb_w, num_head, xseql, _ahsize, norm_output, bindemb, forbidden_index)
 
-		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
+		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize, num_sub, num_unit) for i in range(num_layer)])
+		self.combiner = ResidueCombiner(isize, num_layer, _fhsize)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: decoded translation (bsize, nquery)
@@ -135,8 +157,17 @@ class Decoder(DecoderBase):
 		if self.drop is not None:
 			out = self.drop(out)
 
+		_mask = self._get_subsequent_mask(inputo.size(1))
+
+		# the following line of code is to mask <pad> for the decoder,
+		# which I think is useless, since only <pad> may pay attention to previous <pad> tokens, whos loss will be omitted by the loss function.
+		#_mask = torch.gt(_mask + inputo.eq(0).unsqueeze(1), 0)
+
+		outs = []
 		for net in self.nets:
-			out = net(inpute, out, src_pad_mask)
+			out = net(inpute, out, src_pad_mask, _mask)
+			outs.append(out)
+		out = self.combiner(*outs)
 
 		if self.out_normer is not None:
 			out = self.out_normer(out)
@@ -144,75 +175,6 @@ class Decoder(DecoderBase):
 		out = self.lsm(self.classifier(out))
 
 		return out
-
-	# inpute: encoded representation from encoder (bsize, seql, isize)
-	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
-	# max_len: maximum length to generate
-
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512):
-
-		bsize, seql, _ = inpute.size()
-
-		sos_emb = self.get_sos_emb(inpute)
-
-		sqrt_isize = sqrt(sos_emb.size(-1))
-
-		# out: input to the decoder for the first step (bsize, 1, isize)
-
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0).view(1, 1, -1).expand(bsize, 1, -1)
-
-		if self.drop is not None:
-			out = self.drop(out)
-
-		states = {}
-
-		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, out, 1)
-			states[_tmp] = _state
-
-		if self.out_normer is not None:
-			out = self.out_normer(out)
-
-		# out: (bsize, 1, nwd)
-
-		out = self.lsm(self.classifier(out))
-
-		# wds: (bsize, 1)
-
-		wds = torch.argmax(out, dim=-1)
-
-		trans = [wds]
-
-		# done_trans: (bsize)
-
-		done_trans = wds.squeeze(1).eq(2)
-
-		for i in range(2, max_len + 1):
-
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i - 1).view(1, 1, -1).expand(bsize, 1, -1)
-
-			if self.drop is not None:
-				out = self.drop(out)
-
-			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], src_pad_mask, out, i)
-				states[_tmp] = _state
-
-			if self.out_normer is not None:
-				out = self.out_normer(out)
-
-			# out: (bsize, 1, nwd)
-			out = self.lsm(self.classifier(out))
-			wds = torch.argmax(out, dim=-1)
-
-			trans.append(wds)
-
-			done_trans = torch.gt(done_trans + wds.squeeze(1).eq(2), 0)
-			if done_trans.sum().item() == bsize:
-				break
-
-		return torch.cat(trans, 1)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
@@ -243,10 +205,12 @@ class Decoder(DecoderBase):
 			out = self.drop(out)
 
 		states = {}
-
+		outs = []
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, out, 1)
+			out, _state = net(inpute, None, src_pad_mask, None, out, True)
 			states[_tmp] = _state
+			outs.append(out)
+		out = self.combiner(*outs)
 
 		if self.out_normer is not None:
 			out = self.out_normer(out)
@@ -277,21 +241,27 @@ class Decoder(DecoderBase):
 
 		_src_pad_mask = None if src_pad_mask is None else src_pad_mask.repeat(1, beam_size, 1).view(real_bsize, 1, seql)
 
-		# states[i]: (bsize, 1, isize) => (bsize * beam_size, 1, isize)
+		# states[i]: (bsize, 1, num_unit, num_sub, isize) => (bsize * beam_size, 1, num_unit, num_sub, isize)
 
 		for key, value in states.items():
-			states[key] = value.repeat(1, beam_size, 1).view(real_bsize, 1, isize)
+			if value.dim() == 5:
+				states[key] = value.repeat(1, beam_size, 1, 1, 1).view(real_bsize, 1, -1, value.size(-2), isize)
+			else:
+				states[key] = value.repeat(1, beam_size, 1, 1).view(real_bsize, 1, -1, isize)
 
-		for step in range(2, max_len + 1):
+		for step in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step - 1).view(1, 1, isize).expand(real_bsize, 1, isize)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step).view(1, 1, isize).expand(real_bsize, 1, isize)
 
 			if self.drop is not None:
 				out = self.drop(out)
 
+			outs = []
 			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], _src_pad_mask, out, step)
+				out, _state = net(inpute, states[_tmp], _src_pad_mask, None, out, True)
 				states[_tmp] = _state
+				outs.append(out)
+			out = self.combiner(*outs)
 
 			if self.out_normer is not None:
 				out = self.out_normer(out)
@@ -312,7 +282,7 @@ class Decoder(DecoderBase):
 			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
 
 			if length_penalty > 0.0:
-				lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 5.0) ** length_penalty) / lpv_base)
+				lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
 
 			# clip from k ** 2 candidate and remain the top-k for each path
 			# scores: (bsize, beam_size * beam_size) => (bsize, beam_size)
@@ -361,7 +331,7 @@ class Decoder(DecoderBase):
 				break
 
 			# update the corresponding hidden states
-			# states[i]: (bsize * beam_size, nquery, isize)
+			# states[i]: (bsize * beam_size, nquery, num_unit, num_sub, isize)
 			# _inds: (bsize, beam_size) => (bsize * beam_size)
 
 			for key, value in states.items():
@@ -380,3 +350,26 @@ class Decoder(DecoderBase):
 		else:
 
 			return trans.view(bsize, beam_size, -1).select(1, 0)
+
+	def load_base(self, base_decoder):
+
+		self.drop = base_decoder.drop
+
+		self.wemb = base_decoder.wemb
+
+		self.pemb = base_decoder.pemb
+
+		_nets = base_decoder.nets
+
+		_lind = 0
+		for net in self.nets:
+			_rind = _lind + len(net.nets)
+			net.nets = nn.ModuleList(_nets[_lind:_rind])
+			_lind = _rind
+
+		self.classifier = base_decoder.classifier
+
+		self.lsm = base_decoder.lsm
+
+		self.out_normer = None if self.out_normer is None else base_decoder.out_normer
+		self.nets[-1].combiner.out_normer = base_decoder.out_normer

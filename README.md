@@ -230,7 +230,7 @@ export rsf=trans.txt
 
 ## Exporting python files to C libraries
 
-You can convert python classes into C libraries with `python mkcy.py build_ext --inplace`, and codes will be checked before compiling, which can serve as a simple to way to find typo and bugs as well. This function is supported by [Cython](https://cython.org/). These files can be removed with `rm -fr *.c *.so parallel/*.c parallel/*.so transformer/*.c transformer/*.so build/`. Loading modules from compiled C libraries may also accelerate, but not significantly.
+You can convert python classes into C libraries with `python mkcy.py build_ext --inplace`, and codes will be checked before compiling, which can serve as a simple to way to find typo and bugs as well. This function is supported by [Cython](https://cython.org/). These files can be removed with `rm -fr *.c *.so parallel/*.c parallel/*.so transformer/*.c transformer/*.so  transformer/AGG/*.c transformer/AGG/*.so build/`. Loading modules from compiled C libraries may also accelerate, but not significantly.
 
 ## Ranking
 
@@ -286,7 +286,7 @@ The average decoder of transformer proposed by [Accelerating Neural Transformer 
 
 #### `EnsembleNMT.py`
 
-A model encapsulates several NMT models to do ensemble decoding. Switch [the comment line](https://github.com/anoidgit/transformer/blob/master/transformer/EnsembleNMT.py#L8-L10) to make a choice between the standard decoder and the average decoder.
+A model encapsulates several NMT models to do ensemble decoding. Switch [the comment line](https://github.com/anoidgit/transformer/blob/master/transformer/EnsembleNMT.py#L9-L11) to make a choice between the standard decoder and the average decoder.
 
 #### `EnsembleEncoder.py`
 

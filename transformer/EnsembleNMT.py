@@ -4,7 +4,8 @@ import torch
 from torch import nn
 from transformer.EnsembleEncoder import Encoder
 
-# import Decoder from transformer.EnsembleDRDecoder or transformer.EnsembleDRAvgDecoder to enable feature combination between layers
+# import Decoder from transformer.AGG.Ensemble implementation or transformer.AGG.Ensemble implementation to enable feature combination between layers
+
 # switch the comment between the following two lines to choose standard decoder or average decoder
 from transformer.EnsembleDecoder import Decoder
 #from transformer.EnsembleAvgDecoder import Decoder

@@ -4,23 +4,21 @@ import sys
 
 import torch
 from torch import nn
-from torch import autograd
-from torch.nn import utils
+
 from torch import optim
-from torch.nn.init import xavier_uniform_
 
 from parallel.parallel import DataParallelCriterion
 from parallel.parallelMT import DataParallelMT
+
+from utils import *
 
 from lrsch import GoogleLR
 from loss import LabelSmoothingLoss
 
 from random import seed as rpyseed
-from random import shuffle, sample
+from random import shuffle
 
 from tqdm import tqdm
-
-import logging
 
 from os import makedirs
 from os.path import exists as p_check
@@ -150,20 +148,6 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu):
 	w = float(w)
 	return sum_loss / w, (w - r) / w * 100.0
 
-def getlr(optm):
-	lr = []
-	for i, param_group in enumerate(optm.param_groups):
-		lr.append(float(param_group['lr']))
-	return lr
-
-def updated_lr(oldlr, newlr):
-	rs = False
-	for olr, nlr in zip(oldlr, newlr):
-		if olr != nlr:
-			rs = True
-			break
-	return rs
-
 def hook_lr_update(optm, flags):
 	for group in optm.param_groups:
 		for p in group['params']:
@@ -175,39 +159,8 @@ def hook_lr_update(optm, flags):
 				if flags:
 					state['max_exp_avg_sq'].zero_()
 
-def dynamic_sample(incd, dss_ws, dss_rm):
-
-	rd = {}
-	for k, v in incd.items():
-		if v in rd:
-			rd[v].append(k)
-		else:
-			rd[v] = [k]
-	incs = list(rd.keys())
-	incs.sort(reverse=True)
-	_full_rl = []
-	for v in incs:
-		_full_rl.extend(rd[v])
-
-	return _full_rl[:dss_ws] + sample(_full_rl[dss_ws:], dss_rm) if dss_rm > 0 else _full_rl[:dss_ws]
-
 def tostr(lin):
 	return [str(lu) for lu in lin]
-
-def get_logger(fname):
-	logger = logging.getLogger(__name__)
-	logger.setLevel(level = logging.INFO)
-	handler = logging.FileHandler(fname)
-	handler.setLevel(logging.INFO)
-	formatter = logging.Formatter('[%(asctime)s %(levelname)s] %(message)s')
-	handler.setFormatter(formatter)
-
-	console = logging.StreamHandler()
-	console.setLevel(logging.INFO)
-
-	logger.addHandler(handler)
-	logger.addHandler(console)
-	return logger
 
 def save_states(fname, stl):
 	with open(fname, "wb") as f:
@@ -225,24 +178,8 @@ def load_states(fname):
 						rs.append(tmpu)
 	return [("i" + tmpu, "t" + tmpu) for tmpu in rs]
 
-def load_model_cpu(modf, base_model):
-
-	mpg = torch.load(modf, map_location='cpu')
-
-	for para, mp in zip(base_model.parameters(), mpg):
-		para.data = mp.data
-
-	return base_model
-
-
-def save_model(model, fname, sub_module):
-
-	if sub_module:
-		torch.save([t.data for t in model.module.parameters()], fname)
-	else:
-		torch.save([t.data for t in model.parameters()], fname)
-
 def init_fixing(module):
+
 	if "fix_init" in dir(module):
 		module.fix_init()
 
@@ -340,32 +277,31 @@ if use_cuda:
 	lossf.to(cuda_device)
 
 if fine_tune_m is None:
-	for p in mymodel.parameters():
-		if p.requires_grad and (p.dim() > 1):
-			xavier_uniform_(p)
-	if cnfg.src_emb is not None:
-		_emb = torch.load(cnfg.src_emb, map_location='cpu')
-		if nwordi < _emb.size(0):
-			_emb = _emb.narrow(0, 0, nwordi).contiguous()
-		if use_cuda:
-			_emb = _emb.to(cuda_device)
-		mymodel.enc.wemb.weight.data = _emb
-		if cnfg.freeze_srcemb:
-			mymodel.enc.wemb.weight.requires_grad_(False)
-		else:
-			mymodel.enc.wemb.weight.requires_grad_(True)
-	if cnfg.tgt_emb is not None:
-		_emb = torch.load(cnfg.tgt_emb, map_location='cpu')
-		if nwordt < _emb.size(0):
-			_emb = _emb.narrow(0, 0, nwordt).contiguous()
-		if use_cuda:
-			_emb = _emb.to(cuda_device)
-		mymodel.dec.wemb.weight.data = _emb
-		if cnfg.freeze_tgtemb:
-			mymodel.dec.wemb.weight.requires_grad_(False)
-		else:
-			mymodel.dec.wemb.weight.requires_grad_(True)
+	mymodel = init_model_params(mymodel)
 	mymodel.apply(init_fixing)
+
+if cnfg.src_emb is not None:
+	_emb = torch.load(cnfg.src_emb, map_location='cpu')
+	if nwordi < _emb.size(0):
+		_emb = _emb.narrow(0, 0, nwordi).contiguous()
+	if use_cuda:
+		_emb = _emb.to(cuda_device)
+	mymodel.enc.wemb.weight.data = _emb
+	if cnfg.freeze_srcemb:
+		mymodel.enc.wemb.weight.requires_grad_(False)
+	else:
+		mymodel.enc.wemb.weight.requires_grad_(True)
+if cnfg.tgt_emb is not None:
+	_emb = torch.load(cnfg.tgt_emb, map_location='cpu')
+	if nwordt < _emb.size(0):
+		_emb = _emb.narrow(0, 0, nwordt).contiguous()
+	if use_cuda:
+		_emb = _emb.to(cuda_device)
+	mymodel.dec.wemb.weight.data = _emb
+	if cnfg.freeze_tgtemb:
+		mymodel.dec.wemb.weight.requires_grad_(False)
+	else:
+		mymodel.dec.wemb.weight.requires_grad_(True)
 
 # lr will be over written by GoogleLR before used
 optimizer = optim.Adam(mymodel.parameters(), lr=1e-4, betas=(0.9, 0.98), eps=1e-9, weight_decay=cnfg.weight_decay, amsgrad=use_ams)

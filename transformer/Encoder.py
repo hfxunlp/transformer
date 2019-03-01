@@ -6,9 +6,9 @@ from math import sqrt
 
 # vocabulary:
 #	<pad>:0
-#	<unk>:1
+#	<sos>:1
 #	<eos>:2
-#	<sos>:3
+#	<unk>:3
 #	...
 # for the classier of the decoder, <sos> is omitted
 
@@ -19,8 +19,9 @@ class EncoderLayer(nn.Module):
 	# attn_drop: dropout for MultiHeadAttention
 	# num_head: number of heads in MultiHeadAttention
 	# ahsize: hidden size of MultiHeadAttention
+	# norm_residue: residue with layer normalized representation
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
 
 		super(EncoderLayer, self).__init__()
 
@@ -30,11 +31,13 @@ class EncoderLayer(nn.Module):
 
 		self.attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 
-		self.ff = PositionwiseFF(isize, _fhsize, dropout, True)
+		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residue)
 
 		self.layer_normer = nn.LayerNorm(isize, eps=1e-06)
 
 		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
+
+		self.norm_residue = norm_residue
 
 	# inputs: input of this layer (bsize, seql, isize)
 
@@ -46,11 +49,11 @@ class EncoderLayer(nn.Module):
 		if self.drop is not None:
 			context = self.drop(context)
 
-		context = context + inputs
+		context = context + (_inputs if self.norm_residue else inputs)
 
-		_context = self.ff(context)
+		context = self.ff(context)
 
-		return _context + context
+		return context
 
 class Encoder(nn.Module):
 

@@ -12,8 +12,9 @@ class DecoderLayer(nn.Module):
 	# attn_drop: dropout for MultiHeadAttention
 	# num_head: number of heads in MultiHeadAttention
 	# ahsize: hidden size of MultiHeadAttention
+	# norm_residue: residue with layer normalized representation
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
 
 		super(DecoderLayer, self).__init__()
 
@@ -24,7 +25,7 @@ class DecoderLayer(nn.Module):
 		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 
-		self.ff = PositionwiseFF(isize, _fhsize, dropout, True)
+		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residue)
 
 		self.layer_normer1 = nn.LayerNorm(isize, eps=1e-06)
 		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
@@ -35,6 +36,8 @@ class DecoderLayer(nn.Module):
 		else:
 			self.d1 = None
 			self.d2 = None
+
+		self.norm_residue = norm_residue
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: embedding of decoded translation (bsize, nquery, isize)
@@ -55,7 +58,7 @@ class DecoderLayer(nn.Module):
 			if self.d1 is not None:
 				context = self.d1(context)
 
-			context = context + inputo
+			context = context + (_inputo if self.norm_residue else inputo)
 
 		else:
 			_query_unit = self.layer_normer1(query_unit)
@@ -74,22 +77,22 @@ class DecoderLayer(nn.Module):
 			if self.d1 is not None:
 				context = self.d1(context)
 
-			context = context + query_unit
+			context = context + (_query_unit if self.norm_residue else query_unit)
 
 		_context = self.layer_normer2(context)
-		_context = self.cross_attn(_context, inpute, mask=src_pad_mask)
+		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
 
 		if self.d2 is not None:
-			_context = self.d2(_context)
+			_context_new = self.d2(_context_new)
 
-		context = context + _context
+		context = _context_new + (_context if self.norm_residue else context)
 
-		_context = self.ff(context)
+		context = self.ff(context)
 
 		if states_return is None:
-			return _context + context
+			return context
 		else:
-			return _context + context, states_return
+			return context, states_return
 
 class Decoder(nn.Module):
 

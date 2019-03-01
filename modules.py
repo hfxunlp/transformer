@@ -6,26 +6,38 @@ from torch import nn
 from torch.nn import functional as nnFunc
 from torch.autograd import Function
 
-class PositionwiseFF(nn.Sequential):
+class PositionwiseFF(nn.Module):
 
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_input=True, use_GeLU=False):
+	def __init__(self, isize, hsize=None, dropout=0.0, norm_residue=False, use_GeLU=False):
+
+		super(PositionwiseFF, self).__init__()
 
 		_hsize = isize * 4 if hsize is None else hsize
 
-		if norm_input:
-			if dropout > 0.0:
-				super(PositionwiseFF, self).__init__(nn.LayerNorm(isize, eps=1e-06), nn.Linear(isize, _hsize), nn.Dropout(dropout, inplace=True), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize), nn.Dropout(dropout, inplace=True))
-			else:
-				super(PositionwiseFF, self).__init__(nn.LayerNorm(isize, eps=1e-06), nn.Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize))
+		if dropout > 0.0:
+			self.nets = nn.ModuleList([nn.Linear(isize, _hsize), nn.Dropout(dropout, inplace=True), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize), nn.Dropout(dropout, inplace=True)])
 		else:
-			if dropout > 0.0:
-				super(PositionwiseFF, self).__init__(nn.Linear(isize, _hsize), nn.Dropout(dropout, inplace=True), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize), nn.Dropout(dropout, inplace=True))
-			else:
-				super(PositionwiseFF, self).__init__(nn.Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize))
+			self.nets = nn.ModuleList([nn.Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize)])
 
+		self.normer = nn.LayerNorm(isize, eps=1e-06)
+
+		self.norm_residue = norm_residue
+
+
+	def forward(self, x):
+
+		_out = self.normer(x)
+
+		out = _out
+		for net in self.nets:
+			out = net(out)
+
+		out = out + (_out if self.norm_residue else x)
+
+		return out
 
 class PositionalEmb(nn.Module):
 
@@ -161,7 +173,7 @@ class AverageAttn(nn.Module):
 	# dropout: dropout rate for Feed-forward NN
 	# num_pos: maximum length of sentence cached, extended length will be generated while needed and droped immediately after that
 
-	def __init__(self, isize, hsize=None, dropout=0.0, num_pos=512):
+	def __init__(self, isize, hsize=None, dropout=0.0, num_pos=512, use_GeLU=False):
 
 		super(AverageAttn, self).__init__()
 
@@ -170,7 +182,7 @@ class AverageAttn(nn.Module):
 		self.num_pos = num_pos
 		self.register_buffer('w', torch.Tensor(num_pos, num_pos))
 
-		self.ffn = PositionwiseFF(isize, _hsize, dropout, False)
+		self.ffn = nn.Sequential(nn.Linear(isize, _hsize), nn.Dropout(dropout, inplace=True), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize), nn.Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(nn.Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize))
 
 		self.gw = nn.Linear(isize * 2, isize * 2)
 

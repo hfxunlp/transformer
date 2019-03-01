@@ -35,7 +35,7 @@ def handle(srcfs, srcft):
 	bmeanratio /= ndata
 	omeanratio /= ndata
 
-	print("Max/mean bpe bilingual ratio is: %.3f / %.3f\nMax/mean original bilingual ratio is: %.3f / %.3f" % (bmaxratio, bmeanratio, omaxratio, omeanratio))
+	print("Max/mean/adv bpe bilingual ratio is: %.3f / %.3f / %.3f\nMax/mean/adv original bilingual ratio is: %.3f / %.3f / %.3f" % (bmaxratio, bmeanratio, min(bmaxratio, bmeanratio * 2.5) + 0.001, omaxratio, omeanratio, min(omaxratio, omeanratio * 2.5) + 0.001))
 
 if __name__ == "__main__":
 	handle(sys.argv[1], sys.argv[2])
