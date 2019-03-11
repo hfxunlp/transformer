@@ -400,7 +400,7 @@ Measured with `multi-bleu-detok.perl`:
 | Case-sensitive | 32.63 | 32.26 | 32.97 | 32.89 |
 | Case-insensitive | 34.06 | 33.70 | 34.36 | 34.28 |
 
-Note: The result of [THUMT implementation](https://github.com/thumt/THUMT) is from [Accelerating Neural Transformer via an Average Attention Network](https://arxiv.org/abs/1805.00631). Averaging of models is not applied in the test of this implementation, since this experiment uses different settings for the saving of checkpoints, in which averaging model greatly hurts performance. Results with length penalty as THUMT applied is reported, but length penalty does not improve the performance of transformer in my experiments. Outputs of last encoder layer and decoder layer are not normalised in this experiment, after we add layer normalization to the output of last encoder layer and decoder layer, averaging of models can totally not work.
+Note: The result of [THUMT implementation](https://github.com/thumt/THUMT) is from [Accelerating Neural Transformer via an Average Attention Network](https://arxiv.org/abs/1805.00631). Averaging of models is not applied in the test of this implementation, since when layer normalization is applied between residue connections, averaging model might hurts performance. Results with length penalty as THUMT applied is reported, but length penalty does not improve the performance of transformer in my experiments. Outputs of last encoder layer and decoder layer are not normalised in this experiment.
 
 2, Settings: same with the first except the outputs of last encoder layer and decoder layer is normed and:
 

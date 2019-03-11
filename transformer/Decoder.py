@@ -14,7 +14,7 @@ class DecoderLayer(nn.Module):
 	# ahsize: hidden size of MultiHeadAttention
 	# norm_residue: residue with layer normalized representation
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=True):
 
 		super(DecoderLayer, self).__init__()
 

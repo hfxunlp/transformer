@@ -17,7 +17,7 @@ class DecoderLayer(nn.Module):
 	# num_head: number of heads in MultiHeadAttention
 	# ahsize: hidden size of MultiHeadAttention
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=True):
 
 		super(DecoderLayer, self).__init__()
 
