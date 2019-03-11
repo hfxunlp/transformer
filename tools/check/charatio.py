@@ -61,7 +61,7 @@ def handle(srcfs, srcft):
 	mrsc, _rsc, mrsb, _rsb, mrss, _rss = getfratio(srcfs)
 	mrtc, _rtc, mrtb, _rtb, mrts, _rts = getfratio(srcft)
 
-	print("Max/mean/adv char ratio of source data: %.3f / %.3f / %.3f\nMax/mean/adv char ratio of target data: %.3f / %.3f / %.3f / %.3f\nMax/mean/adv bpe ratio of source data: %.3f / %.3f / %.3f\nMax/mean/adv bpe ratio of target data: %.3f / %.3f / %.3f\nMax/mean/adv seperated ratio of source data: %.3f / %.3f / %.3f\nMax/mean/adv seperated ratio of target data: %.3f / %.3f / %.3f" % (mrsc, _rsc, min(mrsc, _rsc * 2.5) + 0.001, mrtc, _rtc, min(mrtc, _rtc * 2.5) + 0.001, mrsb, _rsb, min(mrsb, _rsb * 2.5) + 0.001, mrtb, _rtb, min(mrtb, _rtb * 2.5) + 0.001, mrss, _rss, min(mrss, _rss * 2.5) + 0.001, mrts, _rts, min(mrts, _rts * 2.5) + 0.001))
+	print("Max/mean/adv char ratio of source data: %.3f / %.3f / %.3f\nMax/mean/adv char ratio of target data: %.3f / %.3f / %.3f\nMax/mean/adv bpe ratio of source data: %.3f / %.3f / %.3f\nMax/mean/adv bpe ratio of target data: %.3f / %.3f / %.3f\nMax/mean/adv seperated ratio of source data: %.3f / %.3f / %.3f\nMax/mean/adv seperated ratio of target data: %.3f / %.3f / %.3f" % (mrsc, _rsc, min(mrsc, _rsc * 2.5) + 0.001, mrtc, _rtc, min(mrtc, _rtc * 2.5) + 0.001, mrsb, _rsb, min(mrsb, _rsb * 2.5) + 0.001, mrtb, _rtb, min(mrtb, _rtb * 2.5) + 0.001, mrss, _rss, min(mrss, _rss * 2.5) + 0.001, mrts, _rts, min(mrts, _rts * 2.5) + 0.001))
 
 if __name__ == "__main__":
 	handle(sys.argv[1], sys.argv[2])

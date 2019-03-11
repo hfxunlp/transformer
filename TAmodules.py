@@ -1,0 +1,29 @@
+#encoding: utf-8
+
+from math import sqrt, log, exp, pi
+import torch
+from torch import nn
+from torch.nn import functional as nnFunc
+from torch.autograd import Function
+
+from modules import GeLU_BERT
+from modules import PositionwiseFF as PositionwiseFFBase
+
+class PositionwiseFF(PositionwiseFFBase):
+
+	# isize: input dimension
+	# hsize: hidden dimension
+
+	def __init__(self, isize, hsize=None, dropout=0.0, use_GeLU=False):
+
+		super(PositionwiseFF, self).__init__(isize, hsize, dropout, False, use_GeLU)
+
+	def forward(self, x):
+
+		out = x
+		for net in self.nets:
+			out = net(out)
+
+		out = self.normer(out + x)
+
+		return out

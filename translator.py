@@ -6,15 +6,29 @@ from transformer.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 
+from utils import *
+
 has_unk = True
 
+def clear_list(lin):
+	rs = []
+	for tmpu in lin:
+		if tmpu:
+			rs.append(tmpu)
+	return rs
+
+def clean_len(line):
+	rs = clear_list(line.split())
+	return " ".join(rs), len(rs)
+
+def clean_list(lin):
+	rs = []
+	for lu in lin:
+		rs.append(" ".join(clear_list(lu.split())))
+	return rs
+
 def list_reader(fname):
-	def clear_list(lin):
-		rs = []
-		for tmpu in lin:
-			if tmpu:
-				rs.append(tmpu)
-		return rs
+
 	with open(fname, "rb") as frd:
 		for line in frd:
 			tmp = line.strip()
@@ -133,18 +147,63 @@ def data_loader(sentences_iter, vcbi, minbsize=1, bsize=64, maxpad=16, maxpart=4
 	for i_d in batch_padder(sentences_iter, vcbi, bsize, maxpad, maxpart, maxtoken, minbsize):
 		yield torch.tensor(i_d, dtype=torch.long)
 
-def load_model_cpu(modf, base_model):
-
-	mpg = torch.load(modf, map_location='cpu')
-
-	for para, mp in zip(base_model.parameters(), mpg):
-		para.data = mp.data
-
-	return base_model
-
 def load_fixing(module):
 	if "fix_load" in dir(module):
 		module.fix_load()
+
+def sorti(lin):
+
+	data = {}
+
+	for ls in lin:
+		ls = ls.strip()
+		if ls:
+			ls, lgth = clean_len(ls)
+			if lgth not in data:
+				data[lgth] = set([ls])
+			elif ls not in data[lgth]:
+				data[lgth].add(ls)
+
+	length = list(data.keys())
+	length.sort()
+
+	rs = []
+
+	for lgth in length:
+		rs.extend(data[lgth])
+
+	return rs
+
+def restore(src, tsrc, trs):
+
+	data = {}
+
+	for sl, tl in zip(tsrc, trs):
+		_sl, _tl = sl.strip(), tl.strip()
+		if _sl and _tl:
+			data[_sl] = " ".join(clear_list(_tl.split()))
+
+	rs = []
+	_tl = []
+	for line in src:
+		tmp = line.strip()
+		if tmp:
+			tmp = " ".join(clear_list(tmp.split()))
+			tmp = data.get(tmp, "").strip()
+			if tmp:
+				_tl.append(tmp)
+			elif _tl:
+				rs.append(" ".join(_tl))
+				_tl = []
+		elif _tl:
+			rs.append(" ".join(_tl))
+			_tl = []
+		else:
+			rs.append("")
+	if _tl:
+		rs.append(" ".join(_tl))
+
+	return rs
 
 class TranslatorCore:
 
@@ -247,9 +306,9 @@ class Translator:
 
 	def __init__(self, trans=None, sent_split=None, tok=None, detok=None, bpe=None, debpe=None, punc_norm=None, truecaser=None, detruecaser=None):
 
+		self.sent_split = sent_split
+
 		self.flow = []
-		if sent_split is not None:
-			self.flow.append(sent_split)
 		if punc_norm is not None:
 			self.flow.append(punc_norm)
 		if tok is not None:
@@ -269,10 +328,29 @@ class Translator:
 
 	def __call__(self, paragraph):
 
-		_tmp = paragraph
+		_tmp = [tmpu.strip() for tmpu in paragraph.strip().split("\n")]
+		_rs = []
+		_tmpi = None
+		if self.sent_split is not None:
+			np = len(_tmp) - 1
+			if np > 0:
+				for _i, _tmpu in enumerate(_tmp):
+					if _tmpu:
+						_rs.extend(self.sent_split(_tmpu))
+					if _i < np:
+						_rs.append("")
+				_tmpi = sorti(_rs)
+				_tmp = _tmpi
+			else:
+				_tmp = [" ".join(clear_list(_tmp[0].split()))]
+		else:
+			_tmp = clean_list(_tmp)
 
 		for pu in self.flow:
 			_tmp = pu(_tmp)
 
-		return " ".join(_tmp)
+		if len(_rs) > 1:
+			_tmp = restore(_rs, _tmpi, _tmp)
+			return "\n".join(_tmp)
 
+		return " ".join(_tmp)

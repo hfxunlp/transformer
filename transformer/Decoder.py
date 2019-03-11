@@ -171,6 +171,24 @@ class Decoder(nn.Module):
 
 		return out
 
+	def load_base(self, base_decoder):
+
+		self.drop = base_decoder.drop
+
+		self.wemb = base_decoder.wemb
+
+		self.pemb = base_decoder.pemb
+
+		_nets = list(base_decoder.nets)
+
+		self.nets = nn.ModuleList(_nets + list(self.nets[len(_nets):]))
+
+		self.classifier = base_decoder.classifier
+
+		self.lsm = base_decoder.lsm
+
+		self.out_normer = None if self.out_normer is None else base_decoder.out_normer
+
 	def _get_subsequent_mask(self, length):
 
 		return self.mask.narrow(1, 0, length).narrow(2, 0, length) if length > self.xseql else torch.triu(self.mask.new_ones(length, length), 1).unsqueeze(0)
@@ -425,7 +443,7 @@ class Decoder(nn.Module):
 
 	def get_sos_emb(self, inpute):
 
-		bsize, _, __ = inpute.size()
+		bsize = inpute.size(0)
 
 		return self.wemb.weight[1].reshape(1, 1, -1).expand(bsize, 1, -1)
 

@@ -126,10 +126,10 @@ class Decoder(nn.Module):
 
 		self.projector = nn.Linear(isize, isize, bias=False) if projector else None
 
-		self.classifier = nn.Sequential(nn.Linear(isize * 2, isize, bias=False), nn.Tanh(), nn.Linear(isize, nwd))
+		self.classifier = nn.Linear(isize * 2, nwd)#nn.Sequential(nn.Linear(isize * 2, isize, bias=False), nn.Tanh(), nn.Linear(isize, nwd))
 		# be careful since this line of code is trying to share the weight of the wemb and the classifier, which may cause problems if torch.nn updates
-		if bindemb:
-			list(self.classifier.modules())[-1].weight = self.wemb.weight
+		#if bindemb:
+			#list(self.classifier.modules())[-1].weight = self.wemb.weight
 
 		self.lsm = nn.LogSoftmax(-1)
 

@@ -67,9 +67,7 @@ def handle(srcfs, srcft, tgtfs, tgtft, max_len=256, remove_same=False, shuf=True
 				if (slen <= _max_len) and (tlen <= _max_len):
 					lgth = slen + tlen
 					if lgth not in data:
-						tmp = {}
-						tmp[tlen] = [(ls, lt)]
-						data[lgth] = tmp
+						data[lgth] = {tlen: [(ls, lt)]}
 					else:
 						if tlen in data[lgth]:
 							data[lgth][tlen].append((ls, lt))

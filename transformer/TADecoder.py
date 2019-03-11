@@ -7,96 +7,7 @@ from math import sqrt
 
 from transformer.Decoder import Decoder as DecoderBase
 
-# Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network(https://arxiv.org/abs/1805.00631)
-
-class DecoderLayer(nn.Module):
-
-	# isize: input size
-	# fhsize: hidden size of PositionwiseFeedForward
-	# attn_drop: dropout for MultiHeadAttention
-	# num_head: number of heads in MultiHeadAttention
-	# ahsize: hidden size of MultiHeadAttention
-
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
-
-		super(DecoderLayer, self).__init__()
-
-		_ahsize = isize if ahsize is None else ahsize
-
-		_fhsize = _ahsize * 4 if fhsize is None else fhsize
-
-		self.self_attn = AverageAttn(isize, _fhsize, dropout)
-		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
-
-		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residue)
-
-		self.layer_normer1 = nn.LayerNorm(isize, eps=1e-06)
-		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
-
-		if dropout > 0:
-			self.d1 = nn.Dropout(dropout, inplace=True)
-			self.d2 = nn.Dropout(dropout, inplace=True)
-		else:
-			self.d1 = None
-			self.d2 = None
-
-		self.norm_residue = norm_residue
-
-	# inpute: encoded representation from encoder (bsize, seql, isize)
-	# inputo: embedding of decoded translation (bsize, nquery, isize) during training, layer normed summed previous states for decoding
-	# src_pad_mask: mask for given encoding source sentence (bsize, nquery, seql), see Encoder, expanded after generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
-	# query_unit: single query to decode, used to support decoding for given step
-	# step: current decoding step, used to average over the sum.
-
-	def forward(self, inpute, inputo, src_pad_mask=None, query_unit=None, step=1):
-
-		if query_unit is None:
-			_inputo = self.layer_normer1(inputo)
-
-			states_return = None
-
-			context = self.self_attn(_inputo, _inputo)
-
-			if self.d1 is not None:
-				context = self.d1(context)
-
-			context = context + (_inputo if self.norm_residue else inputo)
-		else:
-			_query_unit = self.layer_normer1(query_unit)
-
-			if step == 1:
-				states_return = _query_unit
-
-				context = self.self_attn(_query_unit, _query_unit, True)
-			else:
-				states_return = inputo + _query_unit
-
-				context = self.self_attn(_query_unit, states_return / step, True)
-
-			if self.d1 is not None:
-				context = self.d1(context)
-
-			context = context + (_query_unit if self.norm_residue else query_unit)
-
-		_context = self.layer_normer2(context)
-		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
-
-		if self.d2 is not None:
-			_context_new = self.d2(_context_new)
-
-		context = _context_new + (_context if self.norm_residue else context)
-
-		context = self.ff(context)
-
-		if states_return is None:
-			return context
-		else:
-			return context, states_return
-
 class Decoder(DecoderBase):
-
-	# construction function is needed, since DecoderLayer should be re-assigned.
 
 	# isize: size of word embedding
 	# nwd: number of words
@@ -111,15 +22,9 @@ class Decoder(DecoderBase):
 
 	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
 
-		_ahsize = isize if ahsize is None else ahsize
+		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindemb, forbidden_index)
 
-		_fhsize = _ahsize * 4 if fhsize is None else fhsize
-
-		super(Decoder, self).__init__(isize, nwd, num_layer, _fhsize, dropout, attn_drop, emb_w, num_head, xseql, _ahsize, norm_output, bindemb, forbidden_index)
-
-		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
-
-	# inpute: encoded representation from encoder (bsize, seql, isize)
+	# inpute: encoded representation from encoder (bsize, seql, isize, num_layer)
 	# inputo: decoded translation (bsize, nquery)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
 	#	src_pad_mask = input.eq(0).unsqueeze(1)
@@ -135,8 +40,14 @@ class Decoder(DecoderBase):
 		if self.drop is not None:
 			out = self.drop(out)
 
-		for net in self.nets:
-			out = net(inpute, out, src_pad_mask)
+		_mask = self._get_subsequent_mask(inputo.size(1))
+
+		# the following line of code is to mask <pad> for the decoder,
+		# which I think is useless, since only <pad> may pay attention to previous <pad> tokens, whos loss will be omitted by the loss function.
+		#_mask = torch.gt(_mask + inputo.eq(0).unsqueeze(1), 0)
+
+		for net, inputu in zip(self.nets, inpute.unbind(dim=-1)):
+			out = net(inputu, out, src_pad_mask, _mask)
 
 		if self.out_normer is not None:
 			out = self.out_normer(out)
@@ -145,25 +56,6 @@ class Decoder(DecoderBase):
 
 		return out
 
-	def load_base(self, base_decoder):
-
-		self.drop = base_decoder.drop
-
-		self.wemb = base_decoder.wemb
-
-		self.pemb = base_decoder.pemb
-
-		_nets = list(base_decoder.nets)
-
-		self.nets = nn.ModuleList(_nets + list(self.nets[len(_nets):]))
-
-		self.classifier = base_decoder.classifier
-
-		self.lsm = base_decoder.lsm
-
-		self.out_normer = None if self.out_normer is None else base_decoder.out_normer
-
-
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
 	#	src_pad_mask = input.eq(0).unsqueeze(1)
@@ -171,7 +63,7 @@ class Decoder(DecoderBase):
 
 	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512):
 
-		bsize, seql, _ = inpute.size()
+		bsize, seql= inpute.size()[:2]
 
 		sos_emb = self.get_sos_emb(inpute)
 
@@ -186,8 +78,8 @@ class Decoder(DecoderBase):
 
 		states = {}
 
-		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, out, 1)
+		for _tmp, (net, inputu) in enumerate(zip(self.nets, inpute.unbind(dim=-1))):
+			out, _state = net(inputu, None, src_pad_mask, None, out, True)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -207,15 +99,15 @@ class Decoder(DecoderBase):
 
 		done_trans = wds.squeeze(1).eq(2)
 
-		for i in range(2, max_len + 1):
+		for i in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i - 1).view(1, 1, -1).expand(bsize, 1, -1)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i).view(1, 1, -1).expand(bsize, 1, -1)
 
 			if self.drop is not None:
 				out = self.drop(out)
 
-			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], src_pad_mask, out, i)
+			for _tmp, (net, inputu) in enumerate(zip(self.nets, inpute.unbind(dim=-1))):
+				out, _state = net(inputu, states[_tmp], src_pad_mask, None, out, True)
 				states[_tmp] = _state
 
 			if self.out_normer is not None:
@@ -241,7 +133,7 @@ class Decoder(DecoderBase):
 
 	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False):
 
-		bsize, seql, _ = inpute.size()
+		bsize, seql = inpute.size()[:2]
 
 		beam_size2 = beam_size * beam_size
 		bsizeb2 = bsize * beam_size2
@@ -263,8 +155,8 @@ class Decoder(DecoderBase):
 
 		states = {}
 
-		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, out, 1)
+		for _tmp, (net, inputu) in enumerate(zip(self.nets, inpute.unbind(dim=-1))):
+			out, _state = net(inputu, None, src_pad_mask, None, out, True)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -288,9 +180,9 @@ class Decoder(DecoderBase):
 
 		done_trans = wds.view(bsize, beam_size).eq(2)
 
-		# inpute: (bsize, seql, isize) => (bsize * beam_size, seql, isize)
+		# inpute: (bsize, seql, isize, num_layer_enc) => (bsize * beam_size, seql, isize, num_layer_enc)
 
-		inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
+		inpute = inpute.repeat(1, beam_size, 1, 1).view(real_bsize, seql, isize, -1)
 
 		# _src_pad_mask: (bsize, 1, seql) => (bsize * beam_size, 1, seql)
 
@@ -301,15 +193,15 @@ class Decoder(DecoderBase):
 		for key, value in states.items():
 			states[key] = value.repeat(1, beam_size, 1).view(real_bsize, 1, isize)
 
-		for step in range(2, max_len + 1):
+		for step in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step - 1).view(1, 1, isize).expand(real_bsize, 1, isize)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step).view(1, 1, isize).expand(real_bsize, 1, isize)
 
 			if self.drop is not None:
 				out = self.drop(out)
 
-			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], _src_pad_mask, out, step)
+			for _tmp, (net, inputu) in enumerate(zip(self.nets, inpute.unbind(dim=-1))):
+				out, _state = net(inputu, states[_tmp], _src_pad_mask, None, out, True)
 				states[_tmp] = _state
 
 			if self.out_normer is not None:
@@ -331,7 +223,7 @@ class Decoder(DecoderBase):
 			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
 
 			if length_penalty > 0.0:
-				lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 5.0) ** length_penalty) / lpv_base)
+				lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
 
 			# clip from k ** 2 candidate and remain the top-k for each path
 			# scores: (bsize, beam_size * beam_size) => (bsize, beam_size)

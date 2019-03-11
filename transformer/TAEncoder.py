@@ -1,8 +1,12 @@
 #encoding: utf-8
 
+import torch
 from torch import nn
-from modules import *
+from modules import SelfAttn, PositionalEmb
+from TAmodules import PositionwiseFF
 from math import sqrt
+
+from transformer.Encoder import Encoder as EncoderBase
 
 # vocabulary:
 #	<pad>:0
@@ -21,7 +25,7 @@ class EncoderLayer(nn.Module):
 	# ahsize: hidden size of MultiHeadAttention
 	# norm_residue: residue with layer normalized representation
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None):
 
 		super(EncoderLayer, self).__init__()
 
@@ -31,31 +35,28 @@ class EncoderLayer(nn.Module):
 
 		self.attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 
-		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residue)
+		self.ff = PositionwiseFF(isize, _fhsize, dropout)
 
 		self.layer_normer = nn.LayerNorm(isize, eps=1e-06)
 
 		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
-		self.norm_residue = norm_residue
-
 	# inputs: input of this layer (bsize, seql, isize)
 
 	def forward(self, inputs, mask=None):
 
-		_inputs = self.layer_normer(inputs)
-		context = self.attn(_inputs, mask=mask)
+		context = self.attn(inputs, mask=mask)
 
 		if self.drop is not None:
 			context = self.drop(context)
 
-		context = context + (_inputs if self.norm_residue else inputs)
+		context = self.layer_normer(context + inputs)
 
 		context = self.ff(context)
 
 		return context
 
-class Encoder(nn.Module):
+class Encoder(EncoderBase):
 
 	# isize: size of word embedding
 	# nwd: number of words
@@ -66,22 +67,18 @@ class Encoder(nn.Module):
 	# xseql: maxmimum length of sequence
 	# ahsize: number of hidden units for MultiHeadAttention
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=512, ahsize=None, norm_output=True):
-
-		super(Encoder, self).__init__()
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=512, ahsize=None, norm_output=True, num_layer_dec=6):
 
 		_ahsize = isize if ahsize is None else ahsize
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		super(Encoder, self).__init__(isize, nwd, num_layer, _fhsize, dropout, attn_drop, num_head, xseql, _ahsize, norm_output)
 
-		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
-
-		self.pemb = PositionalEmb(isize, xseql, 0, 0)
 		self.nets = nn.ModuleList([EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
 
-		self.out_normer = nn.LayerNorm(isize, eps=1e-06) if norm_output else None
+		self.tattn_w = nn.Parameter(torch.Tensor(num_layer + 1, num_layer_dec).uniform_(- sqrt(6.0 / num_layer + num_layer_dec + 1), sqrt(6.0 / num_layer + num_layer_dec + 1)))
+		self.tattn_drop = nn.Dropout(dropout) if dropout > 0.0 else None
 
 	# inputs: (bsize, seql)
 	# mask: (bsize, 1, seql), generated with:
@@ -96,21 +93,19 @@ class Encoder(nn.Module):
 		if self.drop is not None:
 			out = self.drop(out)
 
+		out = self.out_normer(out)
+		outs = []
+		outs.append(out)
+
 		for net in self.nets:
 			out = net(out, mask)
+			outs.append(out)
 
-		return out if self.out_normer is None else self.out_normer(out)
+		out = torch.stack(outs, -1)
 
-	def load_base(self, base_encoder):
+		osize = out.size()
+		out = torch.mm(out.view(-1, osize[-1]), self.tattn_w.softmax(dim=0) if self.tattn_drop is None else self.tattn_drop(self.tattn_w).softmax(dim=0))
+		osize = list(osize)
+		osize[-1] = -1
 
-		self.drop = base_encoder.drop
-
-		self.wemb = base_encoder.wemb
-
-		self.pemb = base_encoder.pemb
-
-		_nets = list(base_encoder.nets)
-
-		self.nets = nn.ModuleList(_nets + list(self.nets[len(_nets):]))
-
-		self.out_normer = None if self.out_normer is None else base_encoder.out_normer
+		return out.view(osize)
