@@ -379,7 +379,7 @@ Speed on nVidia TITAN X GPU(s) measured by decoding tokens (`<eos>` counted and 
 | 1 | 5800 |
 | 2 | 10100 |
 
-1, Settings: [WMT 2017, Germany -> English task](http://data.statmt.org/wmt17/translation-task/preprocessed/de-en/).
+1, Settings: [WMT 2017, German -> English task](http://data.statmt.org/wmt17/translation-task/preprocessed/de-en/).
 
 | Options | Value |
 | :------| ------: |
@@ -418,7 +418,7 @@ Measured with `multi-bleu-detok.perl`:
 | Case-sensitive | 32.03 | 32.09 | 32.60 | 31.93 | 32.13 | 32.17 | 32.07 | 32.44 | 32.55 | 32.87 | 32.29 |
 | Case-insensitive | 33.46 | 33.55 | 34.06 | 33.33 | 33.53 | 33.63 | 33.47 | 33.89 | 33.93 | 34.32 | 33.73 |
 
-3, Settings: WMT 2014, English -> Germany, 32k independent BPE with 8 as vocabulary threshold for BPE.
+3, Settings: WMT 2014, English -> German, 32k independent BPE with 8 as vocabulary threshold for BPE.
 
 | Options | Value |
 | :------| ------: |
@@ -429,6 +429,7 @@ Measured with `multi-bleu-detok.perl`:
 
 | Newstest 2014 | Original Paper | Averaging 5 Checkpoints for Original Paper | Original Implementation | Averaging 5 Checkpoints for Original Implementation |
 | :------| ------: | ------: | ------: | ------: |
+| Case-sensitive | 27.41 | 27.77 | 27.18  | 27.41 |
 | Case-insensitive | 27.95 | 28.32 | 27.72  | 27.96 |
 
 There is a difference between the Transformer in the original paper (residue connections are layer normalised) and their official implementation (not normalised).
