@@ -13,6 +13,6 @@ class Encoder(nn.Module):
 	# mask: (bsize, 1, seql), generated with:
 	#	mask = inputs.eq(0).unsqueeze(1)
 
-	def forward(self, inputs, mask=None):
+	def forward(self, *inputs, **kwargs):
 
-		return [model(inputs, mask) for model in self.nets]
+		return [model(*inputs, **kwargs) for model in self.nets]

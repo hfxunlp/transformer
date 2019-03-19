@@ -26,6 +26,7 @@ save_optm_state = False
 
 save_every = None
 num_checkpoint = 16
+epoch_start_checkpoint_save = 0
 
 epoch_save = True
 

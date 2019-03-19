@@ -4,6 +4,7 @@ import torch
 from torch.nn.init import xavier_uniform_
 
 from random import sample
+from random import seed as rpyseed
 
 import logging
 
@@ -113,3 +114,40 @@ def init_model_params(modin):
 		if p.requires_grad and (p.dim() > 1):
 			xavier_uniform_(p)
 	return modin
+
+def set_random_seed(seed, set_cuda=False):
+
+	_rseed = torch.initial_seed() if seed is None else seed
+	rpyseed(_rseed)
+	torch.manual_seed(_rseed)
+	if set_cuda:
+		torch.cuda.manual_seed_all(_rseed)
+
+def repeat_bsize_for_beam_tensor(tin, beam_size):
+
+	_tsize = list(tin.size())
+	_rarg = [beam_size if i == 1 else 1 for i in range(len(_tsize))]
+	_tsize[0] *= beam_size
+	_tout = tin.repeat(*_rarg).view(_tsize)
+
+	return _tout
+
+def expand_bsize_for_beam(*inputs, beam_size=1):
+
+	outputs = []
+	for inputu in inputs:
+		if inputu is None:
+			outputs.append(None)
+		elif isinstance(inputu, list):
+			outputs.append(list(expand_bsize_for_beam(*inputu, beam_size=beam_size)))
+		elif isinstance(inputu, tuple):
+			outputs.append(tuple(expand_bsize_for_beam(*inputu, beam_size=beam_size)))
+		elif isinstance(inputu, dict):
+			_tmp = {}
+			for _k, _v in inputu.items():
+				_tmp[_k] = expand_bsize_for_beam(_v, beam_size=beam_size)
+			outputs.append(_tmp)
+		else:
+			outputs.append(repeat_bsize_for_beam_tensor(inputu, beam_size))
+
+	return outputs[0] if len(inputs) == 1 else tuple(outputs)

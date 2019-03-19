@@ -3,6 +3,7 @@
 import torch
 from torch import nn
 from modules import *
+from utils import repeat_bsize_for_beam_tensor
 from math import sqrt
 
 class DecoderLayer(nn.Module):
@@ -338,7 +339,7 @@ class Decoder(nn.Module):
 		# states[i]: (bsize, 1, isize) => (bsize * beam_size, 1, isize)
 
 		for key, value in states.items():
-			states[key] = value.repeat(1, beam_size, 1).view(real_bsize, 1, isize)
+			states[key] = repeat_bsize_for_beam_tensor(value, beam_size)
 
 		for step in range(1, max_len):
 

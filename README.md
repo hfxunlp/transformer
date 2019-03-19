@@ -1,5 +1,5 @@
-# Transformer
-A pytorch based [transformer](https://arxiv.org/abs/1706.03762) implementation.
+# Neutron
+Neutron: A pytorch based implementation of [Transformer](https://arxiv.org/abs/1706.03762) and its variants.
 
 This project is developed with python 3.7.
 
@@ -67,8 +67,8 @@ export numrules=1
 Generate training data for `train.py` with `bash scripts/mktrain.sh`, configure following variables in `mktrain.sh` for your usage (the other variables should comply with those in `scripts/mkbpe.sh`):
 
 ```
-# "vsize" is the size of the vocabulary for both source language and its translation. The real vocabulary size will be 4 greater than this value because of special tags ("<sos>", "<eos>", "<unk>" and "<pad>").
-export vsize=32000
+# "vsize" is the size of the vocabulary for both source language and its translation. Set a very large number to use the full vocabulary for BPE. The real vocabulary size will be 4 greater than this value because of special tags ("<sos>", "<eos>", "<unk>" and "<pad>").
+export vsize=65536
 
 # maximum number of tokens allowed for trained sentences
 export maxtokens=256
@@ -117,6 +117,8 @@ save_optm_state = False
 save_every = None
 # maximum number of checkpoint models saved, useful for average or ensemble.
 num_checkpoint = 8
+# start saving checkpoints only after this epoch
+epoch_start_checkpoint_save = 0
 
 # save a model for every epoch regardless whether a lower loss/error rate has been reached. Useful for ensemble.
 epoch_save = True
@@ -300,13 +302,13 @@ A model encapsulates several standard decoders for ensemble decoding.
 
 A model encapsulates several average decoders proposed by [Accelerating Neural Transformer via an Average Attention Network](https://arxiv.org/abs/1805.00631) for ensemble decoding.
 
-#### `Hier*.py`
+#### `AGG/`
+
+Implementation of aggregation models.
+
+##### `Hier*.py`
 
 Hierarchical aggregation proposed in [Exploiting Deep Representations for Neural Machine Translation](https://arxiv.org/abs/1810.10181).
-
-#### `Incept*.py`
-
-Inception of transformer tries to generate more complex representation with more layers while decreasing the depth of transformer, and can provide better performance than Hierarchical aggregation in a none pretraining setting, proposed by Hongfei XU and implemented here.
 
 ### `parallel/`
 
@@ -377,7 +379,7 @@ Speed on nVidia TITAN X GPU(s) measured by decoding tokens (`<eos>` counted and 
 | 1 | 5800 |
 | 2 | 10100 |
 
-1, Settings: [WMT 2017, German -> English task](http://data.statmt.org/wmt17/translation-task/preprocessed/de-en/).
+1, Settings: [WMT 2017, Germany -> English task](http://data.statmt.org/wmt17/translation-task/preprocessed/de-en/).
 
 | Options | Value |
 | :------| ------: |
@@ -416,9 +418,43 @@ Measured with `multi-bleu-detok.perl`:
 | Case-sensitive | 32.03 | 32.09 | 32.60 | 31.93 | 32.13 | 32.17 | 32.07 | 32.44 | 32.55 | 32.87 | 32.29 |
 | Case-insensitive | 33.46 | 33.55 | 34.06 | 33.33 | 33.53 | 33.63 | 33.47 | 33.89 | 33.93 | 34.32 | 33.73 |
 
+3, Settings: WMT 2014, English -> Germany, 32k independent BPE with 8 as vocabulary threshold for BPE.
+
+| Options | Value |
+| :------| ------: |
+| Vocabulary size (special tokens included) | 34324/34429 |
+| Minimum decoded tokens per optimization step | 25000 |
+
+Measured with `multi-bleu-detok.perl`:
+
+| Newstest 2014 | Original Paper | Averaging 5 Checkpoints for Original Paper | Original Implementation | Averaging 5 Checkpoints for Original Implementation |
+| :------| ------: | ------: | ------: | ------: |
+| Case-insensitive | 27.95 | 28.32 | 27.72  | 27.96 |
+
+There is a difference between the Transformer in the original paper (residue connections are layer normalised) and their official implementation (not normalised).
+
 ## Acknowledgements
 
-The project starts when Hongfei XU (the developer) was a postgraduate student at [Zhengzhou University](http://www5.zzu.edu.cn/nlp/), and continues when he is a PhD candidate at [Saarland University](https://www.uni-saarland.de/nc/en/home.html) supervised by [Prof. Dr. Josef van Genabith](https://www.dfki.de/en/web/about-us/employee/person/jova02/) and a Junior Researcher at [DFKI, MLT (German Research Center for Artificial Intelligence, Multilinguality and Language Technology)](https://www.dfki.de/en/web/research/research-departments-and-groups/multilinguality-and-language-technology/). Hongfei XU enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project. 
+The project starts when Hongfei XU (the developer) was a postgraduate student at [Zhengzhou University](http://www5.zzu.edu.cn/nlp/), and continues when he is a PhD candidate at [Saarland University](https://www.uni-saarland.de/nc/en/home.html) supervised by [Prof. Dr. Josef van Genabith](https://www.dfki.de/en/web/about-us/employee/person/jova02/) and a Junior Researcher at [DFKI, MLT (German Research Center for Artificial Intelligence, Multilinguality and Language Technology)](https://www.dfki.de/en/web/research/research-departments-and-groups/multilinguality-and-language-technology/). Hongfei XU enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project.
+
+Details of this project can be found [here](https://arxiv.org/abs/1903.07402), and please cite it if you enjoy the implementation :)
+
+```
+@article{xu2019neutron,
+  author          = {Xu, Hongfei and Liu, Qiuhui},
+  title           = "{Neutron: An Implementation of the Transformer Translation Model and its Variants}",
+  journal         = {arXiv preprint arXiv:1903.07402},
+  archivePrefix   = "arXiv",
+  eprinttype      = {arxiv},
+  eprint          = {1903.07402},
+  primaryClass    = "cs.CL",
+  keywords        = {Computer Science - Computation and Language},
+  year            = 2019,
+  month           = "March",
+  url             = {https://arxiv.org/abs/1903.07402},
+  pdf             = {https://arxiv.org/pdf/1903.07402}
+}
+```
 
 ## Contributor(s)
 

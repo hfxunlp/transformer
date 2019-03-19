@@ -15,7 +15,6 @@ from utils import *
 from lrsch import GoogleLR
 from loss import LabelSmoothingLoss
 
-from random import seed as rpyseed
 from random import shuffle
 
 from tqdm import tqdm
@@ -29,7 +28,7 @@ import cnfg
 
 from transformer.NMT import NMT
 
-def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, chkpof=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False):
+def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, chkpof=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False):
 
 	sum_loss = 0.0
 	sum_wd = 0
@@ -92,12 +91,28 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			else:
 				optm.step()
 			if _cur_rstep is not None:
+				if save_checkp_epoch and (save_every is not None) and (_cur_rstep % save_every == 0) and (chkpf is not None) and (_cur_rstep > 0):
+					if num_checkpoint > 1:
+						_fend = "_%d.t7" % (_cur_checkid)
+						_chkpf = chkpf[:-3] + _fend
+						if chkpof is not None:
+							_chkpof = chkpof[:-3] + _fend
+						_cur_checkid = (_cur_checkid + 1) % num_checkpoint
+					else:
+						_chkpf = chkpf
+						_chkpof = chkpof
+					#save_model(model, _chkpf, isinstance(model, nn.DataParallel))
+					save_model(model, _chkpf, multi_gpu)
+					if chkpof is not None:
+						torch.save(optm.state_dict(), _chkpof)
+					if statesf is not None:
+						save_states(statesf, tl[cur_b - 1:])
 				_cur_rstep -= 1
 				if _cur_rstep <= 0:
 					break
 			lrsch.step()
 
-		if (save_every is not None) and (cur_b % save_every == 0) and (chkpf is not None) and (cur_b < ndata):
+		if save_checkp_epoch and (_cur_rstep is None) and (save_every is not None) and (cur_b % save_every == 0) and (chkpf is not None) and (cur_b < ndata):
 			if num_checkpoint > 1:
 				_fend = "_%d.t7" % (_cur_checkid)
 				_chkpf = chkpf[:-3] + _fend
@@ -213,15 +228,19 @@ if use_cuda and torch.cuda.is_available():
 		cuda_devices = None
 	torch.cuda.set_device(cuda_device.index)
 else:
+	use_cuda = False
 	cuda_device = False
 	multi_gpu = False
 	cuda_devices = None
+
+set_random_seed(cnfg.seed, use_cuda)
 
 use_ams = cnfg.use_ams
 
 save_optm_state = cnfg.save_optm_state
 
 save_every = cnfg.save_every
+start_chkp_save = cnfg.epoch_start_checkpoint_save
 
 epoch_save = cnfg.epoch_save
 
@@ -250,12 +269,6 @@ nvalid = int(vd["ndata"][:][0])
 nwordi = int(td["nwordi"][:][0])
 nwordt = int(td["nwordt"][:][0])
 
-_rseed = torch.initial_seed() if cnfg.seed is None else cnfg.seed
-rpyseed(_rseed)
-torch.manual_seed(_rseed)
-if use_cuda:
-	torch.cuda.manual_seed_all(_rseed)
-
 logger.info("Design models with seed: %d" % torch.initial_seed())
 mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
@@ -263,7 +276,10 @@ fine_tune_m = cnfg.fine_tune_m
 
 tl = [("i" + str(i), "t" + str(i)) for i in range(ntrain)]
 
-if fine_tune_m is not None:
+if fine_tune_m is None:
+	mymodel = init_model_params(mymodel)
+	mymodel.apply(init_fixing)
+else:
 	logger.info("Load pre-trained model from: " + fine_tune_m)
 	mymodel = load_model_cpu(fine_tune_m, mymodel)
 
@@ -272,20 +288,10 @@ if fine_tune_m is not None:
 #lossf = nn.NLLLoss(lw, ignore_index=0, reduction='sum')
 lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=0, reduction='sum', forbidden_index=cnfg.forbidden_indexes)
 
-if use_cuda:
-	mymodel.to(cuda_device)
-	lossf.to(cuda_device)
-
-if fine_tune_m is None:
-	mymodel = init_model_params(mymodel)
-	mymodel.apply(init_fixing)
-
 if cnfg.src_emb is not None:
 	_emb = torch.load(cnfg.src_emb, map_location='cpu')
 	if nwordi < _emb.size(0):
 		_emb = _emb.narrow(0, 0, nwordi).contiguous()
-	if use_cuda:
-		_emb = _emb.to(cuda_device)
 	mymodel.enc.wemb.weight.data = _emb
 	if cnfg.freeze_srcemb:
 		mymodel.enc.wemb.weight.requires_grad_(False)
@@ -295,13 +301,15 @@ if cnfg.tgt_emb is not None:
 	_emb = torch.load(cnfg.tgt_emb, map_location='cpu')
 	if nwordt < _emb.size(0):
 		_emb = _emb.narrow(0, 0, nwordt).contiguous()
-	if use_cuda:
-		_emb = _emb.to(cuda_device)
 	mymodel.dec.wemb.weight.data = _emb
 	if cnfg.freeze_tgtemb:
 		mymodel.dec.wemb.weight.requires_grad_(False)
 	else:
 		mymodel.dec.wemb.weight.requires_grad_(True)
+
+if use_cuda:
+	mymodel.to(cuda_device)
+	lossf.to(cuda_device)
 
 # lr will be over written by GoogleLR before used
 optimizer = optim.Adam(mymodel.parameters(), lr=1e-4, betas=(0.9, 0.98), eps=1e-9, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
@@ -334,7 +342,7 @@ else:
 	cnt_states = cnfg.train_statesf
 	if (cnt_states is not None) and p_check(cnt_states):
 		logger.info("Continue last epoch")
-		tminerr, done_tokens, cur_checkid, remain_steps, _ = train(td, load_states(cnt_states), vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, False)
+		tminerr, done_tokens, cur_checkid, remain_steps, _ = train(td, load_states(cnt_states), vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, False, False)
 		vloss, vprec = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu)
 		logger.info("Epoch: 0, train loss: %.3f, valid loss/error: %.3f %.2f" % (tminerr, vloss, vprec))
 		save_model(mymodel, wkdir + "train_0_%.3f_%.3f_%.2f.t7" % (tminerr, vloss, vprec), multi_gpu)
@@ -362,7 +370,7 @@ else:
 namin = 0
 
 for i in range(1, maxrun + 1):
-	terr, done_tokens, cur_checkid, remain_steps, _Dws = train(td, tl, vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, dss_ws > 0)
+	terr, done_tokens, cur_checkid, remain_steps, _Dws = train(td, tl, vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, dss_ws > 0, i >= start_chkp_save)
 	vloss, vprec = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu)
 	logger.info("Epoch: %d, train loss: %.3f, valid loss/error: %.3f %.2f" % (i, terr, vloss, vprec))
 
