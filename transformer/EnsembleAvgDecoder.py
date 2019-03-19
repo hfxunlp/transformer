@@ -2,6 +2,7 @@
 
 import torch
 from torch import nn
+from utils import repeat_bsize_for_beam_tensor
 from math import sqrt
 
 from transformer.EnsembleDecoder import Decoder as DecoderBase
@@ -195,7 +196,7 @@ class Decoder(DecoderBase):
 
 		for key, value in states.items():
 			for _key, _value in value.items():
-				value[_key] = _value.repeat(1, beam_size, 1).view(real_bsize, 1, isize)
+				value[_key] = repeat_bsize_for_beam_tensor(_value, beam_size)
 
 		for step in range(2, max_len + 1):
 
