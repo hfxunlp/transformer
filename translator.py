@@ -254,7 +254,7 @@ class TranslatorCore:
 					cuda_devices = [int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(",")]
 					multi_gpu = True
 				else:
-					cuda_device = torch.device("cuda:" + gpuid[gpuid.rfind(","):].strip())
+					cuda_device = torch.device("cuda:" + gpuid[gpuid.rfind(",") + 1:].strip())
 					multi_gpu = False
 					cuda_devices = None
 			else:
