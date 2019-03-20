@@ -264,26 +264,26 @@ class SelfAttn(nn.Module):
 		adim = self.attn_dim
 
 		# real_iQ: MultiHead iQ (bsize, num_query, vsize) => (bsize, nheads, nquery, adim)
-		# real_iK: MultiHead iK (bsize, nquery, vsize) => (bsize, nheads, nquery, adim)
-		# real_iV: MultiHead iV (bsize, nquery, vsize) => (bsize, nheads, nquery, adim)
+		# real_iK: MultiHead iK (bsize, nquery, vsize) => (bsize, nheads, adim, seql)
+		# real_iV: MultiHead iV (bsize, nquery, vsize) => (bsize, nheads, seql, adim)
 
 		if iK is None:
 
-			_out = self.adaptor(iQ).view(bsize, nquery, 3, nheads, adim).transpose(1, 3)
+			real_iQ, real_iK, real_iV = self.adaptor(iQ).view(bsize, nquery, 3, nheads, adim).unbind(2)
 
-			real_iQ, real_iK, real_iV = _out.unbind(2)
+			real_iQ, real_iK, real_iV = real_iQ.transpose(1, 2), real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
 			
 		else:
 
 			seql = iK.size(1)
 
-			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), self.adaptor.bias.narrow(0, 0, self.hsize) if self.adaptor.bias else None).view(bsize, nquery, nheads, adim).transpose(1, 2), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize) if self.adaptor.bias else None).view(bsize, seql, 2, nheads, adim).transpose(1, 3)
+			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), self.adaptor.bias.narrow(0, 0, self.hsize) if self.adaptor.bias else None).view(bsize, nquery, nheads, adim).transpose(1, 2), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize) if self.adaptor.bias else None).view(bsize, seql, 2, nheads, adim)
 
 			real_iK, real_iV = _out.unbind(2)
+			real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
 
-		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, seql, adim)' => (bsize, nheads, nquery, seql)
+		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, adim, seql) => (bsize, nheads, nquery, seql)
 
-		real_iK = real_iK.transpose(2, 3)
 		scores = torch.div(torch.matmul(real_iQ, real_iK), sqrt(adim))
 
 		if mask is not None:
@@ -345,13 +345,13 @@ class CrossAttn(nn.Module):
 		# real_iK: MultiHead iK (bsize, seql, vsize) => (bsize, nheads, seql, adim)
 		# real_iV: MultiHead iV (bsize, seql, vsize) => (bsize, nheads, seql, adim)
 
-		real_iQ, _out = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2), self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim).transpose(1, 3)
+		real_iQ, _out = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2), self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim)
 
 		real_iK, real_iV = _out.unbind(2)
+		real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
 
-		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, seql, adim)' => (bsize, nheads, nquery, seql)
+		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, adim, seql) => (bsize, nheads, nquery, seql)
 
-		real_iK = real_iK.transpose(2, 3)
 		scores = torch.div(torch.matmul(real_iQ, real_iK), sqrt(adim))
 
 		if mask is not None:

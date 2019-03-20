@@ -358,11 +358,11 @@ Build vocabulary for the training set.
 
 #### `mkiodata.py`
 
-Convert text data to hdf5 format for the training script. Settings for the training data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/tools/mkiodata.py#L139).
+Convert text data to hdf5 format for the training script. Settings for the training data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/tools/mkiodata.py#L157).
 
 #### `mktest.py`
 
-Convert translation requests to hdf5 format for the prediction script. Settings for the test data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/tools/mktest.py#L117).
+Convert translation requests to hdf5 format for the prediction script. Settings for the test data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/tools/mktest.py#L140).
 
 #### `check/`
 
