@@ -112,13 +112,15 @@ freeze_tgtemb = False
 
 # saving the optimizer state or not.
 save_optm_state = False
+# saving shuffled sequence of training set or not 
+save_train_state = False
 
 # after how much step save a checkpoint which you can fine tune with.
-save_every = None
+save_every = 1500
 # maximum number of checkpoint models saved, useful for average or ensemble.
-num_checkpoint = 8
+num_checkpoint = 4
 # start saving checkpoints only after this epoch
-epoch_start_checkpoint_save = 0
+epoch_start_checkpoint_save = 3
 
 # save a model for every epoch regardless whether a lower loss/error rate has been reached. Useful for ensemble.
 epoch_save = True
@@ -144,10 +146,10 @@ use_cuda = True
 gpuid = 'cuda:0'
 
 # use multi-gpu for translating or not. "predict.py" will take the last gpu rather than the first in case multi_gpu_decoding is set to False to avoid potential break due to out of memory, because the first gpu is the main device by default which takes more jobs.
-multi_gpu_decoding = True
+multi_gpu_decoding = False
 
-# number of training steps
-training_steps = None
+# number of training steps, 300000 for transformer big.
+training_steps = 100000
 
 # to accelerate training through sampling, 0.8 and 0.1 in: Dynamic Sentence Sampling for Efficient Training of Neural Machine Translation
 dss_ws = None

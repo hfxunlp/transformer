@@ -138,14 +138,14 @@ class MultiHeadAttn(nn.Module):
 		adim = self.attn_dim
 
 		# real_iQ: MultiHead iQ (bsize, num_query, vsize) => (bsize, nheads, nquery, adim)
-		# real_iK: MultiHead iK (bsize, seql, vsize) => (bsize, nheads, seql, adim)
+		# real_iK: MultiHead iK (bsize, seql, vsize) => (bsize, nheads, adim, seql)
 		# real_iV: MultiHead iV (bsize, seql, vsize) => (bsize, nheads, seql, adim)
 
-		real_iQ, real_iK, real_iV = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2), self.key_adaptor(iK).view(bsize, seql, nheads, adim).transpose(1, 2), self.value_adaptor(iV).view(bsize, seql, nheads, adim).transpose(1, 2)
+		real_iQ, real_iK, real_iV = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2), self.key_adaptor(iK).view(bsize, seql, nheads, adim).permute(0, 2, 3, 1), self.value_adaptor(iV).view(bsize, seql, nheads, adim).transpose(1, 2)
 
-		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, seql, adim)' => (bsize, nheads, nquery, seql)
+		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, adim, seql) => (bsize, nheads, nquery, seql)
 
-		scores = torch.div(torch.matmul(real_iQ, real_iK.transpose(2, 3)), sqrt(adim))
+		scores = torch.div(torch.matmul(real_iQ, real_iK), sqrt(adim))
 
 		if mask is not None:
 			scores.masked_fill_(torch.unsqueeze(mask, 1).expand_as(scores), -1e32)
@@ -269,20 +269,22 @@ class SelfAttn(nn.Module):
 
 		if iK is None:
 
-			_out = self.adaptor(iQ)
+			_out = self.adaptor(iQ).view(bsize, nquery, 3, nheads, adim).transpose(1, 3)
 
-			real_iQ, real_iK, real_iV = _out.narrow(-1, 0, self.hsize).contiguous().view(bsize, nquery, nheads, adim).transpose(1, 2), _out.narrow(-1, self.hsize, self.hsize).contiguous().view(bsize, nquery, nheads, adim).transpose(1, 2), _out.narrow(-1, self.hsize + self.hsize, self.hsize).contiguous().view(bsize, nquery, nheads, adim).transpose(1, 2)
+			real_iQ, real_iK, real_iV = _out.unbind(2)
+			
 		else:
-
-			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), self.adaptor.bias.narrow(0, 0, self.hsize) if self.adaptor.bias else None).view(bsize, nquery, nheads, adim).transpose(1, 2), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize) if self.adaptor.bias else None)
 
 			seql = iK.size(1)
 
-			real_iK, real_iV = _out.narrow(-1, 0, self.hsize).contiguous().view(bsize, seql, nheads, adim).transpose(1, 2), _out.narrow(-1, self.hsize, self.hsize).contiguous().view(bsize, seql, nheads, adim).transpose(1, 2)
+			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), self.adaptor.bias.narrow(0, 0, self.hsize) if self.adaptor.bias else None).view(bsize, nquery, nheads, adim).transpose(1, 2), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize) if self.adaptor.bias else None).view(bsize, seql, 2, nheads, adim).transpose(1, 3)
 
-		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, nquery, adim)' => (bsize, nheads, nquery, nquery)
+			real_iK, real_iV = _out.unbind(2)
 
-		scores = torch.div(torch.matmul(real_iQ, real_iK.transpose(2, 3)), sqrt(adim))
+		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, seql, adim)' => (bsize, nheads, nquery, seql)
+
+		real_iK = real_iK.transpose(2, 3)
+		scores = torch.div(torch.matmul(real_iQ, real_iK), sqrt(adim))
 
 		if mask is not None:
 			scores.masked_fill_(torch.unsqueeze(mask, 1).expand_as(scores), -1e32)
@@ -343,13 +345,14 @@ class CrossAttn(nn.Module):
 		# real_iK: MultiHead iK (bsize, seql, vsize) => (bsize, nheads, seql, adim)
 		# real_iV: MultiHead iV (bsize, seql, vsize) => (bsize, nheads, seql, adim)
 
-		real_iQ, _out = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2), self.kv_adaptor(iK)
+		real_iQ, _out = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2), self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim).transpose(1, 3)
 
-		real_iK, real_iV = _out.narrow(-1, 0, self.hsize).contiguous().view(bsize, seql, nheads, adim).transpose(1, 2), _out.narrow(-1, self.hsize, self.hsize).contiguous().view(bsize, seql, nheads, adim).transpose(1, 2)
+		real_iK, real_iV = _out.unbind(2)
 
 		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, seql, adim)' => (bsize, nheads, nquery, seql)
 
-		scores = torch.div(torch.matmul(real_iQ, real_iK.transpose(2, 3)), sqrt(adim))
+		real_iK = real_iK.transpose(2, 3)
+		scores = torch.div(torch.matmul(real_iQ, real_iK), sqrt(adim))
 
 		if mask is not None:
 			scores.masked_fill_(torch.unsqueeze(mask, 1).expand_as(scores), -1e32)

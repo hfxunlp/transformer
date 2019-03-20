@@ -101,7 +101,6 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 					else:
 						_chkpf = chkpf
 						_chkpof = chkpof
-					#save_model(model, _chkpf, isinstance(model, nn.DataParallel))
 					save_model(model, _chkpf, multi_gpu)
 					if chkpof is not None:
 						torch.save(optm.state_dict(), _chkpof)
@@ -257,7 +256,8 @@ if save_every is not None:
 	chkpf = wkdir + "checkpoint.t7"
 	if save_optm_state:
 		chkpof = wkdir + "checkpoint.optm.t7"
-	statesf = wkdir + "checkpoint.states"
+	if cnfg.save_train_state:
+		statesf = wkdir + "checkpoint.states"
 
 logger = get_logger(wkdir + "train.log")
 

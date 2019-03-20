@@ -122,6 +122,8 @@ def set_random_seed(seed, set_cuda=False):
 	torch.manual_seed(_rseed)
 	if set_cuda:
 		torch.cuda.manual_seed_all(_rseed)
+		# Make cudnn methods deterministic according to: https://github.com/OpenNMT/OpenNMT-py/blob/master/onmt/utils/misc.py#L80-L82
+		torch.backends.cudnn.deterministic = True
 
 def repeat_bsize_for_beam_tensor(tin, beam_size):
 

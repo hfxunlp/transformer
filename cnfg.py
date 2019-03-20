@@ -23,10 +23,11 @@ tgt_emb = None
 freeze_tgtemb = False
 
 save_optm_state = False
+save_train_state = False
 
-save_every = None
-num_checkpoint = 16
-epoch_start_checkpoint_save = 0
+save_every = 1500
+num_checkpoint = 4
+epoch_start_checkpoint_save = 3
 
 epoch_save = True
 
@@ -46,9 +47,9 @@ use_cuda = True
 gpuid = 'cuda:0'
 
 # use multi-gpu for translating or not. `predict.py` will take the last gpu rather than the first in case multi_gpu_decoding is set to False to avoid potential break due to out of memory, since the first gpu is the main device by default which takes more jobs.
-multi_gpu_decoding = True
+multi_gpu_decoding = False
 
-training_steps = None
+training_steps = 100000
 
 # to accelerate training through sampling, 0.8 and 0.1 in: Dynamic Sentence Sampling for Efficient Training of Neural Machine Translation
 dss_ws = None
