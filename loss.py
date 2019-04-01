@@ -72,3 +72,22 @@ class LabelSmoothingLoss(_Loss):
 			model_prob.masked_fill_(_target == self.ignore_index, 0.0)
 
 		return F.kl_div(_output, model_prob, reduction=self.reduction)
+
+class RankingLoss(_Loss):
+
+	def __init__(self, reduction='mean'):
+
+		super(RankingLoss, self).__init__()
+
+		self.reduction = reduction
+
+	# output: (batch size)
+	# target: (batch size)
+
+	def forward(self, output, target):
+
+		loss = output * target
+		if self.reduction == 'mean':
+			loss = loss / loss.numel()
+
+		return loss

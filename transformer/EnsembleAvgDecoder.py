@@ -82,7 +82,7 @@ class Decoder(DecoderBase):
 
 		# wds: (bsize, 1)
 
-		wds = torch.argmax(out, dim=-1)
+		wds = out.argmax(dim=-1)
 
 		trans = [wds]
 
@@ -113,11 +113,11 @@ class Decoder(DecoderBase):
 
 			out = torch.stack(outs).mean(0).log()
 
-			wds = torch.argmax(out, dim=-1)
+			wds = out.argmax(dim=-1)
 
 			trans.append(wds)
 
-			done_trans = torch.gt(done_trans + wds.squeeze(1).eq(2), 0)
+			done_trans = (done_trans + wds.squeeze(1).eq(2)).gt(0)
 			if done_trans.sum().item() == bsize:
 				break
 
@@ -174,7 +174,7 @@ class Decoder(DecoderBase):
 		# wds: (bsize * beam_size, 1)
 		# trans: (bsize * beam_size, 1)
 
-		scores, wds = torch.topk(out, beam_size, dim=-1)
+		scores, wds = out.topk(beam_size, dim=-1)
 		scores = scores.squeeze(1)
 		sum_scores = scores
 		wds = wds.view(real_bsize, 1)
@@ -230,7 +230,7 @@ class Decoder(DecoderBase):
 			# mask_from_done_trans: (bsize, beam_size) => (bsize, beam_size * beam_size)
 			# added_scores: (bsize, 1, beam_size) => (bsize, beam_size, beam_size)
 
-			_scores, _wds = torch.topk(out, beam_size, dim=-1)
+			_scores, _wds = out.topk(beam_size, dim=-1)
 			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
 
 			if length_penalty > 0.0:
@@ -241,11 +241,11 @@ class Decoder(DecoderBase):
 			# _inds: indexes for the top-k candidate (bsize, beam_size)
 
 			if clip_beam and (length_penalty > 0.0):
-				scores, _inds = torch.topk((_scores.view(real_bsize, beam_size) / lpv.expand(real_bsize, beam_size)).view(bsize, beam_size2), beam_size, dim=-1)
+				scores, _inds = (_scores.view(real_bsize, beam_size) / lpv.expand(real_bsize, beam_size)).view(bsize, beam_size2).topk(beam_size, dim=-1)
 				_tinds = (_inds + torch.arange(0, bsizeb2, beam_size2, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 				sum_scores = _scores.view(bsizeb2).index_select(0, _tinds).view(bsize, beam_size)
 			else:
-				scores, _inds = torch.topk(_scores.view(bsize, beam_size2), beam_size, dim=-1)
+				scores, _inds = _scores.view(bsize, beam_size2).topk(beam_size, dim=-1)
 				_tinds = (_inds + torch.arange(0, bsizeb2, beam_size2, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 				sum_scores = scores
 
@@ -265,7 +265,7 @@ class Decoder(DecoderBase):
 
 			trans = torch.cat((trans.index_select(0, _inds), wds), 1)
 
-			done_trans = torch.gt(done_trans.view(real_bsize).index_select(0, _inds) + wds.eq(2).squeeze(1), 0).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) + wds.eq(2).squeeze(1)).gt(0).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)
@@ -293,7 +293,7 @@ class Decoder(DecoderBase):
 		# if length penalty is only applied in the last step, apply length penalty
 		if (not clip_beam) and (length_penalty > 0.0):
 			scores = scores / lpv.view(bsize, beam_size)
-			scores, _inds = torch.topk(scores, beam_size, dim=-1)
+			scores, _inds = scores.topk(beam_size, dim=-1)
 			_inds = (_inds + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 			trans = trans.view(real_bsize, -1).index_select(0, _inds).view(bsize, beam_size, -1)
 

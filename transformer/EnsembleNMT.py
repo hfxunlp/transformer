@@ -68,14 +68,14 @@ class NMT(nn.Module):
 
 			_out = self.dec(ence, out, mask)
 
-			_out = torch.argmax(_out, dim=-1)
+			_out = _out.argmax(dim=-1)
 
 			wds = _out.narrow(1, _out.size(1) - 1, 1)
 
 			out = torch.cat((out, wds), -1)
 
 			# done_trans: (bsize)
-			done_trans = wds.squeeze(1).eq(2) if done_trans is None else torch.gt(done_trans + wds.squeeze(1).eq(2), 0)
+			done_trans = wds.squeeze(1).eq(2) if done_trans is None else (done_trans + wds.squeeze(1).eq(2)).gt(0)
 
 			if done_trans.sum().item() == bsize:
 				break
@@ -116,7 +116,7 @@ class NMT(nn.Module):
 			_out = _out.narrow(1, _out.size(1) - 1, 1).view(bsize, beam_size, -1)
 
 			# _scores/_wds: (bsize, beam_size, beam_size)
-			_scores, _wds = torch.topk(_out, beam_size, dim=-1)
+			_scores, _wds = _out.topk(beam_size, dim=-1)
 
 			if done_trans is not None:
 				_scores = _scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size)
@@ -126,14 +126,14 @@ class NMT(nn.Module):
 
 			# scores/_inds: (bsize, beam_size)
 			if clip_beam and (length_penalty > 0.0):
-				scores, _inds = torch.topk((_scores / lpv.expand(real_bsize, beam_size)).view(bsize, beam_size2), beam_size, dim=-1)
+				scores, _inds = (_scores / lpv.expand(real_bsize, beam_size)).view(bsize, beam_size2).topk(beam_size, dim=-1)
 				_tinds = (_inds + torch.arange(0, bsizeb2, beam_size2, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 
 				# sum_scores: (bsize, beam_size)			
 				sum_scores = _scores.view(bsizeb2).index_select(0, _tinds).view(bsize, beam_size)
 				
 			else:
-				scores, _inds = torch.topk(_scores.view(bsize, beam_size2), beam_size, dim=-1)
+				scores, _inds = _scores.view(bsize, beam_size2).topk(beam_size, dim=-1)
 				_tinds = (_inds + torch.arange(0, bsizeb2, beam_size2, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 				sum_scores = scores
 
@@ -144,7 +144,7 @@ class NMT(nn.Module):
 			out = torch.cat((out.index_select(0, _inds), wds), -1)
 
 			# done_trans: (bsize, beam_size)
-			done_trans = wds.view(bsize, beam_size).eq(2) if done_trans is None else torch.gt(done_trans.view(real_bsize).index_select(0, _inds) + wds.view(real_bsize).eq(2), 0).view(bsize, beam_size)
+			done_trans = wds.view(bsize, beam_size).eq(2) if done_trans is None else (done_trans.view(real_bsize).index_select(0, _inds) + wds.view(real_bsize).eq(2)).gt(0).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)

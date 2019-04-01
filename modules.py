@@ -72,8 +72,9 @@ class PositionalEmb(nn.Module):
 
 		poff = self.poff
 		pos = torch.arange(poff, self.num_pos + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
-		rdiv_term = torch.exp(torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim))
-		self.w[:, 0::2], self.w[:, 1::2] = torch.sin(pos * rdiv_term), torch.cos(pos * rdiv_term)
+		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim)).exp()
+		_tmp = pos * rdiv_term
+		self.w[:, 0::2], self.w[:, 1::2] = _tmp.sin(), _tmp.cos()
 
 	def get_ext(self, length, step_pick=False):
 
@@ -86,8 +87,9 @@ class PositionalEmb(nn.Module):
 			npos = self.num_pos
 			pos = torch.arange(npos + poff, length + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
 			ed = self.w.new(length - npos, self.num_dim)
-		rdiv_term = torch.exp(torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim))
-		ed[:, 0::2], ed[:, 1::2] = torch.sin(pos * rdiv_term), torch.cos(pos * rdiv_term)
+		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim)).exp()
+		_tmp = pos * rdiv_term
+		ed[:, 0::2], ed[:, 1::2] = _tmp.sin(), _tmp.cos()
 
 		return ed
 
@@ -145,10 +147,10 @@ class MultiHeadAttn(nn.Module):
 
 		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, adim, seql) => (bsize, nheads, nquery, seql)
 
-		scores = torch.div(torch.matmul(real_iQ, real_iK), sqrt(adim))
+		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(torch.unsqueeze(mask, 1).expand_as(scores), -1e32)
+			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -1e32)
 
 		scores = self.normer(scores)
 
@@ -157,7 +159,7 @@ class MultiHeadAttn(nn.Module):
 
 		# oMA: output of MultiHeadAttention T((bsize, nheads, nquery, seql) * (bsize, nheads, seql, adim)) => (bsize, nquery, nheads, adim)
 
-		oMA = torch.matmul(scores, real_iV).transpose(1, 2).contiguous()
+		oMA = scores.matmul(real_iV).transpose(1, 2).contiguous()
 
 		# output of this layer (bsize, nquery, nheads, adim) => (bsize, nquery, osize)
 
@@ -205,11 +207,11 @@ class AverageAttn(nn.Module):
 				attn = self.w.narrow(0, 0, seql).narrow(1, 0, seql)
 
 			# avg: (bsize, seql, vsize)
-			avg = torch.matmul(attn.unsqueeze(0).expand(bsize, seql, seql), iV)
+			avg = attn.unsqueeze(0).expand(bsize, seql, seql).matmul(iV)
 
 		avg = self.ffn(avg)
 
-		ifg = torch.sigmoid(self.gw(torch.cat((iQ, avg), -1)))
+		ifg = self.gw(torch.cat((iQ, avg), -1)).sigmoid()
 		isize = avg.size(-1)
 		igate = ifg.narrow(-1, 0, isize)
 		fgate = ifg.narrow(-1, isize, isize)
@@ -224,7 +226,7 @@ class AverageAttn(nn.Module):
 
 		_tmp = (1.0 / torch.arange(1, npos + 1, dtype=self.w.dtype, device=self.w.device)).unsqueeze(1).repeat(1, npos)
 
-		return torch.tril(_tmp, 0)
+		return _tmp.tril(0)
 
 # Accelerated MultiHeadAttn for self attention, use when Q == K == V
 class SelfAttn(nn.Module):
@@ -284,10 +286,10 @@ class SelfAttn(nn.Module):
 
 		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, adim, seql) => (bsize, nheads, nquery, seql)
 
-		scores = torch.div(torch.matmul(real_iQ, real_iK), sqrt(adim))
+		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(torch.unsqueeze(mask, 1).expand_as(scores), -1e32)
+			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -1e32)
 
 		scores = self.normer(scores)
 
@@ -296,7 +298,7 @@ class SelfAttn(nn.Module):
 
 		# oMA: output of MultiHeadAttention T((bsize, nheads, nquery, nquery) * (bsize, nheads, nquery, adim)) => (bsize, nquery, nheads, adim)
 
-		oMA = torch.matmul(scores, real_iV).transpose(1, 2).contiguous()
+		oMA = scores.matmul(real_iV).transpose(1, 2).contiguous()
 
 		# output of this layer (bsize, nquery, nheads, adim) => (bsize, nquery, osize)
 
@@ -352,10 +354,10 @@ class CrossAttn(nn.Module):
 
 		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, adim, seql) => (bsize, nheads, nquery, seql)
 
-		scores = torch.div(torch.matmul(real_iQ, real_iK), sqrt(adim))
+		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(torch.unsqueeze(mask, 1).expand_as(scores), -1e32)
+			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -1e32)
 
 		scores = self.normer(scores)
 
@@ -364,7 +366,7 @@ class CrossAttn(nn.Module):
 
 		# oMA: output of MultiHeadAttention T((bsize, nheads, nquery, seql) * (bsize, nheads, seql, adim)) => (bsize, nquery, nheads, adim)
 
-		oMA = torch.matmul(scores, real_iV).transpose(1, 2).contiguous()
+		oMA = scores.matmul(real_iV).transpose(1, 2).contiguous()
 
 		# output of this layer (bsize, nquery, nheads, adim) => (bsize, nquery, osize)
 
@@ -463,7 +465,7 @@ class SparsemaxFunction(Function):
 
 				return rho.view(view).transpose(0, dim)
 
-			input_srt, _ = torch.sort(input, descending=True, dim=dim)
+			input_srt, _ = input.sort(descending=True, dim=dim)
 			input_cumsum = input_srt.cumsum(dim) - 1
 			rhos = _make_ix_like(input, dim)
 			support = rhos * input_srt > input_cumsum
@@ -478,7 +480,7 @@ class SparsemaxFunction(Function):
 		max_val, _ = input.max(dim=dim, keepdim=True)
 		input -= max_val
 		tau, supp_size = _threshold_and_support(input, dim=dim)
-		output = torch.clamp(input - tau, min=0)
+		output = (input - tau).clamp(min=0)
 		ctx.save_for_backward(supp_size, output)
 
 		return output
@@ -536,7 +538,7 @@ class SigmoidITensor(nn.Module):
 		self.wstep = float(warm_steps) /  5.0
 		self.tarv = target_value
 		self.xseql = xseql
-		self.register_buffer("w", ((torch.sigmoid((torch.arange(1, xseql + 1, dtype=torch.float, requires_grad=False) / self.wstep)) * 2 - 1) * self.tarv).unsqueeze(0).unsqueeze(-1))
+		self.register_buffer("w", ((((torch.arange(1, xseql + 1, dtype=torch.float, requires_grad=False) / self.wstep)).sigmoid() * 2 - 1) * self.tarv).unsqueeze(0).unsqueeze(-1))
 
 	def forward(self, x, expand=True):
 
@@ -548,7 +550,7 @@ class SigmoidITensor(nn.Module):
 
 	def get_ext(self, seql):
 
-		_tmp = ((torch.sigmoid((torch.arange(self.xseql + 1, seql + 1, dtype=self.w.dtype, device=self.w.device, requires_grad=False) / self.wstep)) * 2.0 - 1.0) * self.tarv).unsqueeze(0).unsqueeze(-1)
+		_tmp = ((((torch.arange(self.xseql + 1, seql + 1, dtype=self.w.dtype, device=self.w.device, requires_grad=False) / self.wstep)).sigmoid() * 2.0 - 1.0) * self.tarv).unsqueeze(0).unsqueeze(-1)
 
 		return torch.cat((self.w, _tmp), 1)
 
@@ -563,7 +565,7 @@ class ApproximateEmb(nn.Module):
 
 		isize = list(inpute.size())
 		out = inpute.view(-1, isize[-1])
-		out = torch.mm(out, self.weight)
+		out = out.mm(self.weight)
 		isize[-1] = -1
 		return out.view(isize)
 
@@ -579,7 +581,7 @@ class GeLU_GPT(nn.Module):
 
 	def forward(self, x):
 
-		return 0.5 * x * (1.0 + torch.tanh(self.k * (x + 0.044715 * torch.pow(x, 3))))
+		return 0.5 * x * (1.0 + (self.k * (x + 0.044715 * x.pow(3.0))).tanh())
 
 class GeLU_BERT(nn.Module):
 
@@ -591,7 +593,7 @@ class GeLU_BERT(nn.Module):
 
 	def forward(self, x):
 
-		return 0.5 * x * (1.0 + torch.erf(x / self.k))
+		return 0.5 * x * (1.0 + (x / self.k).erf())
 
 # SparseNormer is proposed in GLoMo: Unsupervisedly Learned Relational Graphs as Transferable Representations(https://arxiv.org/abs/1806.05662)
 
@@ -656,7 +658,7 @@ class Scorer(nn.Module):
 
 		xsize = x.size()
 
-		out = torch.addmv(self.bias, x.view(-1, xsize[-1]), self.w) if self.bias else torch.mv(x.view(-1, xsize[-1]), self.w)
+		out = torch.addmv(self.bias, x.view(-1, xsize[-1]), self.w) if self.bias else x.view(-1, xsize[-1]).mv(self.w)
 
 		rsize = list(xsize)
 		rsize[-1] = 1
@@ -694,7 +696,7 @@ class FertSummer(nn.Module):
 			_weight.masked_fill_(mask, -1e32)
 
 		# (bsize, seql, 1)' * (bsize, seql, isize) => (bsize, 1, isize)
-		return torch.bmm(self.normer(_weight).transpose(1, 2), x).squeeze(1)
+		return self.normer(_weight).transpose(1, 2).bmm(x).squeeze(1)
 
 class Temperature(nn.Module):
 
@@ -717,7 +719,7 @@ class Temperature(nn.Module):
 		xsize = list(xsize)
 		xsize[-1] = 1
 
-		return ((torch.abs(self.k) + self.minv) * (self.act(out) + 1)).view(xsize)
+		return ((self.k.abs() + self.minv) * (self.act(out) + 1)).view(xsize)
 
 	def fix_init(self):
 
@@ -740,8 +742,8 @@ class CoordinateEmb(nn.Module):
 		self.num_steps = num_steps
 		self.num_dim = num_dim
 		self.poff = pos_offset
+		self.doff = dim_offset
 		self.register_buffer('w', torch.Tensor(num_steps, num_pos, num_dim))
-		self.register_buffer("rdiv_term", torch.exp(torch.arange(dim_offset, num_dim + dim_offset, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / num_dim)))
 		self.reset_parameters()
 
 	# x: input (bsize, seql)
@@ -766,7 +768,9 @@ class CoordinateEmb(nn.Module):
 		nstep = self.num_steps
 		pos = torch.arange(poff, npos + poff, dtype=self.w.dtype, device=self.w.device).view(1, npos, 1)
 		step = torch.arange(poff, nstep + poff, dtype=self.w.dtype, device=self.w.device).view(nstep, 1, 1)
-		self.w[:, :, 0::2], self.w[:, :, 1::2] = torch.sin(pos * self.rdiv_term) + torch.sin(step * self.rdiv_term), torch.cos(pos * self.rdiv_term) + torch.cos(step * self.rdiv_term)
+		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim)).exp()
+		_tmp1, _tmp2 = pos * rdiv_term, step * rdiv_term
+		self.w[:, :, 0::2], self.w[:, :, 1::2] = _tmp1.sin() + _tmp2.sin(), _tmp1.cos() + _tmp2.cos()
 
 	def get_ext(self, length, step, step_pick=False):
 
@@ -780,7 +784,9 @@ class CoordinateEmb(nn.Module):
 			npos = self.num_pos
 			_pos = torch.arange(npos + poff if step < self.num_steps else poff, length + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
 			ed = self.w.new(length - npos, self.num_dim)
-		ed[:, 0::2], ed[:, 1::2] = torch.sin(_pos * self.rdiv_term) + torch.sin(_step * self.rdiv_term), torch.cos(_pos * self.rdiv_term) + torch.cos(_step * self.rdiv_term)
+		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim)).exp()
+		_tmp1, _tmp2 = _pos * rdiv_term, _step * rdiv_term
+		ed[:, 0::2], ed[:, 1::2] = _tmp1.sin() + _tmp2.sin(), _tmp1.cos() + _tmp2.cos()
 
 		return ed
 
@@ -790,16 +796,42 @@ class CoordinateEmb(nn.Module):
 
 		return self.w[layer][step] if step < self.num_pos and layer < self.num_steps else self.get_ext(step, layer, True).squeeze(0)
 
-class Noiser(nn.Module):
+class GausNoiser(nn.Module):
 
 	def __init__(self, power):
 
-		super(Noiser, self).__init__()
+		super(GausNoiser, self).__init__()
 		self.power = power
 
-	def forward(self, inpute):
+	# mask: (bsize, seql, 1), otherwise cannot multiply with inpute.size(-1)
+	def forward(self, inpute, mask=None):
 
 		if self.training:
-			return torch.randn(inpute.size(), dtype=inpute.dtype, device=inpute.device) * (self.power * inpute.data.abs().mean()) + inpute
+			if mask is None:
+				base_p = inpute.data.abs().mean() * self.power
+			else:
+				base_p = inpute.data.abs().masked_fill(mask, 0.0).sum() * (self.power / float((mask.numel() - mask.sum().item()) * inpute.size(-1)))
+
+			return torch.randn(inpute.size(), dtype=inpute.dtype, device=inpute.device) * base_p + inpute
+
+		return inpute
+
+class UniNoiser(nn.Module):
+
+	def __init__(self, power):
+
+		super(UniNoiser, self).__init__()
+		self.power = power
+
+	# mask: (bsize, seql, 1), otherwise cannot multiply with inpute.size(-1)
+	def forward(self, inpute, mask=None):
+
+		if self.training:
+			if mask is None:
+				base_p = inpute.data.abs().mean().item() * self.power
+			else:
+				base_p = inpute.data.abs().masked_fill(mask, 0.0).sum().item() / float((mask.numel() - mask.sum().item()) * inpute.size(-1)) * self.power
+
+			return inpute.new_empty(inpute.size(), requires_grad=False).uniform_(- base_p, base_p) + inpute
 
 		return inpute
