@@ -41,7 +41,7 @@ class Decoder(DecoderBase):
 		if self.drop is not None:
 			out = self.drop(out)
 
-		_mask = self._get_subsequent_mask(inputo.size(1))
+		_mask = self._get_subsequent_mask(nquery)
 
 		# the following line of code is to mask <pad> for the decoder,
 		# which I think is useless, since only <pad> may pay attention to previous <pad> tokens, whos loss will be omitted by the loss function.

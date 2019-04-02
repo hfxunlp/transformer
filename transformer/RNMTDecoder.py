@@ -187,7 +187,7 @@ class Decoder(nn.Module):
 
 	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512):
 
-		bsize, seql, _ = inpute.size()
+		bsize, seql = inpute.size()[:2]
 
 		out = self.get_sos_emb(inpute)
 
@@ -264,7 +264,7 @@ class Decoder(nn.Module):
 
 	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False):
 
-		bsize, seql, _ = inpute.size()
+		bsize, seql = inpute.size()[:2]
 
 		beam_size2 = beam_size * beam_size
 		bsizeb2 = bsize * beam_size2
@@ -438,7 +438,7 @@ class Decoder(nn.Module):
 
 	def get_sos_emb(self, inpute):
 
-		bsize, _, __ = inpute.size()
+		bsize = inpute.size(0)
 
 		return self.wemb.weight[1].reshape(1, 1, -1).expand(bsize, 1, -1)
 

@@ -156,7 +156,7 @@ class Decoder(nn.Module):
 		if self.drop is not None:
 			out = self.drop(out)
 
-		_mask = self._get_subsequent_mask(inputo.size(1))
+		_mask = self._get_subsequent_mask(nquery)
 
 		# the following line of code is to mask <pad> for the decoder,
 		# which I think is useless, since only <pad> may pay attention to previous <pad> tokens, whos loss will be omitted by the loss function.
@@ -211,7 +211,7 @@ class Decoder(nn.Module):
 
 	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512):
 
-		bsize, seql, _ = inpute.size()
+		bsize, seql = inpute.size()[:2]
 
 		sos_emb = self.get_sos_emb(inpute)
 
@@ -281,7 +281,7 @@ class Decoder(nn.Module):
 
 	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False):
 
-		bsize, seql, _ = inpute.size()
+		bsize, seql = inpute.size()[:2]
 
 		beam_size2 = beam_size * beam_size
 		bsizeb2 = bsize * beam_size2
@@ -571,7 +571,7 @@ class Decoder(nn.Module):
 
 	def beam_decode_clip(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_mat=True, return_all=False, clip_beam=False):
 
-		bsize, seql, _ = inpute.size()
+		bsize, seql = inpute.size()[:2]
 
 		beam_size2 = beam_size * beam_size
 		bsizeb2 = bsize * beam_size2
