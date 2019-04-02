@@ -192,7 +192,7 @@ class Decoder(nn.Module):
 
 	def _get_subsequent_mask(self, length):
 
-		return self.mask.narrow(1, 0, length).narrow(2, 0, length) if length > self.xseql else self.mask.new_ones(length, length).triu(1).unsqueeze(0)
+		return self.mask.narrow(1, 0, length).narrow(2, 0, length) if length <= self.xseql else self.mask.new_ones(length, length).triu(1).unsqueeze(0)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, seql), see Encoder, get by:
