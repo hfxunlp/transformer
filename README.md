@@ -364,6 +364,10 @@ Convert text data to hdf5 format for the training script. Settings for the train
 
 Convert translation requests to hdf5 format for the prediction script. Settings for the test data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/tools/mktest.py#L140).
 
+#### `lsort/`
+
+Scripts to support sorting very large training set with limited memory.
+
 #### `check/`
 
 Tools to check the implementation and the data.
@@ -406,7 +410,7 @@ Measured with `multi-bleu-detok.perl`:
 
 Note: The result of [THUMT implementation](https://github.com/thumt/THUMT) is from [Accelerating Neural Transformer via an Average Attention Network](https://arxiv.org/abs/1805.00631). Averaging of models is not applied in the test of this implementation, since when layer normalization is applied between residue connections, averaging model might hurts performance. Results with length penalty as THUMT applied is reported, but length penalty does not improve the performance of transformer in my experiments. Outputs of last encoder layer and decoder layer are not normalised in this experiment.
 
-2, Settings: same with the first except the outputs of last encoder layer and decoder layer is normed and:
+2, Settings: same with the first except the outputs of last encoder layer and decoder layer are normed and:
 
 | Options | Value |
 | :------| ------: |

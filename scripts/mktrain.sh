@@ -7,7 +7,7 @@ export dataid=un
 
 export wkd=$cachedir/$dataid
 
-export vsize=32000
+export vsize=65536
 export maxtokens=256
 export ngpu=1
 
@@ -17,6 +17,8 @@ export srcvf=src.dev.bpe
 export tgtvf=tgt.dev.bpe
 
 python tools/sort.py $wkd/$srctf $wkd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens
+# use the following command to sort a very large dataset with limited memory
+#bash tools/lsort/sort.sh $wkd/$srctf $wkd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens
 python tools/sort.py $wkd/$srcvf $wkd/$tgtvf $wkd/src.dev.srt $wkd/tgt.dev.srt 1048576
 
 python tools/vocab.py $wkd/src.train.srt $wkd/src.vcb $vsize
