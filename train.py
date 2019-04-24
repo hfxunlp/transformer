@@ -16,6 +16,7 @@ from lrsch import GoogleLR
 from loss import LabelSmoothingLoss
 
 from random import shuffle
+from math import sqrt
 
 from tqdm import tqdm
 
@@ -289,23 +290,31 @@ else:
 lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=0, reduction='sum', forbidden_index=cnfg.forbidden_indexes)
 
 if cnfg.src_emb is not None:
+	logger.info("Load source embedding from: " + cnfg.src_emb)
 	_emb = torch.load(cnfg.src_emb, map_location='cpu')
 	if nwordi < _emb.size(0):
 		_emb = _emb.narrow(0, 0, nwordi).contiguous()
-	mymodel.enc.wemb.weight.data = _emb
+	if cnfg.scale_down_emb:
+		_emb.div_(sqrt(cnfg.isize))
+	mymodel.enc.wemb.weight.data = _emb.data
 	if cnfg.freeze_srcemb:
 		mymodel.enc.wemb.weight.requires_grad_(False)
 	else:
 		mymodel.enc.wemb.weight.requires_grad_(True)
+	_emb = None
 if cnfg.tgt_emb is not None:
+	logger.info("Load target embedding from: " + cnfg.tgt_emb)
 	_emb = torch.load(cnfg.tgt_emb, map_location='cpu')
 	if nwordt < _emb.size(0):
 		_emb = _emb.narrow(0, 0, nwordt).contiguous()
+	if cnfg.scale_down_emb:
+		_emb.div_(sqrt(cnfg.isize))
 	mymodel.dec.wemb.weight.data = _emb
 	if cnfg.freeze_tgtemb:
 		mymodel.dec.wemb.weight.requires_grad_(False)
 	else:
 		mymodel.dec.wemb.weight.requires_grad_(True)
+	_emb = None
 
 if use_cuda:
 	mymodel.to(cuda_device)
@@ -350,9 +359,6 @@ else:
 			torch.save(optimizer.state_dict(), wkdir + "train_0_%.3f_%.3f_%.2f.optm.t7" % (tminerr, vloss, vprec))
 		logger.info("New best model saved")
 
-	# assume that the continue trained model has already been through sort grad, thus shuffle the training list.
-	shuffle(tl)
-
 if cnfg.dss_ws is not None and cnfg.dss_ws > 0.0 and cnfg.dss_ws < 1.0:
 	dss_ws = int(cnfg.dss_ws * ntrain)
 	_Dws = {}
@@ -370,6 +376,7 @@ else:
 namin = 0
 
 for i in range(1, maxrun + 1):
+	shuffle(tl)
 	terr, done_tokens, cur_checkid, remain_steps, _Dws = train(td, tl, vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, dss_ws > 0, i >= start_chkp_save)
 	vloss, vprec = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu)
 	logger.info("Epoch: %d, train loss: %.3f, valid loss/error: %.3f %.2f" % (i, terr, vloss, vprec))
@@ -420,8 +427,6 @@ for i in range(1, maxrun + 1):
 					_crit_inc[_key] = (_ploss - _value) / _ploss
 			tl = dynamic_sample(_crit_inc, dss_ws, dss_rm)
 		_prev_Dws = _Dws
-
-	shuffle(tl)
 
 	#oldlr = getlr(optimizer)
 	#lrsch.step(terr)

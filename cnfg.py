@@ -21,6 +21,7 @@ src_emb = None
 freeze_srcemb = False
 tgt_emb = None
 freeze_tgtemb = False
+scale_down_emb = True
 
 save_optm_state = False
 save_train_state = False

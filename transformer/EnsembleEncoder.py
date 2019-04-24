@@ -7,7 +7,7 @@ class Encoder(nn.Module):
 	def __init__(self, models):
 
 		super(Encoder, self).__init__()
-		self.nets = models
+		self.nets = nn.ModuleList(models)
 
 	# inputs: (bsize, seql)
 	# mask: (bsize, 1, seql), generated with:

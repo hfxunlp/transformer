@@ -13,7 +13,7 @@ class Decoder(nn.Module):
 
 		super(Decoder, self).__init__()
 
-		self.nets = models
+		self.nets = nn.ModuleList(models)
 
 	# inpute: encoded representation from encoders [(bsize, seql, isize)...]
 	# inputo: decoded translation (bsize, nquery)

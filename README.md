@@ -109,6 +109,8 @@ src_emb = None
 freeze_srcemb = False
 tgt_emb = None
 freeze_tgtemb = False
+# scale down loaded embedding by sqrt(isize) or not, True as default to make positional embedding meaningful at beginning.
+scale_down_emb = True
 
 # saving the optimizer state or not.
 save_optm_state = False
@@ -188,7 +190,7 @@ weight_decay = 0
 # length penalty applied to translating
 length_penalty = 0.0
 
-# sharing embbeding of the encoder and the decoder or not.
+# sharing embedding of the encoder and the decoder or not.
 share_emb = False
 
 # number of heads for multi-head attention.

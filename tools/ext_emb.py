@@ -10,6 +10,20 @@ import torch
 
 has_unk = True
 
+def list_reader(fname):
+	def clear_list(lin):
+		rs = []
+		for tmpu in lin:
+			if tmpu:
+				rs.append(tmpu)
+		return rs
+	with open(fname, "rb") as frd:
+		for line in frd:
+			tmp = line.strip()
+			if tmp:
+				tmp = clear_list(tmp.decode("utf-8").split())
+				yield tmp
+
 def ldvocab(vfile, minf = False, omit_vsize = False):
 	global has_unk
 	if has_unk:
@@ -51,14 +65,10 @@ def ldvocab(vfile, minf = False, omit_vsize = False):
 def ldemb(vcb, embf):
 
 	rs = {}
-	with open(embf, "rb") as frd:
-		for line in frd:
-			tmp = line.strip()
-			if tmp:
-				tmp = tmp.decode("utf-8").split()
-				wd = tmp[0]
-				if wd in vcb or wd == "<unk>":
-					rs[wd] = torch.tensor([float(_t) for _t in tmp[1:]])
+	for tmp in list_reader(embf):
+		wd = tmp[0]
+		if wd in vcb or wd == "<unk>":
+			rs[wd] = torch.tensor([float(_t) for _t in tmp[1:]])
 
 	return rs
 
