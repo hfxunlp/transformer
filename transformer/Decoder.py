@@ -2,7 +2,7 @@
 
 import torch
 from torch import nn
-from modules import *
+from modules.base import *
 from utils import repeat_bsize_for_beam_tensor
 from math import sqrt
 

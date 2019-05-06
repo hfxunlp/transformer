@@ -2,7 +2,7 @@
 
 import torch
 from torch import nn
-from modules import *
+from modules.base import *
 from math import sqrt
 
 from utils import pad_tensors

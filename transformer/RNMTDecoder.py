@@ -5,8 +5,8 @@
 import torch
 from torch import nn
 
-from modules import *
-from rnncell import *
+from modules.base import *
+from modules.rnncells import *
 
 def prepare_initState(hx, cx, bsize):
 

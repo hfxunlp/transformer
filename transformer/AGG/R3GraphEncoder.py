@@ -1,7 +1,7 @@
 #encoding: utf-8
 
 from torch import nn
-from modules import *
+from modules.base import *
 from math import sqrt
 
 from transformer.Encoder import EncoderLayer as EncoderLayerUnit
@@ -132,6 +132,28 @@ class Encoder(EncoderBase):
 		super(Encoder, self).__init__(isize, nwd, num_layer, _fhsize, dropout, attn_drop, num_head, xseql, _ahsize, norm_output)
 
 		self.nets = nn.ModuleList([EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize, num_sub3, num_sub, num_unit) for i in range(num_layer)])
+		self.combiner = ResidueCombiner(isize, num_layer, _fhsize)
+
+	# inputs: (bsize, seql)
+	# mask: (bsize, 1, seql), generated with:
+	#	mask = inputs.eq(0).unsqueeze(1)
+
+	def forward(self, inputs, mask=None):
+
+		bsize, seql = inputs.size()
+		out = self.wemb(inputs)
+		out = out * sqrt(out.size(-1)) + self.pemb(inputs, expand=False)
+
+		if self.drop is not None:
+			out = self.drop(out)
+
+		outs = []
+		for net in self.nets:
+			out = net(out, mask)
+			outs.append(out)
+		out = self.combiner(*outs)
+
+		return out if self.out_normer is None else self.out_normer(out)
 
 	def load_base(self, base_encoder):
 

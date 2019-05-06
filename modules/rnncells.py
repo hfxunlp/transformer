@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as nnFunc
-from modules import *
+from modules.base import *
 
 # per gate layer normalization is applied in this implementation
 

@@ -1,7 +1,7 @@
 #encoding: utf-8
 
 from torch import nn
-from modules import *
+from modules.base import *
 from math import sqrt
 from transformer.Encoder import EncoderLayer
 

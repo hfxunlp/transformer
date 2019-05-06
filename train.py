@@ -7,7 +7,7 @@ from torch import nn
 
 from torch import optim
 
-from parallel.parallel import DataParallelCriterion
+from parallel.base import DataParallelCriterion
 from parallel.parallelMT import DataParallelMT
 
 from utils import *

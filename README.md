@@ -104,7 +104,7 @@ fine_tune_m = None
 train_statesf = None
 fine_tune_state = None
 
-# load embeddings retrieved with tools/ext_emb.py, and whether update them or not
+# load embeddings retrieved with tools/check/ext_emb.py, and whether update them or not
 src_emb = None
 freeze_srcemb = False
 tgt_emb = None
@@ -248,7 +248,7 @@ where `rsf` is the result file, `h5f` is HDF5 formatted input of file of your co
 
 ## The other files' discription
 
-### `modules.py`
+### `modules/`
 
 Foundamental models needed for the construction of transformer.
 
@@ -314,9 +314,13 @@ Implementation of aggregation models.
 
 Hierarchical aggregation proposed in [Exploiting Deep Representations for Neural Machine Translation](https://arxiv.org/abs/1810.10181).
 
+#### `TA/`
+
+Implementation of transparent attention proposed in [Training Deeper Neural Machine Translation Models with Transparent Attention](https://aclweb.org/anthology/D18-1338) modules.
+
 ### `parallel/`
 
-#### `parallel.py`
+#### `base.py`
 
 Implementations of `DataParallelModel` and `DataParallelCriterion` which support effective multi-GPU training and evaluation.
 
@@ -339,10 +343,6 @@ Codes to encapsulate moses scripts, you have to define `moses_scripts`(path to m
 Chinese segmentation is different from tokenization, a tool is provided to support Chinese based on [pynlpir](https://github.com/tsroten/pynlpir).
 
 ### `tools/`
-
-#### `fbindexes.py`
-
-When you using a shared vocabulary for source side and target side, there are still some words which only appear at the source side even joint BPE is applied. Those words take up probabilities in the label smoothing classifier, and this tool can prevent this through generating a larger and well covered forbidden indexes list which can be concatnated to `forbidden_indexes` in `cnfg.py`.
 
 #### `average_model.py`
 
@@ -372,7 +372,12 @@ Scripts to support sorting very large training set with limited memory.
 
 #### `check/`
 
+##### `debug/`
 Tools to check the implementation and the data.
+
+##### `fbindexes.py`
+
+When you using a shared vocabulary for source side and target side, there are still some words which only appear at the source side even joint BPE is applied. Those words take up probabilities in the label smoothing classifier, and this tool can prevent this through generating a larger and well covered forbidden indexes list which can be concatnated to `forbidden_indexes` in `cnfg.py`.
 
 #### `clean/`
 

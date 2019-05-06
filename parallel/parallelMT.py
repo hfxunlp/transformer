@@ -2,7 +2,7 @@
 
 import torch
 
-from parallel.parallel import DataParallelModel
+from parallel.base import DataParallelModel
 
 from utils import pad_tensors
 

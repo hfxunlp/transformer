@@ -2,7 +2,7 @@
 
 import torch
 from torch import nn
-from modules import *
+from modules.base import *
 from math import sqrt
 
 from utils import pad_tensors
@@ -193,3 +193,39 @@ class Decoder(DecoderBase):
 		super(Decoder, self).__init__(isize, nwd, num_layer, _fhsize, dropout, attn_drop, emb_w, num_head, xseql, _ahsize, norm_output, bindemb, forbidden_index)
 
 		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize, num_sub3, num_sub, num_unit) for i in range(num_layer)])
+		self.combiner = ResidueCombiner(isize, num_layer, _fhsize)
+
+	# inpute: encoded representation from encoder (bsize, seql, isize)
+	# inputo: decoded translation (bsize, nquery)
+	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
+	#	src_pad_mask = input.eq(0).unsqueeze(1)
+
+	def forward(self, inpute, inputo, src_pad_mask=None):
+
+		bsize, nquery = inputo.size()
+
+		out = self.wemb(inputo)
+
+		out = out * sqrt(out.size(-1)) + self.pemb(inputo, expand=False)
+
+		if self.drop is not None:
+			out = self.drop(out)
+
+		_mask = self._get_subsequent_mask(nquery)
+
+		# the following line of code is to mask <pad> for the decoder,
+		# which I think is useless, since only <pad> may pay attention to previous <pad> tokens, whos loss will be omitted by the loss function.
+		#_mask = torch.gt(_mask + inputo.eq(0).unsqueeze(1), 0)
+
+		outs = []
+		for net in self.nets:
+			out = net(inpute, out, src_pad_mask, _mask)
+			outs.append(out)
+		out = self.combiner(*outs)
+
+		if self.out_normer is not None:
+			out = self.out_normer(out)
+
+		out = self.lsm(self.classifier(out))
+
+		return out

@@ -2,8 +2,8 @@
 
 import torch
 from torch import nn
-from modules import SelfAttn, PositionalEmb
-from TAmodules import PositionwiseFF
+from modules.base import SelfAttn, PositionalEmb
+from modules.TA import PositionwiseFF
 from math import sqrt
 
 from transformer.Encoder import Encoder as EncoderBase
@@ -77,7 +77,7 @@ class Encoder(EncoderBase):
 
 		self.nets = nn.ModuleList([EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
 
-		self.tattn_w = nn.Parameter(torch.Tensor(num_layer + 1, num_layer_dec).uniform_(- sqrt(6.0 / num_layer + num_layer_dec + 1), sqrt(6.0 / num_layer + num_layer_dec + 1)))
+		self.tattn_w = nn.Parameter(torch.Tensor(num_layer + 1, num_layer_dec).uniform_(- sqrt(6.0 / (num_layer + num_layer_dec + 1)), sqrt(6.0 / (num_layer + num_layer_dec + 1))))
 		self.tattn_drop = nn.Dropout(dropout) if dropout > 0.0 else None
 
 	# inputs: (bsize, seql)
@@ -104,7 +104,7 @@ class Encoder(EncoderBase):
 		out = torch.stack(outs, -1)
 
 		osize = out.size()
-		out = torch.mm(out.view(-1, osize[-1]), self.tattn_w.softmax(dim=0) if self.tattn_drop is None else self.tattn_drop(self.tattn_w).softmax(dim=0))
+		out = out.view(-1, osize[-1]).mm(self.tattn_w.softmax(dim=0) if self.tattn_drop is None else self.tattn_drop(self.tattn_w).softmax(dim=0))
 		osize = list(osize)
 		osize[-1] = -1
 

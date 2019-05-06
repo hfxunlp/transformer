@@ -2,13 +2,15 @@
 
 import torch
 from torch import nn
-from modules.base import *
+
+from modules.base import SelfAttn, PositionwiseFF
+from modules.__no_significance__.ua_cattn import CrossAttn
+
 from utils import repeat_bsize_for_beam_tensor
+
 from math import sqrt
 
 from transformer.Decoder import Decoder as DecoderBase
-
-# Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network(https://arxiv.org/abs/1805.00631)
 
 class DecoderLayer(nn.Module):
 
@@ -17,6 +19,7 @@ class DecoderLayer(nn.Module):
 	# attn_drop: dropout for MultiHeadAttention
 	# num_head: number of heads in MultiHeadAttention
 	# ahsize: hidden size of MultiHeadAttention
+	# norm_residue: residue with layer normalized representation
 
 	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=True):
 
@@ -26,7 +29,7 @@ class DecoderLayer(nn.Module):
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.self_attn = AverageAttn(isize, _fhsize, dropout)
+		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 
 		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residue)
@@ -44,36 +47,39 @@ class DecoderLayer(nn.Module):
 		self.norm_residue = norm_residue
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
-	# inputo: embedding of decoded translation (bsize, nquery, isize) during training, layer normed summed previous states for decoding
+	# inputo: embedding of decoded translation (bsize, nquery, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, nquery, seql), see Encoder, expanded after generated with:
 	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	# tgt_pad_mask: mask to hide the future input
 	# query_unit: single query to decode, used to support decoding for given step
-	# step: current decoding step, used to average over the sum.
 
-	def forward(self, inpute, inputo, src_pad_mask=None, query_unit=None, step=1):
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, concat_query=False):
 
 		if query_unit is None:
 			_inputo = self.layer_normer1(inputo)
 
 			states_return = None
 
-			context = self.self_attn(_inputo, _inputo)
+			context = self.self_attn(_inputo, mask=tgt_pad_mask)
 
 			if self.d1 is not None:
 				context = self.d1(context)
 
 			context = context + (_inputo if self.norm_residue else inputo)
+
 		else:
 			_query_unit = self.layer_normer1(query_unit)
 
-			if step == 1:
-				states_return = _query_unit
+			if concat_query:
 
-				context = self.self_attn(_query_unit, _query_unit, True)
+				_inputo = _query_unit if inputo is None else torch.cat((inputo, _query_unit), 1)
+
 			else:
-				states_return = inputo + _query_unit
+				_inputo = self.layer_normer1(inputo)
 
-				context = self.self_attn(_query_unit, states_return / step, True)
+			states_return = _inputo
+
+			context = self.self_attn(_query_unit, iK=_inputo)
 
 			if self.d1 is not None:
 				context = self.d1(context)
@@ -81,7 +87,7 @@ class DecoderLayer(nn.Module):
 			context = context + (_query_unit if self.norm_residue else query_unit)
 
 		_context = self.layer_normer2(context)
-		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
+		_context_new, _attn = self.cross_attn(_context, inpute, mask=src_pad_mask)
 
 		if self.d2 is not None:
 			_context_new = self.d2(_context_new)
@@ -91,13 +97,11 @@ class DecoderLayer(nn.Module):
 		context = self.ff(context)
 
 		if states_return is None:
-			return context
+			return context, _attn
 		else:
-			return context, states_return
+			return context, _attn, states_return
 
 class Decoder(DecoderBase):
-
-	# construction function is needed, since DecoderLayer should be re-assigned.
 
 	# isize: size of word embedding
 	# nwd: number of words
@@ -112,6 +116,7 @@ class Decoder(DecoderBase):
 
 	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
 
+
 		_ahsize = isize if ahsize is None else ahsize
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
@@ -119,6 +124,14 @@ class Decoder(DecoderBase):
 		super(Decoder, self).__init__(isize, nwd, num_layer, _fhsize, dropout, attn_drop, emb_w, num_head, xseql, _ahsize, norm_output, bindemb, forbidden_index)
 
 		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
+
+		self.tattn_w = nn.Parameter(torch.Tensor(num_layer * num_head).uniform_(- sqrt(6.0 / (num_layer * num_head + 1)), sqrt(6.0 / (num_layer * num_head + 1))))
+		self.tattn_drop = nn.Dropout(dropout) if dropout > 0.0 else None
+
+		self.classifier = nn.Sequential(nn.Linear(isize * 2, isize, bias=False), nn.Linear(isize, nwd))
+		# be careful since this line of code is trying to share the weight of the wemb and the classifier, which may cause problems if torch.nn updates
+		if bindemb:
+			list(self.classifier.modules())[-1].weight = self.wemb.weight
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: decoded translation (bsize, nquery)
@@ -136,34 +149,32 @@ class Decoder(DecoderBase):
 		if self.drop is not None:
 			out = self.drop(out)
 
+		_mask = self._get_subsequent_mask(nquery)
+
+		# the following line of code is to mask <pad> for the decoder,
+		# which I think is useless, since only <pad> may pay attention to previous <pad> tokens, whos loss will be omitted by the loss function.
+		#_mask = torch.gt(_mask + inputo.eq(0).unsqueeze(1), 0)
+
+		attns = []
 		for net in self.nets:
-			out = net(inpute, out, src_pad_mask)
+			out, _attn = net(inpute, out, src_pad_mask, _mask)
+			attns.append(_attn)
 
 		if self.out_normer is not None:
 			out = self.out_normer(out)
 
+		# attns: (bsize, num_layer * nheads, nquery, seql) => (bsize, nquery, seql, num_layer * nheads)
+		attns = torch.cat(attns, dim=1).permute(0, 2, 3, 1)
+		_asize = attns.size()
+
+		# inpute: (bsize, seql, isize)
+		# attns: (bsize, nquery, seql, num_layer * nheads) => (bsize, nquery, seql)
+		# out: (bsize, nquery, isize * 2)
+		out = torch.cat([out, attns.contiguous().view(-1, _asize[-1]).mv(self.tattn_w.softmax(dim=0) if self.tattn_drop is None else self.tattn_drop(self.tattn_w).softmax(dim=0)).view(_asize[:-1]).bmm(inpute)], dim=-1)
+
 		out = self.lsm(self.classifier(out))
 
 		return out
-
-	def load_base(self, base_decoder):
-
-		self.drop = base_decoder.drop
-
-		self.wemb = base_decoder.wemb
-
-		self.pemb = base_decoder.pemb
-
-		_nets = list(base_decoder.nets)
-
-		self.nets = nn.ModuleList(_nets + list(self.nets[len(_nets):]))
-
-		self.classifier = base_decoder.classifier
-
-		self.lsm = base_decoder.lsm
-
-		self.out_normer = None if self.out_normer is None else base_decoder.out_normer
-
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
@@ -187,12 +198,18 @@ class Decoder(DecoderBase):
 
 		states = {}
 
+		attns = []
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, out, 1)
+			out, _attn, _state = net(inpute, None, src_pad_mask, None, out, True)
 			states[_tmp] = _state
+			attns.append(_attn)
 
 		if self.out_normer is not None:
 			out = self.out_normer(out)
+
+		attns = torch.cat(attns, dim=1).permute(0, 2, 3, 1)
+		_asize = attns.size()
+		out = torch.cat([out, attns.contiguous().view(-1, _asize[-1]).mv(self.tattn_w.softmax(dim=0) if self.tattn_drop is None else self.tattn_drop(self.tattn_w).softmax(dim=0)).view(_asize[:-1]).bmm(inpute)], dim=-1)
 
 		# out: (bsize, 1, nwd)
 
@@ -208,19 +225,23 @@ class Decoder(DecoderBase):
 
 		done_trans = wds.squeeze(1).eq(2)
 
-		for i in range(2, max_len + 1):
+		for i in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i - 1).view(1, 1, -1).expand(bsize, 1, -1)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i).view(1, 1, -1).expand(bsize, 1, -1)
 
 			if self.drop is not None:
 				out = self.drop(out)
 
+			attns = []
 			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], src_pad_mask, out, i)
+				out, _attn, _state = net(inpute, states[_tmp], src_pad_mask, None, out, True)
 				states[_tmp] = _state
+				attns.append(_attn)
 
 			if self.out_normer is not None:
 				out = self.out_normer(out)
+
+			out = torch.cat([out, torch.cat(attns, dim=1).permute(0, 2, 3, 1).contiguous().view(-1, _asize[-1]).mv(self.tattn_w.softmax(dim=0) if self.tattn_drop is None else self.tattn_drop(self.tattn_w).softmax(dim=0)).view(_asize[:-1]).bmm(inpute)], dim=-1)
 
 			# out: (bsize, 1, nwd)
 			out = self.lsm(self.classifier(out))
@@ -264,12 +285,18 @@ class Decoder(DecoderBase):
 
 		states = {}
 
+		attns = []
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, out, 1)
+			out, _attn, _state = net(inpute, None, src_pad_mask, None, out, True)
 			states[_tmp] = _state
+			attns.append(_attn)
 
 		if self.out_normer is not None:
 			out = self.out_normer(out)
+
+		attns = torch.cat(attns, dim=1).permute(0, 2, 3, 1)
+		_asize = attns.size()
+		out = torch.cat([out, attns.contiguous().view(-1, _asize[-1]).mv(self.tattn_w.softmax(dim=0) if self.tattn_drop is None else self.tattn_drop(self.tattn_w).softmax(dim=0)).view(_asize[:-1]).bmm(inpute)], dim=-1)
 
 		# out: (bsize, 1, nwd)
 
@@ -302,19 +329,25 @@ class Decoder(DecoderBase):
 		for key, value in states.items():
 			states[key] = repeat_bsize_for_beam_tensor(value, beam_size)
 
-		for step in range(2, max_len + 1):
+		for step in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step - 1).view(1, 1, isize).expand(real_bsize, 1, isize)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step).view(1, 1, isize).expand(real_bsize, 1, isize)
 
 			if self.drop is not None:
 				out = self.drop(out)
 
+			attns = []
 			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], _src_pad_mask, out, step)
+				out, _attn, _state = net(inpute, states[_tmp], _src_pad_mask, None, out, True)
 				states[_tmp] = _state
+				attns.append(_attn)
 
 			if self.out_normer is not None:
 				out = self.out_normer(out)
+
+			attns = torch.cat(attns, dim=1).permute(0, 2, 3, 1)
+			_asize = attns.size()
+			out = torch.cat([out, attns.contiguous().view(-1, _asize[-1]).mv(self.tattn_w.softmax(dim=0) if self.tattn_drop is None else self.tattn_drop(self.tattn_w).softmax(dim=0)).view(_asize[:-1]).bmm(inpute)], dim=-1)
 
 			# out: (bsize, beam_size, nwd)
 
@@ -332,7 +365,7 @@ class Decoder(DecoderBase):
 			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
 
 			if length_penalty > 0.0:
-				lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 5.0) ** length_penalty) / lpv_base)
+				lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
 
 			# clip from k ** 2 candidate and remain the top-k for each path
 			# scores: (bsize, beam_size * beam_size) => (bsize, beam_size)
@@ -400,3 +433,10 @@ class Decoder(DecoderBase):
 		else:
 
 			return trans.view(bsize, beam_size, -1).select(1, 0)
+
+	def fix_init(self):
+
+		if self.fbl is not None:
+			_tbias = list(self.classifier.modules())[-1].bias
+			for ind in self.fbl:
+				_tbias.data[ind] = -1e32

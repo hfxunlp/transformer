@@ -9,7 +9,7 @@ from tqdm import tqdm
 from random import shuffle
 from random import seed as rpyseed
 
-def handle(h5f, bsize, shuf=False):
+def handle(h5f, bsize, shuf=True):
 
 	td = h5py.File(h5f, "r")
 	ntest = int(td["ndata"][:][0])

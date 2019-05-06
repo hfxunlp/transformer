@@ -6,8 +6,8 @@ from torch import nn
 from torch.nn import functional as nnFunc
 from torch.autograd import Function
 
-from modules import GeLU_BERT
-from modules import PositionwiseFF as PositionwiseFFBase
+from modules.base import GeLU_BERT
+from modules.base import PositionwiseFF as PositionwiseFFBase
 
 class PositionwiseFF(PositionwiseFFBase):
 
