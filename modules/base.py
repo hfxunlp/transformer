@@ -651,7 +651,7 @@ class Scorer(nn.Module):
 
 		super(Scorer, self).__init__()
 
-		self.w = nn.Parameter(torch.Tensor(isize).uniform_(- sqrt(6.0 / isize), sqrt(6.0 / isize)))
+		self.w = nn.Parameter(torch.Tensor(isize).uniform_(- sqrt(1.0 / isize), sqrt(1.0 / isize)))
 		self.bias = nn.Parameter(torch.zeros(1)) if bias else None
 
 	def forward(self, x):
@@ -671,7 +671,7 @@ class MHAttnSummer(nn.Module):
 
 		super(MHAttnSummer, self).__init__()
 
-		self.w = nn.Parameter(torch.Tensor(1, 1, isize).uniform_(- sqrt(6.0 / isize), sqrt(6.0 / isize)))
+		self.w = nn.Parameter(torch.Tensor(1, 1, isize).uniform_(- sqrt(1.0 / isize), sqrt(1.0 / isize)))
 		self.attn = CrossAttn(isize, isize if ahsize is None else ahsize, isize, num_head, dropout=attn_drop)
 
 	# x: (bsize, seql, isize)
@@ -704,7 +704,7 @@ class Temperature(nn.Module):
 
 		super(Temperature, self).__init__()
 
-		self.w = nn.Parameter(torch.Tensor(isize).uniform_(- sqrt(6.0 / isize), sqrt(6.0 / isize)))
+		self.w = nn.Parameter(torch.Tensor(isize).uniform_(- sqrt(1.0 / isize), sqrt(1.0 / isize)))
 		self.bias = nn.Parameter(torch.zeros(1))
 		self.act = nn.Tanh()
 		self.k = nn.Parameter(torch.ones(1))

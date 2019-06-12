@@ -87,6 +87,6 @@ class ATRCell(nn.Module):
 
 		p, q = self.t1(x), self.t2(cell)
 
-		igate, fgate = torch.sigmoid(p + q), torch.sigmoid(p - q)
+		igate, fgate = (p + q).sigmoid(), (p - q).sigmoid()
 
 		return igate * p + fgate * q

@@ -1,7 +1,10 @@
 #encoding: utf-8
 
 import torch
-from torch.nn.init import xavier_uniform_
+from torch.nn.init import xavier_uniform_, kaiming_uniform_
+from torch.nn import Embedding, Linear, LayerNorm
+
+from math import sqrt
 
 from random import sample
 from random import seed as rpyseed
@@ -11,8 +14,10 @@ import logging
 def pad_tensors(tensor_list):
 
 	def get_pad_size(tsize, stdlen):
+
 		nsize = list(tsize)
 		nsize[-1] = stdlen - tsize[-1]
+
 		return nsize
 
 	maxlen = 0
@@ -20,6 +25,7 @@ def pad_tensors(tensor_list):
 		tlen = tensor.size(-1)
 		if tlen > maxlen:
 			maxlen = tlen
+
 	return [tensor if tensor.size(-1) == maxlen else torch.cat((tensor, tensor.new_zeros(get_pad_size(tensor.size(), maxlen))), -1) for tensor in tensor_list]
 
 def freeze_module(module):
@@ -31,6 +37,7 @@ def freeze_module(module):
 def unfreeze_module(module):
 
 	def unfreeze_fixing(mod):
+
 		if "fix_unfreeze" in dir(mod):
 			mod.fix_unfreeze()
 
@@ -39,19 +46,22 @@ def unfreeze_module(module):
 
 	module.apply(unfreeze_fixing)
 
-
 def getlr(optm):
+
 	lr = []
 	for i, param_group in enumerate(optm.param_groups):
 		lr.append(float(param_group['lr']))
+
 	return lr
 
 def updated_lr(oldlr, newlr):
+
 	rs = False
 	for olr, nlr in zip(oldlr, newlr):
 		if olr != nlr:
 			rs = True
 			break
+
 	return rs
 
 def dynamic_sample(incd, dss_ws, dss_rm):
@@ -106,14 +116,46 @@ def get_logger(fname):
 
 	logger.addHandler(handler)
 	logger.addHandler(console)
+
 	return logger
 
-def init_model_params(modin):
+def init_model_params_glorot(modin, hyp=None):
+
+	_scale = sqrt(1.0 / 3.0) if hyp is None else hyp
 
 	for p in modin.parameters():
 		if p.requires_grad and (p.dim() > 1):
-			xavier_uniform_(p)
+			xavier_uniform_(p, gain=_scale)
+
 	return modin
+
+def init_model_params_kaiming(modin, hyp=None):
+
+	_scale = sqrt(5.0) if hyp is None else hyp
+
+	for p in modin.parameters():
+		if p.requires_grad and (p.dim() > 1):
+			kaiming_uniform_(p, a=_scale)
+
+	return modin
+
+def init_model_params(modin, scale_glorot=None, scale_kaiming=None):
+
+	_tmpm = init_model_params_kaiming(modin, scale_kaiming)
+
+	for _m in _tmpm.modules():
+		if isinstance(_m, Embedding):
+			init_model_params_glorot(_m, scale_glorot)
+		elif isinstance(_m, Linear):
+			if _m.bias is not None:
+				with torch.no_grad():
+					_m.bias.zero_()
+		elif isinstance(_m, LayerNorm):
+			with torch.no_grad():
+				_m.weight.fill_(1.0)
+				_m.bias.zero_()
+
+	return _tmpm
 
 def set_random_seed(seed, set_cuda=False):
 

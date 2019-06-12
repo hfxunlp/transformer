@@ -77,7 +77,7 @@ class Encoder(EncoderBase):
 
 		self.nets = nn.ModuleList([EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
 
-		self.tattn_w = nn.Parameter(torch.Tensor(num_layer + 1, num_layer_dec).uniform_(- sqrt(6.0 / (num_layer + num_layer_dec + 1)), sqrt(6.0 / (num_layer + num_layer_dec + 1))))
+		self.tattn_w = nn.Parameter(torch.Tensor(num_layer + 1, num_layer_dec).uniform_(- sqrt(2.0 / (num_layer + num_layer_dec + 1)), sqrt(2.0 / (num_layer + num_layer_dec + 1))))
 		self.tattn_drop = nn.Dropout(dropout) if dropout > 0.0 else None
 
 	# inputs: (bsize, seql)
