@@ -3,10 +3,10 @@
 import torch
 from torch import nn
 
-# import Encoder and Decoder from transformer.AGG.InceptEncoder and transformer.AGG.InceptDecoder/transformer.AGG.InceptAvgDecoder to learn complex representation with incepted transformer, TA/TAEncoder for Transparent Encoder
+# import Encoder and Decoder from transformer.AGG.InceptEncoder and transformer.AGG.InceptDecoder/transformer.AGG.InceptAvgDecoder to learn complex representation with incepted transformer, transformer.TA.Encoder for Transparent Encoder.
 from transformer.Encoder import Encoder
 
-# switch the comment between the following two lines to choose standard decoder or average decoder. Using TA/TADecoder for Transparent Decoder.
+# switch the comment between the following two lines to choose standard decoder or average decoder. Using transformer.TA.Decoder for Transparent Decoder.
 from transformer.Decoder import Decoder
 #from transformer.AvgDecoder import Decoder
 

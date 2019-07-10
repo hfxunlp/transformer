@@ -256,7 +256,7 @@ class SelfAttn(nn.Module):
 		self.drop = nn.Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
 	# iQ: query (bsize, num_query, vsize)
-	# mask (bsize, num_query, seql)
+	# mask: (bsize, num_query, seql)
 	# iK: key/value (bsize, seql, vsize), in case key != query, for efficient decoding
 
 	def forward(self, iQ, mask=None, iK=None):
@@ -389,7 +389,11 @@ class ResidueCombiner(nn.Module):
 
 	def forward(self, *xl):
 
-		out = torch.stack([self.net(torch.cat(xl, -1))] + list(xl), -2).sum(-2)
+		# faster only when len(xl) is very large
+		#out = torch.stack([self.net(torch.cat(xl, -1))] + list(xl), -2).sum(-2)
+		out = self.net(torch.cat(xl, -1))
+		for inputu in xl:
+			out = out + inputu
 
 		return self.out_normer(out)
 

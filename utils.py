@@ -195,3 +195,12 @@ def expand_bsize_for_beam(*inputs, beam_size=1):
 			outputs.append(repeat_bsize_for_beam_tensor(inputu, beam_size))
 
 	return outputs[0] if len(inputs) == 1 else tuple(outputs)
+
+def remove_layers(all_layers, ltr):
+
+	rs = []
+	for i, _l in enumerate(all_layers):
+		if i not in ltr:
+			rs.append(_l)
+
+	return rs

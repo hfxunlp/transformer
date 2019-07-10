@@ -51,10 +51,6 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			seq_batch = seq_batch.to(mv_device)
 			seq_o = seq_o.to(mv_device)
 
-		if _done_tokens >= tokens_optm:
-			optm.zero_grad()
-			_done_tokens = 0
-
 		oi = seq_o.narrow(1, 0, lo)
 		ot = seq_o.narrow(1, 1, lo).contiguous()
 		output = model(seq_batch, oi)
@@ -88,9 +84,12 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			if multi_gpu:
 				model.collect_gradients()
 				optm.step()
+				optm.zero_grad()
 				model.update_replicas()
 			else:
 				optm.step()
+				optm.zero_grad()
+			_done_tokens = 0
 			if _cur_rstep is not None:
 				if save_checkp_epoch and (save_every is not None) and (_cur_rstep % save_every == 0) and (chkpf is not None) and (_cur_rstep > 0):
 					if num_checkpoint > 1:
@@ -208,7 +207,7 @@ maxrun = cnfg.maxrun
 
 tokens_optm = cnfg.tokens_optm
 
-done_tokens = tokens_optm
+done_tokens = 0
 
 batch_report = cnfg.batch_report
 report_eva = cnfg.report_eva

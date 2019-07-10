@@ -23,7 +23,6 @@ class EncoderLayer(nn.Module):
 	# attn_drop: dropout for MultiHeadAttention
 	# num_head: number of heads in MultiHeadAttention
 	# ahsize: hidden size of MultiHeadAttention
-	# norm_residue: residue with layer normalized representation
 
 	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None):
 
@@ -94,8 +93,7 @@ class Encoder(EncoderBase):
 			out = self.drop(out)
 
 		out = self.out_normer(out)
-		outs = []
-		outs.append(out)
+		outs = [out]
 
 		for net in self.nets:
 			out = net(out, mask)
