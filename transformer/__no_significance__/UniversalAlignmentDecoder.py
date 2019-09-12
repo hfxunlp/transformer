@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 
-from modules.base import SelfAttn, PositionwiseFF
+from modules.base import SelfAttn, PositionwiseFF, Linear, Dropout
 from modules.__no_significance__.ua_cattn import CrossAttn
 
 from utils import repeat_bsize_for_beam_tensor
@@ -21,7 +21,7 @@ class DecoderLayer(nn.Module):
 	# ahsize: hidden size of MultiHeadAttention
 	# norm_residue: residue with layer normalized representation
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=True):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
 
 		super(DecoderLayer, self).__init__()
 
@@ -38,8 +38,8 @@ class DecoderLayer(nn.Module):
 		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
 
 		if dropout > 0:
-			self.d1 = nn.Dropout(dropout, inplace=True)
-			self.d2 = nn.Dropout(dropout, inplace=True)
+			self.d1 = Dropout(dropout, inplace=True)
+			self.d2 = Dropout(dropout, inplace=True)
 		else:
 			self.d1 = None
 			self.d2 = None
@@ -126,9 +126,9 @@ class Decoder(DecoderBase):
 		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
 
 		self.tattn_w = nn.Parameter(torch.Tensor(num_layer * num_head).uniform_(- sqrt(1.0 / (num_layer * num_head)), sqrt(1.0 / (num_layer * num_head))))
-		self.tattn_drop = nn.Dropout(dropout) if dropout > 0.0 else None
+		self.tattn_drop = Dropout(dropout) if dropout > 0.0 else None
 
-		self.classifier = nn.Sequential(nn.Linear(isize * 2, isize, bias=False), nn.Linear(isize, nwd))
+		self.classifier = nn.Sequential(Linear(isize * 2, isize, bias=False), Linear(isize, nwd))
 		# be careful since this line of code is trying to share the weight of the wemb and the classifier, which may cause problems if torch.nn updates
 		if bindemb:
 			list(self.classifier.modules())[-1].weight = self.wemb.weight

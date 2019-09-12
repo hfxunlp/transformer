@@ -1,10 +1,10 @@
 #encoding: utf-8
 
-from math import sqrt
+from math import sqrt, inf
 
 from torch import nn
 
-from modules.base import SparseNormer, MHSparseNormer
+from modules.base import SparseNormer, MHSparseNormer, Linear, Dropout
 
 class CrossAttn(nn.Module):
 
@@ -23,15 +23,15 @@ class CrossAttn(nn.Module):
 		self.hsize = self.attn_dim * num_head
 		self.num_head = num_head
 
-		self.query_adaptor = nn.Linear(isize, self.hsize, bias=enable_bias)
-		self.kv_adaptor = nn.Linear(isize, self.hsize * 2, bias=enable_bias)
+		self.query_adaptor = Linear(isize, self.hsize, bias=enable_bias)
+		self.kv_adaptor = Linear(isize, self.hsize * 2, bias=enable_bias)
 
-		self.outer = nn.Linear(self.hsize, osize, bias=enable_bias)
+		self.outer = Linear(self.hsize, osize, bias=enable_bias)
 
 		#self.normer = MHSparseNormer(num_head, dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 		self.normer = SparseNormer(dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 
-		self.drop = nn.Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
 	# iQ: query (bsize, num_query, vsize)
 	# iK: keys (bsize, seql, vsize)
@@ -58,7 +58,7 @@ class CrossAttn(nn.Module):
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -1e32)
+			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -inf)
 
 		_rscore = scores = self.normer(scores)
 

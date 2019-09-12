@@ -2,6 +2,10 @@
 
 import torch
 import torch.cuda.comm as comm
+
+from torch.jit import ScriptModule
+from torch._C import ScriptMethod
+
 from torch.nn import DataParallel
 
 from threading import Lock, Thread
@@ -56,7 +60,7 @@ class DataParallelModel(DataParallel):
 
 	def make_replicas(self):
 
-		self.nets = replicate_model(self.module, self.device_ids, True)
+		self.nets = replicate(self.module, self.device_ids, True)
 
 	def collect_gradients(self):
 
@@ -73,12 +77,9 @@ class DataParallelModel(DataParallel):
 		if len(params) > 0:
 			param_copies = tuple([t for tensors in comm.broadcast_coalesced(params, self.device_ids) for t in tensors])
 
-			if parallel and (len(self.device_ids) > 2):
-				parallel_update_parameters(self.nets[1:], [param_copies[i:i + len(params)] for i in range(len(params), len(param_copies), len(params))])
-			else:
-				for module, param_copy in zip(self.nets[1:], [param_copies[i:i + len(params)] for i in range(len(params), len(param_copies), len(params))]):
-					for mp, para in zip(module.parameters(), param_copy):
-						mp.data, mp.grad = para, None
+			for module, param_copy in zip(self.nets[1:], [param_copies[i:i + len(params)] for i in range(len(params), len(param_copies), len(params))]):
+				for mp, para in zip(module.parameters(), param_copy):
+					mp.data, mp.grad = para, None
 
 class DataParallelCriterion(DataParallel):
 
@@ -88,7 +89,7 @@ class DataParallelCriterion(DataParallel):
 		super(DataParallelCriterion, self).__init__(module, device_ids, output_device, dim)
 
 		if replicate_once and self.device_ids and (len(self.device_ids) > 1):
-			self.nets = replicate_model(self.module, self.device_ids, True)
+			self.nets = replicate(self.module, self.device_ids, True)
 		else:
 			self.nets = None
 
@@ -107,36 +108,19 @@ class DataParallelCriterion(DataParallel):
 
 		return self.gather(outputs, self.output_device)
 
-def parallel_update_parameters(modules, parameter_group):
-
-	def _worker(module, parameters):
-
-		for mp, para in zip(module.parameters(), parameters):
-			mp.data, mp.grad = para, None
-
-	threads = [Thread(target=_worker, args=(module, parameters)) for module, parameters in zip(modules, parameter_group)]
-
-	for thread in threads:
-		thread.start()
-	for thread in threads:
-		thread.join()
-
 # update this function with the update of replicate(https://github.com/pytorch/pytorch/blob/master/torch/nn/parallel/replicate.py)
 
-def replicate_model(network, devices, no_gradient=False):
+def replicate(network, devices, no_gradient=False):
 
 	def clear_gradient(para):
-		if no_gradient:
-			para.grad = None
+		para.grad = None
 		return para
 
 	num_replicas = len(devices)
 
 	params = [clear_gradient(para) for para in network.parameters()] if no_gradient else list(network.parameters())
 	param_indices = {param: idx for idx, param in enumerate(params)}
-	param_copies = tuple([t for tensors in comm.broadcast_coalesced(params, devices) for t in tensors])
-	if len(params) > 0:
-		param_copies = [param_copies[i:i + len(params)] for i in range(0, len(param_copies), len(params))]
+	param_copies = comm.broadcast_coalesced(params, devices)
 
 	buffers = list(network.buffers())
 	buffer_indices = {buf: idx for idx, buf in enumerate(buffers)}
@@ -145,15 +129,32 @@ def replicate_model(network, devices, no_gradient=False):
 	modules = list(network.modules())
 	module_copies = [[] for device in devices]
 	module_indices = {}
+	scriptmodule_skip_attr = {"_parameters", "_buffers", "_modules", "forward", "_c"}
 
 	for i, module in enumerate(modules):
 		module_indices[module] = i
 		for j in range(num_replicas):
-			replica = module.__new__(type(module))
-			replica.__dict__ = module.__dict__.copy()
-			replica._parameters = replica._parameters.copy()
-			replica._buffers = replica._buffers.copy()
-			replica._modules = replica._modules.copy()
+			if isinstance(module, ScriptModule):
+				# we have to initialize ScriptModule properly so that
+				# it works with pybind11
+				replica = ScriptModule()
+
+				attribute_names = set(entry[0] for entry in module._c._get_attributes())
+
+				keys = set(module.__dict__.keys()) - scriptmodule_skip_attr - attribute_names
+				for key in keys:
+					if not isinstance(module.__dict__[key], ScriptMethod):
+						replica.__dict__[key] = module.__dict__[key]
+				for name, the_type, value in module._c._get_attributes():
+					if not name in module._buffers.keys():
+						replica._c._register_attribute(name, the_type, value)
+			else:
+				replica = module.__new__(type(module))
+				replica.__dict__ = module.__dict__.copy()
+				replica._parameters = replica._parameters.copy()
+				replica._buffers = replica._buffers.copy()
+				replica._modules = replica._modules.copy()
+
 			module_copies[j].append(replica)
 
 	for i, module in enumerate(modules):
@@ -188,6 +189,13 @@ def replicate_model(network, devices, no_gradient=False):
 					replica = module_copies[j][i]
 					replica._buffers[key] = buffer_copies[j][buffer_idx]
 
+	for j in range(num_replicas):
+		for i, module in enumerate(modules):
+			if isinstance(module, ScriptModule):
+				replica = module_copies[j][i]
+				for method_name in module._c._method_names():
+					replica._c.clone_method(module._c, method_name)
+
 	return [module_copies[j][0] for j in range(num_replicas)]
 
 # update these two functions with the update of parallel_apply(https://github.com/pytorch/pytorch/blob/master/torch/nn/parallel/parallel_apply.py)
@@ -199,14 +207,16 @@ def parallel_apply(modules, inputs, devices, kwargs_tup=None):
 
 	lock = Lock()
 	results = {}
+	grad_enabled = torch.is_grad_enabled()
 
 	def _worker(i, module, input, kwargs, device=None):
 
-		with torch.cuda.device(device):
-			# this also avoids accidental slicing of `input` if it is a Tensor
-			if not isinstance(input, (list, tuple)):
-				input = (input,)
-			output = module(*input, **kwargs)
+		with torch.set_grad_enabled(grad_enabled):
+			with torch.cuda.device(device):
+				# this also avoids accidental slicing of `input` if it is a Tensor
+				if not isinstance(input, (list, tuple)):
+					input = (input,)
+				output = module(*input, **kwargs)
 		with lock:
 			results[i] = output
 
@@ -230,15 +240,17 @@ def criterion_parallel_apply(modules, inputs, targets, devices, kwargs_tup=None)
 
 	lock = Lock()
 	results = {}
+	grad_enabled = torch.is_grad_enabled()
 
 	def _worker(i, module, input, target, kwargs, device):
-		with torch.cuda.device(device):
-			# this also avoids accidental slicing of `input` if it is a Tensor
-			if not isinstance(input, (list, tuple)):
-				input = (input,)
-			if not isinstance(target, (list, tuple)):
-				target = (target,)
-			output = module(*(input + target), **kwargs)
+
+		with torch.set_grad_enabled(grad_enabled):
+			with torch.cuda.device(device):
+				if not isinstance(input, (list, tuple)):
+					input = (input,)
+				if not isinstance(target, (list, tuple)):
+					target = (target,)
+				output = module(*(input + target), **kwargs)
 		with lock:
 			results[i] = output
 

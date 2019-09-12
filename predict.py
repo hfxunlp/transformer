@@ -96,8 +96,6 @@ nwordi = int(td["nwordi"][:][0])
 vcbt, nwordt = ldvocab(sys.argv[2])
 vcbt = reverse_dict(vcbt)
 
-cuda_device = torch.device(cnfg.gpuid)
-
 if len(sys.argv) == 4:
 	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
@@ -136,10 +134,15 @@ if use_cuda and torch.cuda.is_available():
 		multi_gpu = False
 		cuda_devices = None
 	torch.cuda.set_device(cuda_device.index)
+	#torch.backends.cudnn.benchmark = True
 else:
+	use_cuda = False
 	cuda_device = False
 	multi_gpu = False
 	cuda_devices = None
+
+# Important to make cudnn methods deterministic
+set_random_seed(cnfg.seed, use_cuda)
 
 if use_cuda:
 	mymodel.to(cuda_device)

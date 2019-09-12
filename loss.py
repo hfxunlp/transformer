@@ -67,7 +67,7 @@ class LabelSmoothingLoss(_Loss):
 		model_prob.scatter_(1, _target, self.conf)
 
 		if isinstance(self.ignore_index, (list, tuple)):
-			model_prob.masked_fill_(torch.gt(torch.stack([_target == _tmp for _tmp in self.ignore_index]).sum(0), 0), 0.0)
+			model_prob.masked_fill_(torch.stack([_target == _tmp for _tmp in self.ignore_index]).sum(0).gt(0), 0.0)
 		elif self.ignore_index >= 0:
 			model_prob.masked_fill_(_target == self.ignore_index, 0.0)
 

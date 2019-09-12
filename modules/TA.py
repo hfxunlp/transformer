@@ -20,10 +20,4 @@ class PositionwiseFF(PositionwiseFFBase):
 
 	def forward(self, x):
 
-		out = x
-		for net in self.nets:
-			out = net(out)
-
-		out = self.normer(out + x)
-
-		return out
+		return self.normer(self.net(x) + x)

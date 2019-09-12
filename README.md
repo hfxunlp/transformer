@@ -13,60 +13,26 @@ If you want to use [BPE](https://github.com/rsennrich/subword-nmt), to enable co
 
 ### BPE
 
-Run `bash scripts/mkbpe.sh` to preprocess the data with bpe, following variables in `mkbpe.sh` can be configured for your usage:
-
-```
-# "cachedir" is the directory for processed data files.
-export cachedir=cache
-# "srcd" is the path to the source data of both training and validation sets.
-export srcd=wmt17/de-en
-# "dataid" sets the ID of the generated data, all generated files will be saved into: "$cachedir/$dataid".
-export dataid=de-en
-
-# "bpeops" is the number of bpe actions for the joint bpe on source language and its translation. "minfreq" is the minimum frequency of words, words with lower frequencies will be seperated during bpe.
-export bpeops=32000
-export minfreq=50
-# "maxtokens" is the maximum tokens allowed for the source sentence and target sentence in the training set. Longer sentences will be droped.
-export maxtokens=256
-
-# "srctf" is a plain text file which stores the source languages of training set.
-export srctf=tok.de
-# "tgttf" is the corresponding gold translation of "srctf".
-export tgttf=tok.en
-# "srcvf" is similar to "srctf", but for validation.
-export srcvf=06.tok.de
-# similar to "tgttf" for validation.
-export tgtvf=06.tok.en0
-```
-
-### cleaning with BPE results
-
-Run `bash scripts/cleanbpe.sh` to clean bpe results, following variables in `cleanbpe.sh` can be configured besides those arguments which already exist in `scripts/mkbpe.sh`:
-
-```
-# vratio of words with lower frequencies are regarded as rare words, and if there are (1.0 - vratio) words of a sentence are rare words, it will be dropped
-export vratio=0.2
-
-# options for cleaning the data processed by bpe,
-# advised values except numrules can be calculated by:
-#	python tools/check/charatio.py $tgtd/src.dev.bpe $tgtd/tgt.dev.bpe, and
-#	python tools/check/biratio.py $tgtd/src.dev.bpe $tgtd/tgt.dev.bpe
-# with development set.
-# As for numrules, choose from [1, 6], fewer data will be droped with larger value, none data would be droped if it was set to 6, details are described in:
-#	tools/check/chars.py
-export charatio=0.751
-export bperatio=4.01
-export seperatio=0.8
-export bibperatio=2.64
-export bioratio=3.54
-export numrules=1
-```
+We provide scripts to apply Byte-Pair Encoding (BPE) under `scripts/bpe/`.
 
 ### convert plain text to tensors for training
 
 Generate training data for `train.py` with `bash scripts/mktrain.sh`, configure following variables in `mktrain.sh` for your usage (the other variables should comply with those in `scripts/mkbpe.sh`):
 
 ```
+# the path of datasets
+export cachedir=cache
+# the ID of a dataset (files should be saved in $cachedir/$dataid)
+export dataid=w14ende
+# the training file of the source language
+export srctf=src.train.bpe
+# the training file of the target language
+export tgttf=tgt.train.bpe
+# the validation file of the source language
+export srcvf=src.dev.bpe
+# the validation file of the target language
+export tgtvf=tgt.dev.bpe
+
 # "vsize" is the size of the vocabulary for both source language and its translation. Set a very large number to use the full vocabulary for BPE. The real vocabulary size will be 4 greater than this value because of special tags ("<sos>", "<eos>", "<unk>" and "<pad>").
 export vsize=65536
 
@@ -86,7 +52,7 @@ All parameters for configuration are saved in `cnfg.py`:
 run_id = "base"
 
 # the ID of the dataset to use
-data_id = "de-en"
+data_id = "w14ende"
 
 # training, validation and test sets, created by mktrain.sh and mktest.sh correspondingly.
 train_data = "cache/"+data_id+"/train.h5"
@@ -146,6 +112,8 @@ report_eva = False
 # run on GPU or not, and GPU device(s) to use. Data Parallel depended multi-gpu support can be enabled with values like: 'cuda:0, 1, 3'.
 use_cuda = True
 gpuid = 'cuda:0'
+# [EXP] enable mixed precision (FP16) with "O1"
+amp_opt = None
 
 # use multi-gpu for translating or not. "predict.py" will take the last gpu rather than the first in case multi_gpu_decoding is set to False to avoid potential break due to out of memory, because the first gpu is the main device by default which takes more jobs.
 multi_gpu_decoding = False
@@ -173,13 +141,13 @@ isize = 512
 nlayer = 6
 
 # hidden size for those feed-forward neural networks.
-ff_hsize = 2048
+ff_hsize = isize * 4
 
 # dropout rate for hidden states.
 drop = 0.1
 
 # dropout rate applied to multi-head attention.
-attn_drop = 0.1
+attn_drop = drop
 
 # label smoothing settings for the KL divergence.
 label_smoothing = 0.1
@@ -194,10 +162,10 @@ length_penalty = 0.0
 share_emb = False
 
 # number of heads for multi-head attention.
-nhead = 8
+nhead = max(1, isize // 64)
 
 # maximum steps cached for the positional embedding.
-cache_len = 260
+cache_len = 256
 
 # warm up steps for the training.
 warm_step = 8000
@@ -223,7 +191,7 @@ where `runid` can be omitted. In that case, the `run_id` in `cnfg.py` will be ta
 
 ```
 # "srcd" is the path of the source file you want to translate.
-export srcd=un-cache
+export srcd=w14src
 
 # "srctf" is a plain text file to be translated which should be saved in "srcd" and processed with bpe like that with the training set.
 export srctf=src-val.bpe
@@ -232,6 +200,8 @@ export modelf=expm/debug/checkpoint.t7
 # result file.
 export rsf=trans.txt
 
+# the ID of the dataset assigned in mktrain.sh
+export dataid=w14ende
 ```
 
 ## Exporting python files to C libraries
@@ -317,6 +287,10 @@ Hierarchical aggregation proposed in [Exploiting Deep Representations for Neural
 #### `TA/`
 
 Implementation of transparent attention proposed in [Training Deeper Neural Machine Translation Models with Transparent Attention](https://aclweb.org/anthology/D18-1338) modules.
+
+#### `SC/`
+
+Implementation of sentential context proposed in [Exploiting Sentential Context for Neural Machine Translation](https://www.aclweb.org/anthology/P19-1624/) modules.
 
 ### `parallel/`
 
@@ -449,7 +423,7 @@ There is a difference between the Transformer in the original paper (residue con
 
 ## Acknowledgements
 
-The project starts when Hongfei XU (the developer) was a postgraduate student at [Zhengzhou University](http://www5.zzu.edu.cn/nlp/), and continues when he is a PhD candidate at [Saarland University](https://www.uni-saarland.de/nc/en/home.html) supervised by [Prof. Dr. Josef van Genabith](https://www.dfki.de/en/web/about-us/employee/person/jova02/) and a Junior Researcher at [DFKI, MLT (German Research Center for Artificial Intelligence, Multilinguality and Language Technology)](https://www.dfki.de/en/web/research/research-departments-and-groups/multilinguality-and-language-technology/). Hongfei XU enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project.
+The project starts when Hongfei XU (the developer) was a postgraduate student at [Zhengzhou University](http://www5.zzu.edu.cn/nlp/), and continues when he is a PhD candidate at [Saarland University](https://www.uni-saarland.de/nc/en/home.html) supervised by [Prof. Dr. Josef van Genabith](https://www.dfki.de/en/web/about-us/employee/person/jova02/) and Prof. Dr. Deyi Xiong, and a Junior Researcher at [DFKI, MLT (German Research Center for Artificial Intelligence, Multilinguality and Language Technology)](https://www.dfki.de/en/web/research/research-departments-and-groups/multilinguality-and-language-technology/). Hongfei XU enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project.
 
 Details of this project can be found [here](https://arxiv.org/abs/1903.07402), and please cite it if you enjoy the implementation :)
 

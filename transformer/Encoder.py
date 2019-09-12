@@ -21,7 +21,7 @@ class EncoderLayer(nn.Module):
 	# ahsize: hidden size of MultiHeadAttention
 	# norm_residue: residue with layer normalized representation
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=True):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
 
 		super(EncoderLayer, self).__init__()
 
@@ -35,7 +35,7 @@ class EncoderLayer(nn.Module):
 
 		self.layer_normer = nn.LayerNorm(isize, eps=1e-06)
 
-		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.norm_residue = norm_residue
 
@@ -74,7 +74,7 @@ class Encoder(nn.Module):
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
 
@@ -89,7 +89,6 @@ class Encoder(nn.Module):
 
 	def forward(self, inputs, mask=None):
 
-		bsize, seql = inputs.size()
 		out = self.wemb(inputs)
 		out = out * sqrt(out.size(-1)) + self.pemb(inputs, expand=False)
 

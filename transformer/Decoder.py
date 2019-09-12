@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from modules.base import *
 from utils import repeat_bsize_for_beam_tensor
-from math import sqrt
+from math import sqrt, inf
 
 class DecoderLayer(nn.Module):
 
@@ -15,7 +15,7 @@ class DecoderLayer(nn.Module):
 	# ahsize: hidden size of MultiHeadAttention
 	# norm_residue: residue with layer normalized representation
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=True):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
 
 		super(DecoderLayer, self).__init__()
 
@@ -32,8 +32,8 @@ class DecoderLayer(nn.Module):
 		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
 
 		if dropout > 0:
-			self.d1 = nn.Dropout(dropout, inplace=True)
-			self.d2 = nn.Dropout(dropout, inplace=True)
+			self.d1 = Dropout(dropout, inplace=True)
+			self.d2 = Dropout(dropout, inplace=True)
 		else:
 			self.d1 = None
 			self.d2 = None
@@ -47,7 +47,7 @@ class DecoderLayer(nn.Module):
 	# tgt_pad_mask: mask to hide the future input
 	# query_unit: single query to decode, used to support decoding for given step
 
-	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, concat_query=False):
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None):
 
 		if query_unit is None:
 			_inputo = self.layer_normer1(inputo)
@@ -64,12 +64,7 @@ class DecoderLayer(nn.Module):
 		else:
 			_query_unit = self.layer_normer1(query_unit)
 
-			if concat_query:
-
-				_inputo = _query_unit if inputo is None else torch.cat((inputo, _query_unit), 1)
-
-			else:
-				_inputo = self.layer_normer1(inputo)
+			_inputo = _query_unit if inputo is None else torch.cat((inputo, _query_unit,), 1)
 
 			states_return = _inputo
 
@@ -116,7 +111,7 @@ class Decoder(nn.Module):
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.xseql = xseql
 		self.register_buffer('mask', torch.ones(xseql, xseql, dtype=torch.uint8).triu(1).unsqueeze(0))
@@ -128,7 +123,7 @@ class Decoder(nn.Module):
 		self.pemb = PositionalEmb(isize, xseql, 0, 0)
 		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
 
-		self.classifier = nn.Linear(isize, nwd)
+		self.classifier = Linear(isize, nwd)
 		# be careful since this line of code is trying to share the weight of the wemb and the classifier, which may cause problems if torch.nn updates
 		if bindemb:
 			self.classifier.weight = self.wemb.weight
@@ -147,7 +142,7 @@ class Decoder(nn.Module):
 
 	def forward(self, inpute, inputo, src_pad_mask=None):
 
-		bsize, nquery = inputo.size()
+		nquery = inputo.size(-1)
 
 		out = self.wemb(inputo)
 
@@ -227,7 +222,7 @@ class Decoder(nn.Module):
 		states = {}
 
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, None, out, True)
+			out, _state = net(inpute, None, src_pad_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -255,7 +250,7 @@ class Decoder(nn.Module):
 				out = self.drop(out)
 
 			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], src_pad_mask, None, out, True)
+				out, _state = net(inpute, states[_tmp], src_pad_mask, None, out)
 				states[_tmp] = _state
 
 			if self.out_normer is not None:
@@ -304,7 +299,7 @@ class Decoder(nn.Module):
 		states = {}
 
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, None, out, True)
+			out, _state = net(inpute, None, src_pad_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -349,7 +344,7 @@ class Decoder(nn.Module):
 				out = self.drop(out)
 
 			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], _src_pad_mask, None, out, True)
+				out, _state = net(inpute, states[_tmp], _src_pad_mask, None, out)
 				states[_tmp] = _state
 
 			if self.out_normer is not None:
@@ -454,7 +449,7 @@ class Decoder(nn.Module):
 
 		if self.fbl is not None:
 			for ind in self.fbl:
-				self.classifier.bias.data[ind] = -1e32
+				self.classifier.bias.data[ind] = -inf
 
 	def fix_load(self):
 
@@ -493,7 +488,7 @@ class Decoder(nn.Module):
 		states = {}
 
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, None, out, True)
+			out, _state = net(inpute, None, src_pad_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -520,7 +515,7 @@ class Decoder(nn.Module):
 				out = self.drop(out)
 
 			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], src_pad_mask, None, out, True)
+				out, _state = net(inpute, states[_tmp], src_pad_mask, None, out)
 				states[_tmp] = _state
 
 			if self.out_normer is not None:
@@ -594,7 +589,7 @@ class Decoder(nn.Module):
 		states = {}
 
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, None, out, True)
+			out, _state = net(inpute, None, src_pad_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -644,7 +639,7 @@ class Decoder(nn.Module):
 				out = self.drop(out)
 
 			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], _src_pad_mask, None, out, True)
+				out, _state = net(inpute, states[_tmp], _src_pad_mask, None, out)
 				states[_tmp] = _state
 
 			if self.out_normer is not None:

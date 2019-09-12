@@ -18,7 +18,7 @@ class DecoderLayer(nn.Module):
 	# num_head: number of heads in MultiHeadAttention
 	# ahsize: hidden size of MultiHeadAttention
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=True):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
 
 		super(DecoderLayer, self).__init__()
 
@@ -35,8 +35,8 @@ class DecoderLayer(nn.Module):
 		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
 
 		if dropout > 0:
-			self.d1 = nn.Dropout(dropout, inplace=True)
-			self.d2 = nn.Dropout(dropout, inplace=True)
+			self.d1 = Dropout(dropout, inplace=True)
+			self.d2 = Dropout(dropout, inplace=True)
 		else:
 			self.d1 = None
 			self.d2 = None

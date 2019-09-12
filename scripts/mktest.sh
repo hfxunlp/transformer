@@ -1,13 +1,13 @@
 #!/bin/bash
 
-export srcd=un-cache
-export srctf=src-val.bpe
-export modelf="expm/debug/checkpoint.t7"
-export rsf=trans.txt
+export srcd=wmt14
+export srctf=test.tc.en.w14ende
+export modelf="expm/w14ende/checkpoint.t7"
+export rsf=w14trs/trans.txt
 export ngpu=1
 
 export cachedir=cache
-export dataid=un
+export dataid=w14ende
 
 export tgtd=$cachedir/$dataid
 

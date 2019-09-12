@@ -15,7 +15,7 @@ class MonoDiscriminator(nn.Module):
 
 		_fhsize = _ahsize if fhsize is None else fhsize
 
-		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.pemb = PositionalEmb(isize, xseql, 0, 0) if use_pemb else None
 
@@ -73,8 +73,8 @@ class CompareLayer(nn.Module):
 		self.layer_normer1 = nn.LayerNorm(isize, eps=1e-06)
 		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
 		if dropout > 0:
-			self.d1 = nn.Dropout(dropout, inplace=True)
-			self.d2 = nn.Dropout(dropout, inplace=True)
+			self.d1 = Dropout(dropout, inplace=True)
+			self.d2 = Dropout(dropout, inplace=True)
 		else:
 			self.d1 = None
 			self.d2 = None
@@ -118,7 +118,7 @@ class PairDiscriminator(nn.Module):
 
 		_fhsize = _ahsize if fhsize is None else fhsize
 
-		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.pemb = PositionalEmb(isize, xseql, 0, 0) if use_pemb else None
 

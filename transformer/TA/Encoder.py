@@ -2,7 +2,7 @@
 
 import torch
 from torch import nn
-from modules.base import SelfAttn, PositionalEmb
+from modules.base import SelfAttn, PositionalEmb, Dropout
 from modules.TA import PositionwiseFF
 from math import sqrt
 
@@ -38,7 +38,7 @@ class EncoderLayer(nn.Module):
 
 		self.layer_normer = nn.LayerNorm(isize, eps=1e-06)
 
-		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 	# inputs: input of this layer (bsize, seql, isize)
 
@@ -77,7 +77,7 @@ class Encoder(EncoderBase):
 		self.nets = nn.ModuleList([EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
 
 		self.tattn_w = nn.Parameter(torch.Tensor(num_layer + 1, num_layer_dec).uniform_(- sqrt(2.0 / (num_layer + num_layer_dec + 1)), sqrt(2.0 / (num_layer + num_layer_dec + 1))))
-		self.tattn_drop = nn.Dropout(dropout) if dropout > 0.0 else None
+		self.tattn_drop = Dropout(dropout) if dropout > 0.0 else None
 
 	# inputs: (bsize, seql)
 	# mask: (bsize, 1, seql), generated with:

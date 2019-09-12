@@ -3,7 +3,7 @@
 # take the processed data from scripts/mkbpe.sh and convert to tensor representation.
 
 export cachedir=cache
-export dataid=un
+export dataid=w14ende
 
 export wkd=$cachedir/$dataid
 
@@ -23,12 +23,12 @@ python tools/sort.py $wkd/$srcvf $wkd/$tgtvf $wkd/src.dev.srt $wkd/tgt.dev.srt 1
 
 python tools/vocab.py $wkd/src.train.srt $wkd/src.vcb $vsize
 python tools/vocab.py $wkd/tgt.train.srt $wkd/tgt.vcb $vsize
-# use the following line if you want a shared vocabulary
+# use following lines if you want a shared vocabulary
 #python tools/share_vocab.py $wkd/src.train.srt $wkd/tgt.train.srt $wkd/common.vcb $vsize
+#python tools/check/fbindexes.py $wkd/common.vcb $wkd/tgt.train.srt $wkd/fbind.py
 
 python tools/mkiodata.py $wkd/src.train.srt $wkd/tgt.train.srt $wkd/src.vcb $wkd/tgt.vcb $wkd/train.h5 $ngpu
 python tools/mkiodata.py $wkd/src.dev.srt $wkd/tgt.dev.srt $wkd/src.vcb $wkd/tgt.vcb $wkd/dev.h5 $ngpu
 # use the following two lines if you want to share the embedding between encoder and decoder
 #python tools/mkiodata.py $wkd/src.train.srt $wkd/tgt.train.srt $wkd/common.vcb $wkd/common.vcb $wkd/train.h5 $ngpu
 #python tools/mkiodata.py $wkd/src.dev.srt $wkd/tgt.dev.srt $wkd/common.vcb $wkd/common.vcb $wkd/dev.h5 $ngpu
-

@@ -2,7 +2,7 @@
 
 run_id = "base"
 
-data_id = "de-en"
+data_id = "w14ende"
 
 train_data = "cache/"+data_id+"/train.h5"
 dev_data = "cache/"+data_id+"/dev.h5"
@@ -46,6 +46,8 @@ report_eva = False
 use_cuda = True
 # enable Data Parallel multi-gpu support with values like: 'cuda:0, 1, 3'.
 gpuid = 'cuda:0'
+# [EXP] enable mixed precision (FP16) with "O1"
+amp_opt = None
 
 # use multi-gpu for translating or not. `predict.py` will take the last gpu rather than the first in case multi_gpu_decoding is set to False to avoid potential break due to out of memory, since the first gpu is the main device by default which takes more jobs.
 multi_gpu_decoding = False
@@ -67,11 +69,11 @@ isize = 512
 
 nlayer = 6
 
-ff_hsize = 2048
+ff_hsize = isize * 4
 
 drop = 0.1
 
-attn_drop = 0.1
+attn_drop = drop
 
 label_smoothing = 0.1
 
@@ -81,9 +83,9 @@ length_penalty = 0.0
 
 share_emb = False
 
-nhead = 8
+nhead = max(1, isize // 64)
 
-cache_len = 260
+cache_len = 256
 
 warm_step = 8000
 

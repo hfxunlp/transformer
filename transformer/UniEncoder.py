@@ -34,7 +34,7 @@ class Encoder(nn.Module):
 
 		self.num_layer = num_layer
 
-		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
 
@@ -76,7 +76,7 @@ class Encoder(nn.Module):
 			# sum_w, remainv, done: (bsize, seql, 1)
 			sum_w = w if sum_w is None else sum_w + w
 			remainv = 1.0 - sum_w
-			done = torch.lt(remainv, 0.01) if done is None else torch.gt(done + torch.lt(remainv, 0.01), 0)
+			done = torch.lt(remainv, 0.01) if done is None else (done + torch.lt(remainv, 0.01)).gt(0)
 			if self.training:
 				act_loss.append(w.new_full(w.size(), -1.0).masked_fill(done, 0.0))
 			if done.sum() == done.numel():

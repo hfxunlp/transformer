@@ -95,12 +95,19 @@ def load_model_cpu_old(modf, base_model):
 
 	return base_model
 
-def save_model(model, fname, sub_module):
+def save_model(model, fname, sub_module, logger=None):
 
-	if sub_module:
-		torch.save([t.data for t in model.module.parameters()], fname)
-	else:
-		torch.save([t.data for t in model.parameters()], fname)
+	try:
+		if sub_module:
+			torch.save([t.data for t in model.module.parameters()], fname)
+		else:
+			torch.save([t.data for t in model.parameters()], fname)
+
+	except Exception as e:
+		if logger is None:
+			print(e)
+		else:
+			logger.info(str(e))
 
 def get_logger(fname):
 
@@ -204,3 +211,8 @@ def remove_layers(all_layers, ltr):
 			rs.append(_l)
 
 	return rs
+
+def free_cache(free_cuda=False):
+
+	if free_cuda:
+		torch.cuda.empty_cache()

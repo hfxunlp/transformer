@@ -29,7 +29,7 @@ import cnfg
 
 from transformer.NMT import NMT
 
-def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, chkpof=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False):
+def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, chkpof=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False, use_amp=False):
 
 	sum_loss = 0.0
 	sum_wd = 0
@@ -58,27 +58,14 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 		if multi_gpu:
 			loss = loss.sum()
 		loss_add = loss.data.item()
-		sum_loss += loss_add
-		wd_add = ot.numel() - ot.eq(0).sum().item()
-		if save_loss:
-			_ls[(i_d, t_d)] = loss_add / wd_add
-		sum_wd += wd_add
-		_done_tokens += wd_add
-		if nreport is not None:
-			part_loss += loss_add
-			part_wd += wd_add
-			if cur_b % nreport == 0:
-				if report_eva:
-					_leva, _eeva = eva(ed, nd, model, lossf, mv_device, multi_gpu)
-					logger.info("Average loss over %d tokens: %.3f, valid loss/error: %.3f %.2f" % (part_wd, part_loss / part_wd, _leva, _eeva))
-				else:
-					logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd))
-				part_loss = 0.0
-				part_wd = 0
 
 		# scale the sum of losses down according to the number of tokens adviced by: https://mp.weixin.qq.com/s/qAHZ4L5qK3rongCIIq5hQw, I think not reasonable.
 		#loss /= wd_add
-		loss.backward()
+		if use_amp:
+			with amp.scale_loss(loss, optm) as scaled_loss:
+				scaled_loss.backward()
+		else:
+			loss.backward()
 
 		if _done_tokens >= tokens_optm:
 			if multi_gpu:
@@ -101,7 +88,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 					else:
 						_chkpf = chkpf
 						_chkpof = chkpof
-					save_model(model, _chkpf, multi_gpu)
+					save_model(model, _chkpf, multi_gpu, logger)
 					if chkpof is not None:
 						torch.save(optm.state_dict(), _chkpof)
 					if statesf is not None:
@@ -110,6 +97,24 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				if _cur_rstep <= 0:
 					break
 			lrsch.step()
+
+		sum_loss += loss_add
+		wd_add = ot.numel() - ot.eq(0).sum().item()
+		if save_loss:
+			_ls[(i_d, t_d)] = loss_add / wd_add
+		sum_wd += wd_add
+		_done_tokens += wd_add
+		if nreport is not None:
+			part_loss += loss_add
+			part_wd += wd_add
+			if cur_b % nreport == 0:
+				if report_eva:
+					_leva, _eeva = eva(ed, nd, model, lossf, mv_device, multi_gpu)
+					logger.info("Average loss over %d tokens: %.3f, valid loss/error: %.3f %.2f" % (part_wd, part_loss / part_wd, _leva, _eeva))
+				else:
+					logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd))
+				part_loss = 0.0
+				part_wd = 0
 
 		if save_checkp_epoch and (_cur_rstep is None) and (save_every is not None) and (cur_b % save_every == 0) and (chkpf is not None) and (cur_b < ndata):
 			if num_checkpoint > 1:
@@ -121,8 +126,8 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			else:
 				_chkpf = chkpf
 				_chkpof = chkpof
-			#save_model(model, _chkpf, isinstance(model, nn.DataParallel))
-			save_model(model, _chkpf, multi_gpu)
+			#save_model(model, _chkpf, isinstance(model, nn.DataParallel), logger)
+			save_model(model, _chkpf, multi_gpu, logger)
 			if chkpof is not None:
 				torch.save(optm.state_dict(), _chkpof)
 			if statesf is not None:
@@ -212,28 +217,6 @@ done_tokens = 0
 batch_report = cnfg.batch_report
 report_eva = cnfg.report_eva
 
-use_cuda = cnfg.use_cuda
-gpuid = cnfg.gpuid
-
-if use_cuda and torch.cuda.is_available():
-	use_cuda = True
-	if len(gpuid.split(",")) > 1:
-		cuda_device = torch.device(gpuid[:gpuid.find(",")].strip())
-		cuda_devices = [int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(",")]
-		multi_gpu = True
-	else:
-		cuda_device = torch.device(gpuid)
-		multi_gpu = False
-		cuda_devices = None
-	torch.cuda.set_device(cuda_device.index)
-else:
-	use_cuda = False
-	cuda_device = False
-	multi_gpu = False
-	cuda_devices = None
-
-set_random_seed(cnfg.seed, use_cuda)
-
 use_ams = cnfg.use_ams
 
 save_optm_state = cnfg.save_optm_state
@@ -261,6 +244,39 @@ if save_every is not None:
 
 logger = get_logger(wkdir + "train.log")
 
+use_cuda = cnfg.use_cuda
+gpuid = cnfg.gpuid
+
+if use_cuda and torch.cuda.is_available():
+	use_cuda = True
+	if len(gpuid.split(",")) > 1:
+		cuda_device = torch.device(gpuid[:gpuid.find(",")].strip())
+		cuda_devices = [int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(",")]
+		multi_gpu = True
+	else:
+		cuda_device = torch.device(gpuid)
+		multi_gpu = False
+		cuda_devices = None
+	torch.cuda.set_device(cuda_device.index)
+	#torch.backends.cudnn.benchmark = True
+else:
+	use_cuda = False
+	cuda_device = False
+	multi_gpu = False
+	cuda_devices = None
+
+if use_cuda and cnfg.amp_opt:
+	try:
+		from apex import amp
+		use_amp = True
+	except Exception as e:
+		logger.info(str(e))
+		use_amp = False
+else:
+	use_amp = False
+
+set_random_seed(cnfg.seed, use_cuda)
+
 td = h5py.File(cnfg.train_data, "r")
 vd = h5py.File(cnfg.dev_data, "r")
 
@@ -276,12 +292,11 @@ fine_tune_m = cnfg.fine_tune_m
 
 tl = [("i" + str(i), "t" + str(i)) for i in range(ntrain)]
 
-if fine_tune_m is None:
-	mymodel = init_model_params(mymodel)
-	mymodel.apply(init_fixing)
-else:
+mymodel = init_model_params(mymodel)
+if fine_tune_m is not None:
 	logger.info("Load pre-trained model from: " + fine_tune_m)
 	mymodel = load_model_cpu(fine_tune_m, mymodel)
+mymodel.apply(init_fixing)
 
 #lw = torch.ones(nwordt).float()
 #lw[0] = 0.0
@@ -321,6 +336,10 @@ if use_cuda:
 
 # lr will be over written by GoogleLR before used
 optimizer = optim.Adam(mymodel.parameters(), lr=1e-4, betas=(0.9, 0.98), eps=1e-9, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
+optimizer.zero_grad()
+
+if use_amp:
+	mymodel, optimizer = amp.initialize(mymodel, optimizer, opt_level=cnfg.amp_opt)
 
 if multi_gpu:
 	#mymodel = nn.DataParallel(mymodel, device_ids=cuda_devices, output_device=cuda_device.index)
@@ -344,16 +363,16 @@ minloss, minerr = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu)
 logger.info("".join(("Init lr: ", ",".join(tostr(getlr(optimizer))), ", Dev Loss/Error: %.3f %.2f" % (minloss, minerr))))
 
 if fine_tune_m is None:
-	save_model(mymodel, wkdir + "init.t7", multi_gpu)
+	save_model(mymodel, wkdir + "init.t7", multi_gpu, logger)
 	logger.info("Initial model saved")
 else:
 	cnt_states = cnfg.train_statesf
 	if (cnt_states is not None) and p_check(cnt_states):
 		logger.info("Continue last epoch")
-		tminerr, done_tokens, cur_checkid, remain_steps, _ = train(td, load_states(cnt_states), vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, False, False)
+		tminerr, done_tokens, cur_checkid, remain_steps, _ = train(td, load_states(cnt_states), vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, False, False, use_amp)
 		vloss, vprec = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu)
 		logger.info("Epoch: 0, train loss: %.3f, valid loss/error: %.3f %.2f" % (tminerr, vloss, vprec))
-		save_model(mymodel, wkdir + "train_0_%.3f_%.3f_%.2f.t7" % (tminerr, vloss, vprec), multi_gpu)
+		save_model(mymodel, wkdir + "train_0_%.3f_%.3f_%.2f.t7" % (tminerr, vloss, vprec), multi_gpu, logger)
 		if save_optm_state:
 			torch.save(optimizer.state_dict(), wkdir + "train_0_%.3f_%.3f_%.2f.optm.t7" % (tminerr, vloss, vprec))
 		logger.info("New best model saved")
@@ -376,12 +395,13 @@ namin = 0
 
 for i in range(1, maxrun + 1):
 	shuffle(tl)
-	terr, done_tokens, cur_checkid, remain_steps, _Dws = train(td, tl, vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, dss_ws > 0, i >= start_chkp_save)
+	free_cache(use_cuda)
+	terr, done_tokens, cur_checkid, remain_steps, _Dws = train(td, tl, vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, dss_ws > 0, i >= start_chkp_save, use_amp)
 	vloss, vprec = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu)
 	logger.info("Epoch: %d, train loss: %.3f, valid loss/error: %.3f %.2f" % (i, terr, vloss, vprec))
 
 	if (vprec <= minerr) or (vloss <= minloss):
-		save_model(mymodel, wkdir + "eva_%d_%.3f_%.3f_%.2f.t7" % (i, terr, vloss, vprec), multi_gpu)
+		save_model(mymodel, wkdir + "eva_%d_%.3f_%.3f_%.2f.t7" % (i, terr, vloss, vprec), multi_gpu, logger)
 		if save_optm_state:
 			torch.save(optimizer.state_dict(), wkdir + "eva_%d_%.3f_%.3f_%.2f.optm.t7" % (i, terr, vloss, vprec))
 		logger.info("New best model saved")
@@ -396,11 +416,11 @@ for i in range(1, maxrun + 1):
 	else:
 		if terr < tminerr:
 			tminerr = terr
-			save_model(mymodel, wkdir + "train_%d_%.3f_%.3f_%.2f.t7" % (i, terr, vloss, vprec), multi_gpu)
+			save_model(mymodel, wkdir + "train_%d_%.3f_%.3f_%.2f.t7" % (i, terr, vloss, vprec), multi_gpu, logger)
 			if save_optm_state:
 				torch.save(optimizer.state_dict(), wkdir + "train_%d_%.3f_%.3f_%.2f.optm.t7" % (i, terr, vloss, vprec))
 		elif epoch_save:
-			save_model(mymodel, wkdir + "epoch_%d_%.3f_%.3f_%.2f.t7" % (i, terr, vloss, vprec), multi_gpu)
+			save_model(mymodel, wkdir + "epoch_%d_%.3f_%.3f_%.2f.t7" % (i, terr, vloss, vprec), multi_gpu, logger)
 
 		namin += 1
 		if namin >= earlystop:
@@ -442,7 +462,7 @@ if done_tokens > 0:
 	#done_tokens = 0
 	#optimizer.zero_grad()
 
-save_model(mymodel, wkdir + "last.t7", multi_gpu)
+save_model(mymodel, wkdir + "last.t7", multi_gpu, logger)
 if save_optm_state:
 	torch.save(optimizer.state_dict(), wkdir + "last.optm.t7")
 logger.info("model saved")

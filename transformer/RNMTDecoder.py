@@ -8,10 +8,6 @@ from torch import nn
 from modules.base import *
 from modules.rnncells import *
 
-def prepare_initState(hx, cx, bsize):
-
-	return hx.expand(bsize, -1), cx.expand(bsize, -1)
-
 class FirstLayer(nn.Module):
 
 	# isize: input size
@@ -59,7 +55,7 @@ class DecoderLayer(nn.Module):
 		self.init_hx = nn.Parameter(torch.zeros(1, osize))
 		self.init_cx = nn.Parameter(torch.zeros(1, osize))
 
-		self.drop = nn.Dropout(dropout, inplace=False) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=False) if dropout > 0.0 else None
 
 		self.residue = residue
 
@@ -110,7 +106,7 @@ class Decoder(nn.Module):
 
 		_ahsize = isize if ahsize is None else ahsize
 
-		self.drop = nn.Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.xseql = xseql
 
@@ -124,9 +120,9 @@ class Decoder(nn.Module):
 
 		self.nets = nn.ModuleList([DecoderLayer(isize, isize, dropout, i > 0) for i in range(num_layer - 1)])
 
-		self.projector = nn.Linear(isize, isize, bias=False) if projector else None
+		self.projector = Linear(isize, isize, bias=False) if projector else None
 
-		self.classifier = nn.Linear(isize * 2, nwd)#nn.Sequential(nn.Linear(isize * 2, isize, bias=False), nn.Tanh(), nn.Linear(isize, nwd))
+		self.classifier = Linear(isize * 2, nwd)#nn.Sequential(Linear(isize * 2, isize, bias=False), nn.Tanh(), Linear(isize, nwd))
 		# be careful since this line of code is trying to share the weight of the wemb and the classifier, which may cause problems if torch.nn updates
 		#if bindemb:
 			#list(self.classifier.modules())[-1].weight = self.wemb.weight

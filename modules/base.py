@@ -1,10 +1,13 @@
 #encoding: utf-8
 
-from math import sqrt, log, exp, pi
+from math import sqrt, log, exp, pi, inf
 import torch
 from torch import nn
 from torch.nn import functional as nnFunc
 from torch.autograd import Function
+
+Linear = nn.Linear
+Dropout = nn.Dropout
 
 class PositionwiseFF(nn.Module):
 
@@ -17,10 +20,7 @@ class PositionwiseFF(nn.Module):
 
 		_hsize = isize * 4 if hsize is None else hsize
 
-		if dropout > 0.0:
-			self.nets = nn.ModuleList([nn.Linear(isize, _hsize), nn.Dropout(dropout, inplace=True), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize), nn.Dropout(dropout, inplace=True)])
-		else:
-			self.nets = nn.ModuleList([nn.Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize)])
+		self.net = nn.Sequential(Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize))
 
 		self.normer = nn.LayerNorm(isize, eps=1e-06)
 
@@ -30,9 +30,7 @@ class PositionwiseFF(nn.Module):
 
 		_out = self.normer(x)
 
-		out = _out
-		for net in self.nets:
-			out = net(out)
+		out = self.net(_out)
 
 		out = out + (_out if self.norm_residue else x)
 
@@ -116,16 +114,16 @@ class MultiHeadAttn(nn.Module):
 		self.hsize = self.attn_dim * num_head
 		self.num_head = num_head
 
-		self.query_adaptor = nn.Linear(isize, self.hsize, bias=enable_bias)
-		self.value_adaptor = nn.Linear(isize, self.hsize, bias=enable_bias)
-		self.key_adaptor = nn.Linear(isize, self.hsize, bias=enable_bias)
+		self.query_adaptor = Linear(isize, self.hsize, bias=enable_bias)
+		self.value_adaptor = Linear(isize, self.hsize, bias=enable_bias)
+		self.key_adaptor = Linear(isize, self.hsize, bias=enable_bias)
 
-		self.outer = nn.Linear(self.hsize, osize, bias=enable_bias)
+		self.outer = Linear(self.hsize, osize, bias=enable_bias)
 
 		#self.normer = MHSparseNormer(num_head, dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 		self.normer = SparseNormer(dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 
-		self.drop = nn.Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
+		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
 	# iQ: query (bsize, num_query, vsize)
 	# iK: keys (bsize, seql, vsize)
@@ -150,7 +148,7 @@ class MultiHeadAttn(nn.Module):
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -1e32)
+			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -inf)
 
 		scores = self.normer(scores)
 
@@ -183,9 +181,9 @@ class AverageAttn(nn.Module):
 		self.num_pos = num_pos
 		self.register_buffer('w', torch.Tensor(num_pos, num_pos))
 
-		self.ffn = nn.Sequential(nn.Linear(isize, _hsize), nn.Dropout(dropout, inplace=True), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize), nn.Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(nn.Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), nn.Linear(_hsize, isize))
+		self.ffn = nn.Sequential(Linear(isize, _hsize), Dropout(dropout, inplace=True), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize))
 
-		self.gw = nn.Linear(isize * 2, isize * 2)
+		self.gw = Linear(isize * 2, isize * 2)
 
 		self.reset_parameters()
 
@@ -231,13 +229,6 @@ class AverageAttn(nn.Module):
 # Accelerated MultiHeadAttn for self attention, use when Q == K == V
 class SelfAttn(nn.Module):
 
-	# isize: input dimension
-	# hsize: hidden dimension
-	# osize: output size of this layer
-	# num_head: number of heads
-	# dropout: dropout probability
-	# sparsenorm: using sparse normer or standard softmax
-
 	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=False, sparsenorm=False):
 
 		super(SelfAttn, self).__init__()
@@ -246,28 +237,20 @@ class SelfAttn(nn.Module):
 		self.hsize = self.attn_dim * num_head
 		self.num_head = num_head
 
-		self.adaptor = nn.Linear(isize, self.hsize * 3, bias=enable_bias)
+		self.adaptor = Linear(isize, self.hsize * 3, bias=enable_bias)
 
-		self.outer = nn.Linear(self.hsize, osize, bias=enable_bias)
+		self.outer = Linear(self.hsize, osize, bias=enable_bias)
 
 		#self.normer = MHSparseNormer(num_head, dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 		self.normer = SparseNormer(dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 
-		self.drop = nn.Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
-
-	# iQ: query (bsize, num_query, vsize)
-	# mask: (bsize, num_query, seql)
-	# iK: key/value (bsize, seql, vsize), in case key != query, for efficient decoding
+		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
 	def forward(self, iQ, mask=None, iK=None):
 
 		bsize, nquery, _ = iQ.size()
 		nheads = self.num_head
 		adim = self.attn_dim
-
-		# real_iQ: MultiHead iQ (bsize, num_query, vsize) => (bsize, nheads, nquery, adim)
-		# real_iK: MultiHead iK (bsize, nquery, vsize) => (bsize, nheads, adim, seql)
-		# real_iV: MultiHead iV (bsize, nquery, vsize) => (bsize, nheads, seql, adim)
 
 		if iK is None:
 
@@ -284,35 +267,22 @@ class SelfAttn(nn.Module):
 			real_iK, real_iV = _out.unbind(2)
 			real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
 
-		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, adim, seql) => (bsize, nheads, nquery, seql)
-
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -1e32)
+			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -inf)
 
 		scores = self.normer(scores)
 
 		if self.drop is not None:
 			scores = self.drop(scores)
 
-		# oMA: output of MultiHeadAttention T((bsize, nheads, nquery, nquery) * (bsize, nheads, nquery, adim)) => (bsize, nquery, nheads, adim)
-
 		oMA = scores.matmul(real_iV).transpose(1, 2).contiguous()
-
-		# output of this layer (bsize, nquery, nheads, adim) => (bsize, nquery, osize)
 
 		return self.outer(oMA.view(bsize, nquery, self.hsize))
 
 # Accelerated MultiHeadAttn for cross attention, use when K == V
 class CrossAttn(nn.Module):
-
-	# isize: input dimension
-	# hsize: hidden dimension
-	# osize: output size of this layer
-	# num_head: number of heads
-	# dropout: dropout probability
-	# sparsenorm: using sparse normer or standard softmax
 
 	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=False, sparsenorm=False):
 
@@ -322,19 +292,15 @@ class CrossAttn(nn.Module):
 		self.hsize = self.attn_dim * num_head
 		self.num_head = num_head
 
-		self.query_adaptor = nn.Linear(isize, self.hsize, bias=enable_bias)
-		self.kv_adaptor = nn.Linear(isize, self.hsize * 2, bias=enable_bias)
+		self.query_adaptor = Linear(isize, self.hsize, bias=enable_bias)
+		self.kv_adaptor = Linear(isize, self.hsize * 2, bias=enable_bias)
 
-		self.outer = nn.Linear(self.hsize, osize, bias=enable_bias)
+		self.outer = Linear(self.hsize, osize, bias=enable_bias)
 
 		#self.normer = MHSparseNormer(num_head, dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 		self.normer = SparseNormer(dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 
-		self.drop = nn.Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
-
-	# iQ: query (bsize, num_query, vsize)
-	# iK: keys (bsize, seql, vsize)
-	# mask (bsize, num_query, seql)
+		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
 	def forward(self, iQ, iK, mask=None):
 
@@ -343,32 +309,22 @@ class CrossAttn(nn.Module):
 		nheads = self.num_head
 		adim = self.attn_dim
 
-		# real_iQ: MultiHead iQ (bsize, num_query, vsize) => (bsize, nheads, nquery, adim)
-		# real_iK: MultiHead iK (bsize, seql, vsize) => (bsize, nheads, seql, adim)
-		# real_iV: MultiHead iV (bsize, seql, vsize) => (bsize, nheads, seql, adim)
-
 		real_iQ, _out = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2), self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim)
 
 		real_iK, real_iV = _out.unbind(2)
 		real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
 
-		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, adim, seql) => (bsize, nheads, nquery, seql)
-
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -1e32)
+			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -inf)
 
 		scores = self.normer(scores)
 
 		if self.drop is not None:
 			scores = self.drop(scores)
 
-		# oMA: output of MultiHeadAttention T((bsize, nheads, nquery, seql) * (bsize, nheads, seql, adim)) => (bsize, nquery, nheads, adim)
-
 		oMA = scores.matmul(real_iV).transpose(1, 2).contiguous()
-
-		# output of this layer (bsize, nquery, nheads, adim) => (bsize, nquery, osize)
 
 		return self.outer(oMA.view(bsize, nquery, self.hsize))
 
@@ -377,13 +333,14 @@ class ResidueCombiner(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, ncomb=2, hsize=None, use_GeLU=False):
+	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, use_GeLU=False):
 
 		super(ResidueCombiner, self).__init__()
 
 		_hsize = isize * 2 * ncomb if hsize is None else hsize
 
-		self.net = nn.Sequential(nn.Linear(isize * ncomb, _hsize), GeLU_BERT() if use_GeLU else nn.Sigmoid(), nn.Linear(_hsize, isize))
+		# should dropout be in front of sigmoid or not?
+		self.net = nn.Sequential(Linear(isize * ncomb, _hsize), GeLU_BERT() if use_GeLU else nn.Sigmoid(), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize * ncomb, _hsize), GeLU_BERT() if use_GeLU else nn.Sigmoid(), Linear(_hsize, isize))
 
 		self.out_normer = nn.LayerNorm(isize, eps=1e-06)
 
@@ -697,7 +654,7 @@ class FertSummer(nn.Module):
 
 		_weight = self.net(x)
 		if mask is not None:
-			_weight.masked_fill_(mask, -1e32)
+			_weight.masked_fill_(mask, -inf)
 
 		# (bsize, seql, 1)' * (bsize, seql, isize) => (bsize, 1, isize)
 		return self.normer(_weight).transpose(1, 2).bmm(x).squeeze(1)
@@ -799,43 +756,3 @@ class CoordinateEmb(nn.Module):
 	def get_pos(self, step, layer):
 
 		return self.w[layer][step] if step < self.num_pos and layer < self.num_steps else self.get_ext(step, layer, True).squeeze(0)
-
-class GausNoiser(nn.Module):
-
-	def __init__(self, power):
-
-		super(GausNoiser, self).__init__()
-		self.power = power
-
-	# mask: (bsize, seql, 1), otherwise cannot multiply with inpute.size(-1)
-	def forward(self, inpute, mask=None):
-
-		if self.training:
-			if mask is None:
-				base_p = inpute.data.abs().mean() * self.power
-			else:
-				base_p = inpute.data.abs().masked_fill(mask, 0.0).sum() * (self.power / float((mask.numel() - mask.sum().item()) * inpute.size(-1)))
-
-			return torch.randn(inpute.size(), dtype=inpute.dtype, device=inpute.device) * base_p + inpute
-
-		return inpute
-
-class UniNoiser(nn.Module):
-
-	def __init__(self, power):
-
-		super(UniNoiser, self).__init__()
-		self.power = power
-
-	# mask: (bsize, seql, 1), otherwise cannot multiply with inpute.size(-1)
-	def forward(self, inpute, mask=None):
-
-		if self.training:
-			if mask is None:
-				base_p = inpute.data.abs().mean().item() * self.power
-			else:
-				base_p = inpute.data.abs().masked_fill(mask, 0.0).sum().item() / float((mask.numel() - mask.sum().item()) * inpute.size(-1)) * self.power
-
-			return inpute.new_empty(inpute.size(), requires_grad=False).uniform_(- base_p, base_p) + inpute
-
-		return inpute
