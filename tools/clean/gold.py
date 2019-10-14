@@ -2,14 +2,9 @@
 
 import sys
 
-def handle(srcfs, srcft, srcfg, tgtfs, tgtft, tgtfg):
+from utils.fmt.base import clean_str
 
-	def clean(strin):
-		rs = []
-		for tmpu in strin.split():
-			if tmpu:
-				rs.append(tmpu)
-		return " ".join(rs)
+def handle(srcfs, srcft, srcfg, tgtfs, tgtft, tgtfg):
 
 	ens = "\n".encode("utf-8")
 
@@ -19,7 +14,7 @@ def handle(srcfs, srcft, srcfg, tgtfs, tgtft, tgtfg):
 		for ls, lt, lg in zip(fs, ft, fg):
 			ls, lt, lg = ls.strip(), lt.strip(), lg.strip()
 			if ls and lt and lg:
-				ls, lt, lg = clean(ls.decode("utf-8")), clean(lt.decode("utf-8")), clean(lg.decode("utf-8"))
+				ls, lt, lg = clean_str(ls.decode("utf-8")), clean_str(lt.decode("utf-8")), clean_str(lg.decode("utf-8"))
 				if lt != lg:
 					fsw.write(ls.encode("utf-8"))
 					fsw.write(ens)

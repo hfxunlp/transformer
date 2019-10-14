@@ -2,7 +2,7 @@
 
 run_id = "base"
 
-data_id = "w14ende"
+data_id = "w14ed32"
 
 train_data = "cache/"+data_id+"/train.h5"
 dev_data = "cache/"+data_id+"/dev.h5"
@@ -85,7 +85,7 @@ share_emb = False
 
 nhead = max(1, isize // 64)
 
-cache_len = 256
+cache_len = 260
 
 warm_step = 8000
 

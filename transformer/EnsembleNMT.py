@@ -10,8 +10,6 @@ from transformer.EnsembleEncoder import Encoder
 from transformer.EnsembleDecoder import Decoder
 #from transformer.EnsembleAvgDecoder import Decoder
 
-from math import sqrt
-
 class NMT(nn.Module):
 
 	def __init__(self, models):

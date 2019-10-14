@@ -2,15 +2,11 @@
 
 import sys
 
-has_unk = True
+from utils.fmt.base import has_unk, clean_list_iter
 
 def handle(srcfl):
 
-	def clean(lin):
-		rs = []
-		for lu in lin:
-			if lu:
-				yield lu
+	global has_unk
 
 	vocab = set()
 
@@ -19,7 +15,7 @@ def handle(srcfl):
 			for line in f:
 				tmp = line.strip()
 				if tmp:
-					for token in clean(tmp.decode("utf-8").split()):
+					for token in clean_list_iter(tmp.decode("utf-8").split()):
 						if not token in vocab:
 							vocab.add(token)
 

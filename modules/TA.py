@@ -1,12 +1,5 @@
 #encoding: utf-8
 
-from math import sqrt, log, exp, pi
-import torch
-from torch import nn
-from torch.nn import functional as nnFunc
-from torch.autograd import Function
-
-from modules.base import GeLU_BERT
 from modules.base import PositionwiseFF as PositionwiseFFBase
 
 class PositionwiseFF(PositionwiseFFBase):

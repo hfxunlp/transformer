@@ -2,65 +2,13 @@
 
 import sys
 
-has_unk = True
-
-def list_reader(fname):
-	def clear_list(lin):
-		rs = []
-		for tmpu in lin:
-			if tmpu:
-				rs.append(tmpu)
-		return rs
-	with open(fname, "rb") as frd:
-		for line in frd:
-			tmp = line.strip()
-			if tmp:
-				tmp = clear_list(tmp.decode("utf-8").split())
-				yield tmp
-
-def ldvocab(vfile, minf = False, omit_vsize = False):
-	global has_unk
-	if has_unk:
-		rs = {"<pad>":0, "<sos>":1, "<eos>":2, "<unk>":3}
-		cwd = 4
-	else:
-		rs = {"<pad>":0, "<sos>":1, "<eos>":2}
-		cwd = 3
-	if omit_vsize:
-		vsize = omit_vsize
-	else:
-		vsize = False
-	for data in list_reader(vfile):
-		freq = int(data[0])
-		if (not minf) or freq > minf:
-			if vsize:
-				ndata = len(data) - 1
-				if vsize >= ndata:
-					for wd in data[1:]:
-						rs[wd] = cwd
-						cwd += 1
-				else:
-					for wd in data[1:vsize + 1]:
-						rs[wd] = cwd
-						cwd += 1
-						ndata = vsize
-					break
-				vsize -= ndata
-				if vsize <= 0:
-					break
-			else:
-				for wd in data[1:]:
-					rs[wd] = cwd
-					cwd += 1
-		else:
-			break
-	return rs, cwd
+from utils.fmt.base import ldvocab, init_vocab
 
 def handle(vcbf, srcfl, rsf, minfreq = False, vsize = False):
 
 	vcb, nwords = ldvocab(vcbf, minfreq, vsize)
 
-	fvcb = set(["<pad>", "<sos>", "<eos>", "<unk>"])
+	fvcb = set(init_vocab.keys())
 
 	for srcf in srcfl:
 		with open(srcf, "rb") as f:

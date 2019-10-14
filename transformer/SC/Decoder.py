@@ -3,10 +3,11 @@
 import torch
 from torch import nn
 
-from modules.base import SelfAttn, CrossAttn, PositionalEmb, Dropout, ResidueCombiner
+from modules.base import SelfAttn, CrossAttn, Dropout
 from modules.TA import PositionwiseFF
+from modules.SC import FtFFN, ResidueCombiner, FullResidueCombiner
 
-from utils import repeat_bsize_for_beam_tensor
+from utils.base import repeat_bsize_for_beam_tensor
 from math import sqrt
 
 from transformer.Decoder import Decoder as DecoderBase
@@ -25,7 +26,8 @@ class DecoderLayer(nn.Module):
 		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 
 		self.ff = PositionwiseFF(isize, _fhsize, dropout)
-		self.scff = ResidueCombiner(isize, 2, _fhsize)
+		#self.scff = FtFFN(isize, _fhsize, dropout)
+		self.scff = FullResidueCombiner(isize, 2, _fhsize)
 
 		self.layer_normer1 = nn.LayerNorm(isize, eps=1e-06)
 		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
@@ -127,7 +129,7 @@ class Decoder(DecoderBase):
 
 		sqrt_isize = sqrt(sos_emb.size(-1))
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0).view(1, 1, -1).expand(bsize, 1, -1)
+		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -150,7 +152,7 @@ class Decoder(DecoderBase):
 
 		for i in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i).view(1, 1, -1).expand(bsize, 1, -1)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -188,7 +190,7 @@ class Decoder(DecoderBase):
 			lpv = sos_emb.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0).view(1, 1, isize).expand(bsize, 1, isize)
+		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -221,7 +223,7 @@ class Decoder(DecoderBase):
 
 		for step in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step).view(1, 1, isize).expand(real_bsize, 1, isize)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step)
 
 			if self.drop is not None:
 				out = self.drop(out)

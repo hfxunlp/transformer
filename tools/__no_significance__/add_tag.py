@@ -1,7 +1,7 @@
 #encoding: utf-8
 
 ''' usage:
-	python tools/add_tag.py $src_file.t7 $rs_file.t7 $token
+	python tools/add_tag.py $src_file $rs_file $token
 '''
 
 import sys

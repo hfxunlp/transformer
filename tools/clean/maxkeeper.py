@@ -2,14 +2,9 @@
 
 import sys
 
-def handle(srcfs, srcft, tgtfs, tgtft, max_len=256):
+from utils.fmt.base import clean_list_len
 
-	def clean(lin):
-		rs = []
-		for lu in lin:
-			if lu:
-				rs.append(lu)
-		return " ".join(rs), len(rs)
+def handle(srcfs, srcft, tgtfs, tgtft, max_len=256):
 
 	_max_len = max(1, max_len - 2)
 
@@ -19,8 +14,8 @@ def handle(srcfs, srcft, tgtfs, tgtft, max_len=256):
 		for ls, lt in zip(fs, ft):
 			ls, lt = ls.strip(), lt.strip()
 			if ls and lt:
-				ls, slen = clean(ls.decode("utf-8").split())
-				lt, tlen = clean(lt.decode("utf-8").split())
+				ls, slen = clean_list_len(ls.decode("utf-8").split())
+				lt, tlen = clean_list_len(lt.decode("utf-8").split())
 				if (slen <= _max_len) and (tlen <= _max_len):
 					if ls in data:
 						data[ls][lt] = data[ls].get(lt, 0) + 1

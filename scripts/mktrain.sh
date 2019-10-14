@@ -3,7 +3,7 @@
 # take the processed data from scripts/mkbpe.sh and convert to tensor representation.
 
 export cachedir=cache
-export dataid=w14ende
+export dataid=w14ed32
 
 export wkd=$cachedir/$dataid
 

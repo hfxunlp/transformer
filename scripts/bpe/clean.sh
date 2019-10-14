@@ -1,16 +1,16 @@
 #!/bin/bash
 
 export cachedir=cache
-export srcd=un-data
+export srcd=w14ende
 
-export dataid=un
+export dataid=w14ed32
 
 export bpeops=32000
-export minfreq=50
+export minfreq=8
 export maxtokens=256
 
-export srcvf=06.tok.zh
-export tgtvf=06.tok.en0
+export srcvf=dev.tc.en
+export tgtvf=dev.tc.de
 
 # options for cleaning the data processed by bpe,
 # advised values except numrules can be calculated by:

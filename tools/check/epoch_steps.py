@@ -12,16 +12,16 @@ from random import seed as rpyseed
 def handle(h5f, bsize, shuf=True):
 
 	td = h5py.File(h5f, "r")
-	ntest = int(td["ndata"][:][0])
-	tl = ["t" + str(i) for i in range(ntest)]
-
+	ntest = td["ndata"][:].item()
+	tl = list(range(ntest))
 	if shuf:
 		shuffle(tl)
 
+	tgt_grp = td["tgt"]
 	ntoken = 0
 	nstep = 0
 	for tid in tqdm(tl):
-		seq_batch = torch.from_numpy(td[tid][:])
+		seq_batch = torch.from_numpy(tgt_grp[str(tid)][:])
 		ot = seq_batch.narrow(1, 1, seq_batch.size(1) - 1)
 		ntoken += ot.numel() - ot.eq(0).sum().item()
 		if ntoken >= bsize:

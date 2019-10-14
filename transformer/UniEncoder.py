@@ -2,7 +2,6 @@
 
 from torch import nn
 from modules.base import *
-from math import sqrt
 from transformer.Encoder import EncoderLayer
 
 # vocabulary:

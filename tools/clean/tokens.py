@@ -2,14 +2,9 @@
 
 import sys
 
-def handle(srcfs, srcft, tgtfs, tgtft, maxlen=256):
+from utils.fmt.base import clean_str_lentok
 
-	def clean(strin):
-		rs = []
-		for tmpu in strin.split():
-			if tmpu:
-				rs.append(tmpu)
-		return " ".join(rs), len(rs)
+def handle(srcfs, srcft, tgtfs, tgtft, maxlen=256):
 
 	ens = "\n".encode("utf-8")
 
@@ -20,8 +15,8 @@ def handle(srcfs, srcft, tgtfs, tgtft, maxlen=256):
 			ls, lt = ls.strip(), lt.strip()
 			if ls and lt:
 				ls, lt = ls.decode("utf-8"), lt.decode("utf-8")
-				ls, lens = clean(ls)
-				lt, lent = clean(lt)
+				ls, lens = clean_str_lentok(ls)
+				lt, lent = clean_str_lentok(lt)
 				if (lens <= maxlen) and (lent <= maxlen):
 					fsw.write(ls.encode("utf-8"))
 					fsw.write(ens)

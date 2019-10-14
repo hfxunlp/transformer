@@ -4,14 +4,11 @@
 
 import sys
 
+from utils.fmt.base import clean_str
+
 def handle(srcf, tgtf, rankf, rssf, rstf, threshold):
 
-	def clean(strin):
-		rs = []
-		for lu in strin.split():
-			if lu:
-				rs.append(lu)
-		return " ".join(rs)
+
 
 	with open(srcf, "rb") as frs, open(tgtf, "rb") as frt, open(rankf, "rb") as fs, open(rssf, "wb") as fws, open(rstf, "wb") as fwt:
 
@@ -23,7 +20,7 @@ def handle(srcf, tgtf, rankf, rssf, rstf, threshold):
 		for srcl, tgtl, score in zip(frs, frt, fs):
 			src, tgt, s = srcl.strip(), tgtl.strip(), score.strip()
 			if src and tgt and s:
-				src, tgt, s = clean(src.decode("utf-8")), clean(tgt.decode("utf-8")), float(s.decode("utf-8"))
+				src, tgt, s = clean_str(src.decode("utf-8")), clean_str(tgt.decode("utf-8")), float(s.decode("utf-8"))
 				if s <= threshold:
 					fws.write(src.encode("utf-8"))
 					fws.write(ens)

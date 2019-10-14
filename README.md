@@ -45,7 +45,7 @@ export ngpu=1
 
 ## Configuration for training and testing
 
-All parameters for configuration are saved in `cnfg.py`:
+Most parameters for configuration are saved in `cnfg/base.py`:
 
 ```
 # an ID for your experiment. Model, log and state files will be saved in: expm/data_id/run_id
@@ -183,7 +183,7 @@ Just execute the following command to launch the training:
 
 `python train.py (runid)`
 
-where `runid` can be omitted. In that case, the `run_id` in `cnfg.py` will be taken as the id of the experiment.
+where `runid` can be omitted. In that case, the `run_id` in `cnfg/base.py` will be taken as the id of the experiment.
 
 ## Generation
 
@@ -230,7 +230,7 @@ Implementation of label smoothing loss function required by the training of tran
 
 Learning rate schedule model needed according to the paper.
 
-### `utils.py`
+### `utils/`
 
 Functions for basic features, for example, freeze / unfreeze parameters of models, padding list of tensors to same size on assigned dimension.
 
@@ -258,7 +258,7 @@ The standard decoder of transformer.
 
 #### `AvgDecoder.py`
 
-The average decoder of transformer proposed by [Accelerating Neural Transformer via an Average Attention Network](https://arxiv.org/abs/1805.00631).
+The average decoder of transformer proposed by [Accelerating Neural Transformer via an Average Attention Network](https://www.aclweb.org/anthology/P18-1166/).
 
 #### `EnsembleNMT.py`
 
@@ -274,7 +274,7 @@ A model encapsulates several standard decoders for ensemble decoding.
 
 #### `EnsembleAvgDecoder.py`
 
-A model encapsulates several average decoders proposed by [Accelerating Neural Transformer via an Average Attention Network](https://arxiv.org/abs/1805.00631) for ensemble decoding.
+A model encapsulates several average decoders proposed by [Accelerating Neural Transformer via an Average Attention Network](https://www.aclweb.org/anthology/P18-1166/) for ensemble decoding.
 
 #### `AGG/`
 
@@ -282,15 +282,15 @@ Implementation of aggregation models.
 
 ##### `Hier*.py`
 
-Hierarchical aggregation proposed in [Exploiting Deep Representations for Neural Machine Translation](https://arxiv.org/abs/1810.10181).
+Hierarchical aggregation proposed in [Exploiting Deep Representations for Neural Machine Translation](https://www.aclweb.org/anthology/D18-1457/).
 
 #### `TA/`
 
-Implementation of transparent attention proposed in [Training Deeper Neural Machine Translation Models with Transparent Attention](https://aclweb.org/anthology/D18-1338) modules.
+Implementation of transparent attention proposed in [Training Deeper Neural Machine Translation Models with Transparent Attention](https://aclweb.org/anthology/D18-1338).
 
 #### `SC/`
 
-Implementation of sentential context proposed in [Exploiting Sentential Context for Neural Machine Translation](https://www.aclweb.org/anthology/P19-1624/) modules.
+Implementation of sentential context proposed in [Exploiting Sentential Context for Neural Machine Translation](https://www.aclweb.org/anthology/P19-1624/).
 
 ### `parallel/`
 
@@ -306,7 +306,7 @@ Implementation of `DataParallelMT` which supports paralleled decoding over multi
 
 #### `bpe.py`
 
-A tool borrowed from [subword-nmt](https://github.com/rsennrich/subword-nmt) to apply bpe for translator
+A tool borrowed from [subword-nmt](https://github.com/rsennrich/subword-nmt) to apply bpe for `translator`.
 
 #### `moses.py`
 
@@ -351,7 +351,7 @@ Tools to check the implementation and the data.
 
 ##### `fbindexes.py`
 
-When you using a shared vocabulary for source side and target side, there are still some words which only appear at the source side even joint BPE is applied. Those words take up probabilities in the label smoothing classifier, and this tool can prevent this through generating a larger and well covered forbidden indexes list which can be concatnated to `forbidden_indexes` in `cnfg.py`.
+When you using a shared vocabulary for source side and target side, there are still some words which only appear at the source side even joint BPE is applied. Those words take up probabilities in the label smoothing classifier, and this tool can prevent this through generating a larger and well covered forbidden indexes list which can be concatnated to `forbidden_indexes` in `cnfg/base.py`.
 
 #### `clean/`
 

@@ -2,73 +2,19 @@
 
 import sys
 
-def list_reader(fname):
-	def clear_list(lin):
-		rs = []
-		for tmpu in lin:
-			if tmpu:
-				rs.append(tmpu)
-		return rs
-	with open(fname, "rb") as frd:
-		for line in frd:
-			tmp = line.strip()
-			if tmp:
-				tmp = clear_list(tmp.decode("utf-8").split())
-				yield tmp
-
-def ldvocab(vfile, minf = False, omit_vsize = False):
-	rs = []
-	if omit_vsize:
-		vsize = omit_vsize
-	else:
-		vsize = False
-	cwd = 0
-	for data in list_reader(vfile):
-		freq = int(data[0])
-		if (not minf) or freq > minf:
-			if vsize:
-				ndata = len(data) - 1
-				if vsize >= ndata:
-					rs.extend(data[1:])
-					cwd += ndata
-				else:
-					rs.extend(data[1:vsize + 1])
-					cwd += vsize
-					break
-				vsize -= ndata
-				if vsize <= 0:
-					break
-			else:
-				rs.extend(data[1:])
-				cwd += len(data) - 1
-		else:
-			break
-	return rs, cwd
+from utils.fmt.base import ldvocab_list, legal_vocab
 
 # vratio: percentages of vocabulary size of retrieved words of least frequencies
 # dratio: a datum will be dropped who contains high frequency words less than this ratio
 
 def handle(srcfs, srcft, tgtfs, tgtft, vcbfs, vcbft, vratio, dratio=None):
 
-	def legal(sent, ilgset, ratio):
-
-		total = 0
-		ilg = 0
-		for tmpu in sent.split():
-			if tmpu:
-				if tmpu in ilgset:
-					ilg += 1
-				total += 1
-		rt = float(ilg) / float(total)
-
-		return False if rt > ratio else True
-
 	_dratio = vratio if dratio is None else dratio
 
 	ens = "\n".encode("utf-8")
 
-	vcbs, nvs = ldvocab(vcbfs)
-	vcbt, nvt = ldvocab(vcbft)
+	vcbs, nvs = ldvocab_list(vcbfs)
+	vcbt, nvt = ldvocab_list(vcbft)
 	ilgs = set(vcbs[int(float(nvs) * (1.0 - vratio)):])
 	ilgt = set(vcbt[int(float(nvt) * (1.0 - vratio)):])
 
@@ -79,7 +25,7 @@ def handle(srcfs, srcft, tgtfs, tgtft, vcbfs, vcbft, vratio, dratio=None):
 			ls, lt = ls.strip(), lt.strip()
 			if ls and lt:
 				ls, lt = ls.decode("utf-8"), lt.decode("utf-8")
-				if legal(ls, ilgs, _dratio) and legal(lt, ilgt, _dratio):
+				if legal_vocab(ls, ilgs, _dratio) and legal_vocab(lt, ilgt, _dratio):
 					fsw.write(ls.encode("utf-8"))
 					fsw.write(ens)
 					ftw.write(lt.encode("utf-8"))

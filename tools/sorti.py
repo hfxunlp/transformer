@@ -2,14 +2,9 @@
 
 import sys
 
-def handle(srcfs, tgtfs):
+from utils.fmt.base import clean_list_len, iter_dict_sort
 
-	def clean(lin):
-		rs = []
-		for lu in lin:
-			if lu:
-				rs.append(lu)
-		return " ".join(rs), len(rs)
+def handle(srcfs, tgtfs):
 
 	data = {}
 
@@ -17,21 +12,18 @@ def handle(srcfs, tgtfs):
 		for ls in fs:
 			ls = ls.strip()
 			if ls:
-				ls, lgth = clean(ls.decode("utf-8").split())
-				if lgth not in data:
-					data[lgth] = set([ls])
-				else:
+				ls, lgth = clean_list_len(ls.decode("utf-8").split())
+				if lgth in data:
 					if ls not in data[lgth]:
 						data[lgth].add(ls)
-
-	length = list(data.keys())
-	length.sort()
+				else:
+					data[lgth] = set([ls])
 
 	ens = "\n".encode("utf-8")
 
 	with open(tgtfs, "wb") as fs:
-		for lgth in length:
-			fs.write("\n".join(data[lgth]).encode("utf-8"))
+		for tmp in iter_dict_sort(data):
+			fs.write("\n".join(tmp).encode("utf-8"))
 			fs.write(ens)
 
 if __name__ == "__main__":

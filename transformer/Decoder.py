@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 from modules.base import *
-from utils import repeat_bsize_for_beam_tensor
+from utils.base import repeat_bsize_for_beam_tensor
 from math import sqrt, inf
 
 class DecoderLayer(nn.Module):
@@ -103,7 +103,7 @@ class Decoder(nn.Module):
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None):
 
 		super(Decoder, self).__init__()
 
@@ -133,7 +133,6 @@ class Decoder(nn.Module):
 		self.out_normer = nn.LayerNorm(isize, eps=1e-06) if norm_output else None
 
 		self.fbl = None if forbidden_index is None else tuple(set(forbidden_index))
-
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: decoded translation (bsize, nquery)
@@ -214,7 +213,7 @@ class Decoder(nn.Module):
 
 		# out: input to the decoder for the first step (bsize, 1, isize)
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0).view(1, 1, -1).expand(bsize, 1, -1)
+		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -244,7 +243,7 @@ class Decoder(nn.Module):
 
 		for i in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i).view(1, 1, -1).expand(bsize, 1, -1)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -291,7 +290,7 @@ class Decoder(nn.Module):
 			lpv = sos_emb.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0).view(1, 1, isize).expand(bsize, 1, isize)
+		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -338,7 +337,7 @@ class Decoder(nn.Module):
 
 		for step in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step).view(1, 1, isize).expand(real_bsize, 1, isize)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -441,19 +440,18 @@ class Decoder(nn.Module):
 
 		bsize = inpute.size(0)
 
-		return self.wemb.weight[1].reshape(1, 1, -1).expand(bsize, 1, -1)
-
-	# will it be better if zero corresponding weights? but called by fix_load prevent doing so
+		return self.wemb.weight[1].view(1, 1, -1).expand(bsize, 1, -1)
 
 	def fix_init(self):
 
-		if self.fbl is not None:
-			for ind in self.fbl:
-				self.classifier.bias.data[ind] = -inf
+		self.fix_load()
 
 	def fix_load(self):
 
-		self.fix_init()
+		if self.fbl is not None:
+			with torch.no_grad():
+				for ind in self.fbl:
+					self.classifier.bias[ind] = -inf
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, seql), see Encoder, get by:
@@ -480,7 +478,7 @@ class Decoder(nn.Module):
 
 		# out: input to the decoder for the first step (bsize, 1, isize)
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0).view(1, 1, -1).expand(bsize, 1, -1)
+		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -509,7 +507,7 @@ class Decoder(nn.Module):
 
 		for i in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i).view(1, 1, -1).expand(bsize, 1, -1)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -581,7 +579,7 @@ class Decoder(nn.Module):
 			lpv = sos_emb.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0).view(1, 1, isize).expand(bsize, 1, isize)
+		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -633,7 +631,7 @@ class Decoder(nn.Module):
 
 		for step in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step).view(1, 1, isize).expand(real_bsize, 1, isize)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step)
 
 			if self.drop is not None:
 				out = self.drop(out)

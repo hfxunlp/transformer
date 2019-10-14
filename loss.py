@@ -20,7 +20,7 @@ class LabelSmoothingLoss(_Loss):
 				if (fi >= 0) and (fi not in fbil):
 					fbil.add(fi)
 		else:
-			if forbidden_index >= 0:
+			if forbidden_index is not None and forbidden_index >= 0:
 				fbil.add(forbidden_index)
 
 		if isinstance(ignore_index, (list, tuple)):

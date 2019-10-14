@@ -2,7 +2,7 @@
 
 import torch
 from torch import nn
-from modules.base import SelfAttn, PositionalEmb, Dropout
+from modules.base import SelfAttn, Dropout
 from modules.TA import PositionwiseFF
 from math import sqrt
 

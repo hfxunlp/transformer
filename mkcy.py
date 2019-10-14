@@ -13,15 +13,36 @@ def get_name(fname):
 
 	return fname[:fname.rfind(".")].replace("/", ".")
 
+def legal(pname, fbl):
+
+	rs = True
+	for pyst, pyf in fbl:
+		if pname.startswith(pyst) or pname==pyf:
+			rs = False
+			break
+
+	return rs
+
 def walk_path(ptw, eccargs):
 
-	rsl = []
+	fbl = []
+	tmpl = []
 	for root, dirs, files in walk(ptw):
 		for pyf in files:
 			if pyf.endswith(".py"):
 				_pyf = pjoin(root, pyf)
 				if _pyf.find("/__") < 0:
-					rsl.append(Extension(get_name(_pyf), [_pyf], extra_compile_args=eccargs))
+					tmpl.append(_pyf)
+			elif pyf.endswith(".nocy"):
+				_pyst = pjoin(root, pyf)[:-4].replace("/", ".")
+				_pyf = _pyst[:-1]
+				fbl.append((_pyst, _pyf))
+
+	rsl = []
+	for pyf in tmpl:
+		_pyc = get_name(pyf)
+		if legal(_pyc, fbl):
+			rsl.append(Extension(_pyc, [pyf], extra_compile_args=eccargs))
 
 	return rsl
 
@@ -29,12 +50,13 @@ if __name__ == "__main__":
 
 	eccargs = ["-Ofast", "-march=native", "-pipe", "-fomit-frame-pointer"]
 
-	baselist = ["loss.py", "lrsch.py", "utils.py", "translator.py", "discriminator.py"]
+	baselist = ["loss.py", "lrsch.py", "translator.py", "discriminator.py"]
 
 	extlist = [Extension(get_name(pyf), [pyf], extra_compile_args=eccargs) for pyf in baselist]
 
-	for _mp in ("modules/", "parallel/", "transformer/"):
-		extlist.extend(walk_path(_mp, eccargs))
+	for _mp in ("modules/", "parallel/", "transformer/", "utils/"):
+		_tmp = walk_path(_mp, eccargs)
+		if _tmp:
+			extlist.extend(_tmp)
 
 	setup(cmdclass = {"build_ext": build_ext}, ext_modules=cythonize(extlist, quiet = True, language_level = 3))
-

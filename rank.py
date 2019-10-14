@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 import h5py
 
-import cnfg
+import cnfg.base as cnfg
 
 from transformer.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble
@@ -18,40 +18,7 @@ from parallel.parallelMT import DataParallelMT
 
 from loss import LabelSmoothingLoss
 
-has_unk = True
-
-def list_reader(fname):
-
-	def clear_list(lin):
-
-		rs = []
-		for tmpu in lin:
-			if tmpu:
-				rs.append(tmpu)
-
-		return rs
-
-	with open(fname, "rb") as frd:
-		for line in frd:
-			tmp = line.strip()
-			if tmp:
-				tmp = clear_list(tmp.decode("utf-8").split())
-				yield tmp
-
-def load_model_cpu_old(modf, base_model):
-
-	base_model.load_state_dict(torch.load(modf, map_location='cpu'))
-
-	return base_model
-
-def load_model_cpu(modf, base_model):
-
-	mpg = torch.load(modf, map_location='cpu')
-
-	for para, mp in zip(base_model.parameters(), mpg):
-		para.data = mp.data
-
-	return base_model
+from utils.base import *
 
 def load_fixing(module):
 
@@ -60,9 +27,9 @@ def load_fixing(module):
 
 td = h5py.File(sys.argv[2], "r")
 
-ntest = int(td["ndata"][:][0])
-nwordi = int(td["nwordi"][:][0])
-nwordt = int(td["nwordt"][:][0])
+ntest = td["ndata"][:].item()
+nword = td["nword"][:].tolist()
+nwordi, nwordt = nword[0], nword[-1]
 
 cuda_device = torch.device(cnfg.gpuid)
 
@@ -98,7 +65,7 @@ if use_cuda and torch.cuda.is_available():
 			cuda_devices = [int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(",")]
 			multi_gpu = True
 		else:
-			cuda_device = torch.device("cuda:" + gpuid[gpuid.rfind(","):].strip())
+			cuda_device = torch.device("cuda:" + gpuid[gpuid.rfind(",") + 1:].strip())
 			multi_gpu = False
 			cuda_devices = None
 	else:
@@ -106,10 +73,15 @@ if use_cuda and torch.cuda.is_available():
 		multi_gpu = False
 		cuda_devices = None
 	torch.cuda.set_device(cuda_device.index)
+	#torch.backends.cudnn.benchmark = True
 else:
+	use_cuda = False
 	cuda_device = False
 	multi_gpu = False
 	cuda_devices = None
+
+# Important to make cudnn methods deterministic
+set_random_seed(cnfg.seed, use_cuda)
 
 if use_cuda:
 	mymodel.to(cuda_device)
@@ -120,11 +92,13 @@ if use_cuda:
 
 ens = "\n".encode("utf-8")
 
+src_grp, tgt_grp = td["src"], td["tgt"]
 with open(sys.argv[1], "wb") as f:
 	with torch.no_grad():
 		for i in tqdm(range(ntest)):
-			seq_batch = torch.from_numpy(td["i" + str(i)][:]).long()
-			seq_o = torch.from_numpy(td["t" + str(i)][:]).long()
+			_curid = str(i)
+			seq_batch = torch.from_numpy(src_grp[_curid][:]).long()
+			seq_o = torch.from_numpy(tgt_grp[_curid][:]).long()
 			if use_cuda:
 				seq_batch = seq_batch.to(cuda_device)
 				seq_o = seq_o.to(cuda_device)

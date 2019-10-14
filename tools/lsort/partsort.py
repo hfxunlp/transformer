@@ -3,32 +3,21 @@
 import sys
 from os import path
 
+from utils.fmt.base import clean_list_len, iter_dict_sort, dict_insert_list
+
 def handle(srcfs, srcft, tgtd, max_len=256, cache_token=268435456):
 
-	def clean(lin):
-		rs = []
-		for lu in lin:
-			if lu:
-				rs.append(lu)
-		return " ".join(rs), len(rs)
-
 	def save_cache(cache, srcf, tgtf):
-
-		length = list(cache.keys())
-		length.sort()
 
 		ens = "\n".encode("utf-8")
 
 		with open(srcf, "wb") as fs, open(tgtf, "wb") as ft:
-			for lgth in length:
-				lg = list(cache[lgth].keys())
-				lg.sort()
-				for lu in lg:
-					ls, lt = zip(*cache[lgth][lu])
-					fs.write("\n".join(ls).encode("utf-8"))
-					fs.write(ens)
-					ft.write("\n".join(lt).encode("utf-8"))
-					ft.write(ens)
+			for tmp in iter_dict_sort(cache):
+				ls, lt = zip(*tmp)
+				fs.write("\n".join(ls).encode("utf-8"))
+				fs.write(ens)
+				ft.write("\n".join(lt).encode("utf-8"))
+				ft.write(ens)
 
 	_max_len = max(1, max_len - 2)
 
@@ -40,17 +29,11 @@ def handle(srcfs, srcft, tgtd, max_len=256, cache_token=268435456):
 		for ls, lt in zip(fs, ft):
 			ls, lt = ls.strip(), lt.strip()
 			if ls and lt:
-				ls, slen = clean(ls.decode("utf-8").split())
-				lt, tlen = clean(lt.decode("utf-8").split())
+				ls, slen = clean_list_len(ls.decode("utf-8").split())
+				lt, tlen = clean_list_len(lt.decode("utf-8").split())
 				if (slen <= _max_len) and (tlen <= _max_len):
 					lgth = slen + tlen
-					if lgth not in data:
-						data[lgth] = {tlen: [(ls, lt)]}
-					else:
-						if tlen in data[lgth]:
-							data[lgth][tlen].append((ls, lt))
-						else:
-							data[lgth][tlen] = [(ls, lt)]
+					data = dict_insert_list(data, (ls, lt,), lgth, tlen)
 					mem_token += lgth
 					if mem_token > cache_token:
 						_curfid = str(curf)

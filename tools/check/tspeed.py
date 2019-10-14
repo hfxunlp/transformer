@@ -8,26 +8,13 @@ from tqdm import tqdm
 
 import h5py
 
-import cnfg
+import cnfg.base as cnfg
 
 from transformer.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 
-def load_model_cpu_old(modf, base_model):
-
-	base_model.load_state_dict(torch.load(modf, map_location='cpu'))
-
-	return base_model
-
-def load_model_cpu(modf, base_model):
-
-	mpg = torch.load(modf, map_location='cpu')
-
-	for para, mp in zip(base_model.parameters(), mpg):
-		para.data = mp.data
-
-	return base_model
+from utils.base import load_model_cpu
 
 def load_fixing(module):
 
@@ -36,9 +23,9 @@ def load_fixing(module):
 
 td = h5py.File(cnfg.dev_data, "r")
 
-ntest = int(td["ndata"][:][0])
-nwordi = int(td["nwordi"][:][0])
-nwordt = int(td["nwordt"][:][0])
+ntest = td["ndata"][:].item()
+nword = td["nword"][:].tolist()
+nwordi, nwordt = nword[0], nword[-1]
 
 cuda_device = torch.device(cnfg.gpuid)
 
@@ -94,9 +81,10 @@ beam_size = cnfg.beam_size
 
 length_penalty = cnfg.length_penalty
 
+src_grp = td["src"]
 with torch.no_grad():
 	for i in tqdm(range(ntest)):
-		seq_batch = torch.from_numpy(td["i" + str(i)][:]).long()
+		seq_batch = torch.from_numpy(src_grp[str(i)][:]).long()
 		if use_cuda:
 			seq_batch = seq_batch.to(cuda_device)
 		output = mymodel.decode(seq_batch, beam_size, None, length_penalty)

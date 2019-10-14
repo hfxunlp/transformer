@@ -4,6 +4,8 @@ import torch
 from torch.nn.init import xavier_uniform_, kaiming_uniform_
 from torch.nn import Embedding, Linear, LayerNorm
 
+from threading import Thread
+
 from math import sqrt
 
 from random import sample
@@ -36,15 +38,15 @@ def freeze_module(module):
 
 def unfreeze_module(module):
 
-	def unfreeze_fixing(mod):
+	#def unfreeze_fixing(mod):
 
-		if "fix_unfreeze" in dir(mod):
-			mod.fix_unfreeze()
+		#if "fix_unfreeze" in dir(mod):
+			#mod.fix_unfreeze()
 
 	for p in module.parameters():
 		p.requires_grad_(True)
 
-	module.apply(unfreeze_fixing)
+	#module.apply(unfreeze_fixing)
 
 def getlr(optm):
 
@@ -95,19 +97,39 @@ def load_model_cpu_old(modf, base_model):
 
 	return base_model
 
-def save_model(model, fname, sub_module, logger=None):
+def save_model(model, fname, sub_module=False, logger=None):
 
+	_msave = model.module if sub_module else model
 	try:
-		if sub_module:
-			torch.save([t.data for t in model.module.parameters()], fname)
-		else:
-			torch.save([t.data for t in model.parameters()], fname)
-
+		torch.save([t.data for t in _msave.parameters()], fname)
 	except Exception as e:
 		if logger is None:
 			print(e)
 		else:
 			logger.info(str(e))
+
+def async_save_model(model, fname, sub_module=False, logger=None, para_lock=None, log_success=None):
+
+	def _worker(model, fname, sub_module=False, logger=None, para_lock=None, log_success=None):
+
+		success = True
+		_msave = model.module if sub_module else model
+		try:
+			if para_lock is None:
+				torch.save([t.data for t in _msave.parameters()], fname)
+			else:
+				with para_lock:
+					torch.save([t.data for t in _msave.parameters()], fname)
+		except Exception as e:
+			if logger is None:
+				print(e)
+			else:
+				logger.info(str(e))
+			success = False
+		if success and (logger is not None) and (log_success is not None):
+			logger.info(log_success)
+
+	Thread(target=_worker, args=(model, fname, sub_module, logger, para_lock, log_success)).start()
 
 def get_logger(fname):
 
@@ -216,3 +238,12 @@ def free_cache(free_cuda=False):
 
 	if free_cuda:
 		torch.cuda.empty_cache()
+
+def filter_para_grad(plin):
+
+	rs = []
+	for para in plin:
+		if para.requires_grad:
+			rs.append(para)
+
+	return rs

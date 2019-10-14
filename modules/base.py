@@ -389,24 +389,31 @@ class GradientReversalFunction(Function):
 
 	# Note that both forward and backward are @staticmethods
 	@staticmethod
-	def forward(ctx, inputs):
+	def forward(ctx, inputs, adv_weight=1.0):
 
+		ctx.adv_weight = adv_weight
 		return inputs
 
 	@staticmethod
 	def backward(ctx, grad_outputs):
 
-		return - grad_outputs if grad_outputs is not None and ctx.needs_input_grad[0] else None
+		if grad_outputs is not None and ctx.needs_input_grad[0]:
+			_adv_weight = ctx.adv_weight
+			return -grad_outputs if _adv_weight == 1.0 else (grad_outputs * -_adv_weight), None
+		else:
+			return None, None
 
 class GradientReversalLayer(nn.Module):
 
-	def __init__(self):
+	def __init__(self, adv_weight=1.0):
 
 		super(GradientReversalLayer, self).__init__()
 
+		self.adv_weight = adv_weight
+
 	def forward(self, *inputs):
 
-		return (GradientReversalFunction.apply(inputu) for inputu in inputs) if len(inputs) > 1 else GradientReversalFunction.apply(inputs[0])
+		return (GradientReversalFunction.apply(inputu, self.adv_weight) for inputu in inputs) if len(inputs) > 1 else GradientReversalFunction.apply(inputs[0], self.adv_weight)
 
 
 # SparseMax (https://arxiv.org/pdf/1602.02068) borrowed form OpenNMT-py( https://github.com/OpenNMT/OpenNMT-py/blob/master/onmt/modules/sparse_activations.py)
@@ -686,6 +693,22 @@ class Temperature(nn.Module):
 
 		self.k.data.fill_(1.0)
 		self.bias.data.zero_()
+
+class TokenDropout(nn.Module):
+
+	def __init__(self, p=0.5):
+
+		super(TokenDropout, self).__init__()
+		self.p = float(p)
+
+	def forward(self, inpute):
+
+		if self.training:
+			mask = inpute.new_full(inpute.size()[:-1], self.p, requires_grad=False).bernoulli().byte().unsqueeze(-1)
+
+			return inpute.masked_fill(mask, 0.0) * (1.0 / (1.0 - self.p))
+		else:
+			return inpute
 
 class CoordinateEmb(nn.Module):
 

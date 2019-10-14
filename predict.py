@@ -8,81 +8,15 @@ from tqdm import tqdm
 
 import h5py
 
-import cnfg
+import cnfg.base as cnfg
 
 from transformer.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 
-from utils import *
-
-has_unk = True
-
-def list_reader(fname):
-
-	def clear_list(lin):
-
-		rs = []
-		for tmpu in lin:
-			if tmpu:
-				rs.append(tmpu)
-
-		return rs
-
-	with open(fname, "rb") as frd:
-		for line in frd:
-			tmp = line.strip()
-			if tmp:
-				tmp = clear_list(tmp.decode("utf-8").split())
-				yield tmp
-
-def ldvocab(vfile, minf = False, omit_vsize = False):
-
-	global has_unk
-
-	if has_unk:
-		rs = {"<pad>":0, "<sos>":1, "<eos>":2, "<unk>":3}
-		cwd = 4
-	else:
-		rs = {"<pad>":0, "<sos>":1, "<eos>":2}
-		cwd = 3
-	vsize = False
-	if omit_vsize:
-		vsize = omit_vsize
-	for data in list_reader(vfile):
-		freq = int(data[0])
-		if (not minf) or freq > minf:
-			if vsize:
-				ndata = len(data) - 1
-				if vsize >= ndata:
-					for wd in data[1:]:
-						rs[wd] = cwd
-						cwd += 1
-				else:
-					for wd in data[1:vsize + 1]:
-						rs[wd] = cwd
-						cwd += 1
-						ndata = vsize
-					break
-				vsize -= ndata
-				if vsize <= 0:
-					break
-			else:
-				for wd in data[1:]:
-					rs[wd] = cwd
-					cwd += 1
-		else:
-			break
-
-	return rs, cwd
-
-def reverse_dict(din):
-
-	rs = {}
-	for k, v in din.items():
-		rs[v] = k
-
-	return rs
+from utils.base import *
+from utils.fmt.base import ldvocab, reverse_dict
+from utils.fmt.base4torch import parse_cuda_decode
 
 def load_fixing(module):
 
@@ -91,8 +25,8 @@ def load_fixing(module):
 
 td = h5py.File(cnfg.test_data, "r")
 
-ntest = int(td["ndata"][:][0])
-nwordi = int(td["nwordi"][:][0])
+ntest = td["ndata"][:].item()
+nwordi = td["nword"][:].tolist()[0]
 vcbt, nwordt = ldvocab(sys.argv[2])
 vcbt = reverse_dict(vcbt)
 
@@ -118,28 +52,7 @@ mymodel.eval()
 use_cuda = cnfg.use_cuda
 gpuid = cnfg.gpuid
 
-if use_cuda and torch.cuda.is_available():
-	use_cuda = True
-	if len(gpuid.split(",")) > 1:
-		if cnfg.multi_gpu_decoding:
-			cuda_device = torch.device(gpuid[:gpuid.find(",")].strip())
-			cuda_devices = [int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(",")]
-			multi_gpu = True
-		else:
-			cuda_device = torch.device("cuda:" + gpuid[gpuid.rfind(",") + 1:].strip())
-			multi_gpu = False
-			cuda_devices = None
-	else:
-		cuda_device = torch.device(gpuid)
-		multi_gpu = False
-		cuda_devices = None
-	torch.cuda.set_device(cuda_device.index)
-	#torch.backends.cudnn.benchmark = True
-else:
-	use_cuda = False
-	cuda_device = False
-	multi_gpu = False
-	cuda_devices = None
+use_cuda, cuda_device, cuda_devices, multi_gpu = parse_cuda_decode(cnfg.use_cuda, cnfg.gpuid, cnfg.multi_gpu_decoding)
 
 # Important to make cudnn methods deterministic
 set_random_seed(cnfg.seed, use_cuda)
@@ -155,10 +68,11 @@ length_penalty = cnfg.length_penalty
 
 ens = "\n".encode("utf-8")
 
+src_grp = td["src"]
 with open(sys.argv[1], "wb") as f:
 	with torch.no_grad():
 		for i in tqdm(range(ntest)):
-			seq_batch = torch.from_numpy(td["i" + str(i)][:]).long()
+			seq_batch = torch.from_numpy(src_grp[str(i)][:]).long()
 			if use_cuda:
 				seq_batch = seq_batch.to(cuda_device)
 			output = mymodel.decode(seq_batch, beam_size, None, length_penalty)

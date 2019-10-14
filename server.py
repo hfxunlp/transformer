@@ -3,10 +3,10 @@
 from flask import Flask, request, render_template, send_from_directory
 import json
 
-import cnfg
+import cnfg.base as cnfg
 # import Tokenizer/Detokenizer/SentenceSplitter from datautils.zh for Chinese
 from datautils.moses import SentenceSplitter, Tokenizer, Detokenizer, Normalizepunctuation, Truecaser, Detruecaser
-from datautils.bpe import BPEApplier, BPEApplier, BPERemover
+from datautils.bpe import BPEApplier, BPERemover
 from translator import TranslatorCore, Translator
 
 '''

@@ -1,13 +1,13 @@
 #!/bin/bash
 
-export srcd=wmt14
-export srctf=test.tc.en.w14ende
+export srcd=w14ende
+export srctf=test.tc.en.w14ed32
 export modelf="expm/w14ende/checkpoint.t7"
 export rsf=w14trs/trans.txt
 export ngpu=1
 
 export cachedir=cache
-export dataid=w14ende
+export dataid=w14ed32
 
 export tgtd=$cachedir/$dataid
 

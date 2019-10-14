@@ -1,7 +1,9 @@
 #encoding: utf-8
 
 import sys
-from random import shuffle
+
+from utils.fmt.base import clean_list_len, maxfreq_filter, shuffle_pair, iter_dict_sort
+
 from random import seed as rpyseed
 from os import walk, path
 
@@ -11,21 +13,14 @@ from os import walk, path
 
 def handle(cached, srcf, rsf, remove_same=True, shuf=True, max_remove=True):
 
-	def clean(lin):
-		rs = []
-		for lu in lin:
-			if lu:
-				rs.append(lu)
-		return " ".join(rs), len(rs)
-
 	def paral_reader(fsrc, ftgt):
 		srcf, tgtf = open(fsrc, "rb"), open(ftgt, "rb")
 		src, tgt = srcf.readline(), tgtf.readline()
 		while src and tgt:
 			src, tgt = src.strip(), tgt.strip()
 			if src and tgt:
-				src, lsrc = clean(src.decode("utf-8").split())
-				tgt, ltgt = clean(tgt.decode("utf-8").split())
+				src, lsrc = clean_list_len(src.decode("utf-8").split())
+				tgt, ltgt = clean_list_len(tgt.decode("utf-8").split())
 				yield src, tgt, ltgt + lsrc, ltgt
 			src, tgt = srcf.readline(), tgtf.readline()
 		srcf.close()
@@ -69,50 +64,11 @@ def handle(cached, srcf, rsf, remove_same=True, shuf=True, max_remove=True):
 
 	def write_data(data, fs, ft, ens, rsame, shuf, mclean):
 
-		def filter(ls, lt, max_remove=True):
-			tmp = {}
-			for us, ut in zip(ls, lt):
-				if us not in tmp:
-					tmp[us] = {ut: 1} if max_remove else set([ut])
-				else:
-					if max_remove:
-						tmp[us][ut] = tmp[us].get(ut, 0) + 1
-					elif ut not in tmp[us]:
-						tmp[us].add(ut)
-			rls, rlt = [], []
-			if max_remove:
-				for tus, tlt in tmp.items():
-					_rs = []
-					_maxf = 0
-					for key, value in tlt.items():
-						if value > _maxf:
-							_maxf = value
-							_rs = [key]
-						elif value == _maxf:
-							_rs.append(key)
-					for tut in _rs:
-						rls.append(tus)
-						rlt.append(tut)
-			else:
-				for tus, tlt in tmp.items():
-					for tut in tlt:
-						rls.append(tus)
-						rlt.append(tut)
-			return rls, rlt
-
-		def shuffle_pair(ls, lt):
-			tmp = list(zip(ls, lt))
-			shuffle(tmp)
-			rs, rt = zip(*tmp)
-			return rs, rt
-
-		lg = list(data.keys())
-		lg.sort()
-		for lu in lg:
-			ls, lt = zip(*data[lu])
+		for tmp in iter_dict_sort(data):
+			ls, lt = zip(*tmp)
 			if len(ls) > 1:
 				if rsame:
-					ls, lt = filter(ls, lt, mclean)
+					ls, lt = maxfreq_filter(ls, lt, mclean)
 				if shuf:
 					ls, lt = shuffle_pair(ls, lt)
 			fs.write("\n".join(ls).encode("utf-8"))

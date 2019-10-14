@@ -3,7 +3,6 @@
 import torch
 from torch import nn
 from modules.base import *
-from math import sqrt
 
 from transformer.Decoder import DecoderLayer as DecoderLayerBase
 from transformer.Decoder import Decoder as DecoderBase

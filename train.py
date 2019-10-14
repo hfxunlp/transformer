@@ -3,20 +3,22 @@
 import sys
 
 import torch
-from torch import nn
+#from torch import nn
 
 from torch import optim
 
 from parallel.base import DataParallelCriterion
 from parallel.parallelMT import DataParallelMT
 
-from utils import *
+from utils.base import *
+from utils.fmt.base import tostr, save_states, load_states
+from utils.fmt.base4torch import parse_cuda, load_emb
 
 from lrsch import GoogleLR
 from loss import LabelSmoothingLoss
 
 from random import shuffle
-from math import sqrt
+from math import inf
 
 from tqdm import tqdm
 
@@ -25,7 +27,7 @@ from os.path import exists as p_check
 
 import h5py
 
-import cnfg
+import cnfg.base as cnfg
 
 from transformer.NMT import NMT
 
@@ -42,10 +44,10 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 	_cur_checkid = cur_checkid
 	_cur_rstep = remain_steps
 	_ls = {} if save_loss else None
-
-	for i_d, t_d in tqdm(tl):
-		seq_batch = torch.from_numpy(td[i_d][:]).long()
-		seq_o = torch.from_numpy(td[t_d][:]).long()
+	src_grp, tgt_grp = td["src"], td["tgt"]
+	for i_d in tqdm(tl):
+		seq_batch = torch.from_numpy(src_grp[i_d][:]).long()
+		seq_o = torch.from_numpy(tgt_grp[i_d][:]).long()
 		lo = seq_o.size(1) - 1
 		if mv_device:
 			seq_batch = seq_batch.to(mv_device)
@@ -66,6 +68,13 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				scaled_loss.backward()
 		else:
 			loss.backward()
+
+		sum_loss += loss_add
+		wd_add = ot.numel() - ot.eq(0).sum().item()
+		if save_loss:
+			_ls[(i_d, t_d)] = loss_add / wd_add
+		sum_wd += wd_add
+		_done_tokens += wd_add
 
 		if _done_tokens >= tokens_optm:
 			if multi_gpu:
@@ -98,12 +107,6 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 					break
 			lrsch.step()
 
-		sum_loss += loss_add
-		wd_add = ot.numel() - ot.eq(0).sum().item()
-		if save_loss:
-			_ls[(i_d, t_d)] = loss_add / wd_add
-		sum_wd += wd_add
-		_done_tokens += wd_add
 		if nreport is not None:
 			part_loss += loss_add
 			part_wd += wd_add
@@ -111,6 +114,8 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				if report_eva:
 					_leva, _eeva = eva(ed, nd, model, lossf, mv_device, multi_gpu)
 					logger.info("Average loss over %d tokens: %.3f, valid loss/error: %.3f %.2f" % (part_wd, part_loss / part_wd, _leva, _eeva))
+					free_cache(mv_device)
+					model.train()
 				else:
 					logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd))
 				part_loss = 0.0
@@ -142,11 +147,12 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu):
 	w = 0
 	sum_loss = 0.0
 	model.eval()
+	src_grp, tgt_grp = ed["src"], ed["tgt"]
 	with torch.no_grad():
 		for i in tqdm(range(nd)):
 			bid = str(i)
-			seq_batch = torch.from_numpy(ed["i"+bid][:]).long()
-			seq_o = torch.from_numpy(ed["t"+bid][:]).long()
+			seq_batch = torch.from_numpy(src_grp[bid][:]).long()
+			seq_o = torch.from_numpy(tgt_grp[bid][:]).long()
 			lo = seq_o.size(1) - 1
 			if mv_device:
 				seq_batch = seq_batch.to(mv_device)
@@ -160,7 +166,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu):
 			else:
 				trans = torch.argmax(output, -1)
 			sum_loss += loss.data.item()
-			data_mask = 1 - ot.eq(0)
+			data_mask = ot.ne(0)
 			correct = torch.gt(trans.eq(ot) + data_mask, 1)
 			w += data_mask.sum().item()
 			r += correct.sum().item()
@@ -177,25 +183,6 @@ def hook_lr_update(optm, flags):
 				state['exp_avg_sq'].zero_()
 				if flags:
 					state['max_exp_avg_sq'].zero_()
-
-def tostr(lin):
-	return [str(lu) for lu in lin]
-
-def save_states(fname, stl):
-	with open(fname, "wb") as f:
-		f.write(" ".join([i[0][1:] for i in stl]).encode("utf-8"))
-		f.write("\n".encode("utf-8"))
-
-def load_states(fname):
-	rs = []
-	with open(fname, "rb") as f:
-		for line in f:
-			tmp = line.strip()
-			if tmp:
-				for tmpu in tmp.decode("utf-8").split():
-					if tmpu:
-						rs.append(tmpu)
-	return [("i" + tmpu, "t" + tmpu) for tmpu in rs]
 
 def init_fixing(module):
 
@@ -244,26 +231,7 @@ if save_every is not None:
 
 logger = get_logger(wkdir + "train.log")
 
-use_cuda = cnfg.use_cuda
-gpuid = cnfg.gpuid
-
-if use_cuda and torch.cuda.is_available():
-	use_cuda = True
-	if len(gpuid.split(",")) > 1:
-		cuda_device = torch.device(gpuid[:gpuid.find(",")].strip())
-		cuda_devices = [int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(",")]
-		multi_gpu = True
-	else:
-		cuda_device = torch.device(gpuid)
-		multi_gpu = False
-		cuda_devices = None
-	torch.cuda.set_device(cuda_device.index)
-	#torch.backends.cudnn.benchmark = True
-else:
-	use_cuda = False
-	cuda_device = False
-	multi_gpu = False
-	cuda_devices = None
+use_cuda, cuda_device, cuda_devices, multi_gpu = parse_cuda(cnfg.use_cuda, cnfg.gpuid)
 
 if use_cuda and cnfg.amp_opt:
 	try:
@@ -280,17 +248,17 @@ set_random_seed(cnfg.seed, use_cuda)
 td = h5py.File(cnfg.train_data, "r")
 vd = h5py.File(cnfg.dev_data, "r")
 
-ntrain = int(td["ndata"][:][0])
-nvalid = int(vd["ndata"][:][0])
-nwordi = int(td["nwordi"][:][0])
-nwordt = int(td["nwordt"][:][0])
+ntrain = td["ndata"][:].item()
+nvalid = vd["ndata"][:].item()
+nword = td["nword"][:].tolist()
+nwordi, nwordt = nword[0], nword[-1]
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
 mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
 fine_tune_m = cnfg.fine_tune_m
 
-tl = [("i" + str(i), "t" + str(i)) for i in range(ntrain)]
+tl = [str(i) for i in range(ntrain)]
 
 mymodel = init_model_params(mymodel)
 if fine_tune_m is not None:
@@ -305,30 +273,10 @@ lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=0, reducti
 
 if cnfg.src_emb is not None:
 	logger.info("Load source embedding from: " + cnfg.src_emb)
-	_emb = torch.load(cnfg.src_emb, map_location='cpu')
-	if nwordi < _emb.size(0):
-		_emb = _emb.narrow(0, 0, nwordi).contiguous()
-	if cnfg.scale_down_emb:
-		_emb.div_(sqrt(cnfg.isize))
-	mymodel.enc.wemb.weight.data = _emb.data
-	if cnfg.freeze_srcemb:
-		mymodel.enc.wemb.weight.requires_grad_(False)
-	else:
-		mymodel.enc.wemb.weight.requires_grad_(True)
-	_emb = None
+	load_emb(cnfg.src_emb, mymodel.enc.wemb.weight, nwordi, cnfg.scale_down_emb, cnfg.freeze_srcemb)
 if cnfg.tgt_emb is not None:
 	logger.info("Load target embedding from: " + cnfg.tgt_emb)
-	_emb = torch.load(cnfg.tgt_emb, map_location='cpu')
-	if nwordt < _emb.size(0):
-		_emb = _emb.narrow(0, 0, nwordt).contiguous()
-	if cnfg.scale_down_emb:
-		_emb.div_(sqrt(cnfg.isize))
-	mymodel.dec.wemb.weight.data = _emb
-	if cnfg.freeze_tgtemb:
-		mymodel.dec.wemb.weight.requires_grad_(False)
-	else:
-		mymodel.dec.wemb.weight.requires_grad_(True)
-	_emb = None
+	load_emb(cnfg.tgt_emb, mymodel.dec.wemb.weight, nwordt, cnfg.scale_down_emb, cnfg.freeze_tgtemb)
 
 if use_cuda:
 	mymodel.to(cuda_device)
@@ -357,7 +305,7 @@ lrsch.step()
 num_checkpoint = cnfg.num_checkpoint
 cur_checkid = 0
 
-tminerr = float("inf")
+tminerr = inf
 
 minloss, minerr = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu)
 logger.info("".join(("Init lr: ", ",".join(tostr(getlr(optimizer))), ", Dev Loss/Error: %.3f %.2f" % (minloss, minerr))))

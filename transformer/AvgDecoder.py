@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 from modules.base import *
-from utils import repeat_bsize_for_beam_tensor
+from utils.base import repeat_bsize_for_beam_tensor
 from math import sqrt
 
 from transformer.Decoder import Decoder as DecoderBase
@@ -180,7 +180,7 @@ class Decoder(DecoderBase):
 
 		# out: input to the decoder for the first step (bsize, 1, isize)
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0).view(1, 1, -1).expand(bsize, 1, -1)
+		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -210,7 +210,7 @@ class Decoder(DecoderBase):
 
 		for i in range(2, max_len + 1):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i - 1).view(1, 1, -1).expand(bsize, 1, -1)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i - 1)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -257,7 +257,7 @@ class Decoder(DecoderBase):
 			lpv = sos_emb.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0).view(1, 1, isize).expand(bsize, 1, isize)
+		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -304,7 +304,7 @@ class Decoder(DecoderBase):
 
 		for step in range(2, max_len + 1):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step - 1).view(1, 1, isize).expand(real_bsize, 1, isize)
+			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step - 1)
 
 			if self.drop is not None:
 				out = self.drop(out)

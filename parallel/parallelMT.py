@@ -4,7 +4,8 @@ import torch
 
 from parallel.base import DataParallelModel
 
-from utils import pad_tensors
+from utils.base import pad_tensors
+from utils.fmt.base import clean_list
 
 from threading import Lock, Thread
 
@@ -15,14 +16,15 @@ class DataParallelMT(DataParallelModel):
 		if not self.device_ids:
 			return self.module.decode(*inputs, **kwargs) if self.gather_output else [self.module.decode(*inputs, **kwargs)]
 		inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids)
-		if (len(self.device_ids) == 1) or (len(inputs) == 1):
+		inputs = clean_list(inputs)
+		ngpu = len(inputs)
+		if (len(self.device_ids) == 1) or (ngpu == 1):
 			return self.module.decode(*inputs[0], **kwargs[0]) if self.gather_output else [self.module.decode(*inputs[0], **kwargs[0])]
-		nbatch = len(inputs)
-		devices = self.device_ids[:nbatch]
+		devices = self.device_ids[:ngpu]
 		if self.nets is None:
 			replicas = self.replicate(self.module, devices)
 		else:
-			replicas = self.nets[:nbatch]
+			replicas = self.nets[:ngpu]
 		outputs = parallel_apply_decode(replicas, inputs, devices, kwargs)
 		return self.gather(pad_tensors(outputs), self.output_device) if self.gather_output else outputs
 
@@ -31,14 +33,15 @@ class DataParallelMT(DataParallelModel):
 		if not self.device_ids:
 			return self.module.train_decode(*inputs, **kwargs) if self.gather_output else [self.module.train_decode(*inputs, **kwargs)]
 		inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids)
-		if (len(self.device_ids) == 1) or (len(inputs) == 1):
+		inputs = clean_list(inputs)
+		ngpu = len(inputs)
+		if (len(self.device_ids) == 1) or (ngpu == 1):
 			return self.module.train_decode(*inputs[0], **kwargs[0]) if self.gather_output else [self.module.train_decode(*inputs[0], **kwargs[0])]
-		nbatch = len(inputs)
-		devices = self.device_ids[:nbatch]
+		devices = self.device_ids[:ngpu]
 		if self.nets is None:
 			replicas = self.replicate(self.module, devices)
 		else:
-			replicas = self.nets[:nbatch]
+			replicas = self.nets[:ngpu]
 		outputs = parallel_apply_train_decode(replicas, inputs, devices, kwargs)
 		return self.gather(pad_tensors(outputs), self.output_device) if self.gather_output else outputs
 

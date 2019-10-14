@@ -10,8 +10,6 @@ from transformer.Encoder import Encoder
 from transformer.Decoder import Decoder
 #from transformer.AvgDecoder import Decoder
 
-from math import sqrt
-
 class NMT(nn.Module):
 
 	# isize: size of word embedding

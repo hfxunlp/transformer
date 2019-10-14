@@ -10,6 +10,8 @@ from torch.nn import DataParallel
 
 from threading import Lock, Thread
 
+from utils.fmt.base import clean_list
+
 """	Example::
 
 		>>> net = DataParallelModel(model, device_ids=[0, 1, 2])
@@ -37,9 +39,10 @@ class DataParallelModel(DataParallel):
 		if (not self.device_ids) or (len(self.device_ids) == 1):
 			return self.module(*inputs, **kwargs) if self.gather_output else [self.module(*inputs, **kwargs)]
 		inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids)
-		if len(inputs) == 1:
-			return self.module(*inputs[0], **kwargs[0]) if self.gather_output else [self.module(*inputs[0], **kwargs[0])]
+		inputs = clean_list(inputs)
 		ngpu = len(inputs)
+		if ngpu == 1:
+			return self.module(*inputs[0], **kwargs[0]) if self.gather_output else [self.module(*inputs[0], **kwargs[0])]
 		devices = self.device_ids[:ngpu]
 		replicas = self.replicate(self.module, devices) if self.nets is None else self.nets[:ngpu]
 		outputs = parallel_apply(replicas, inputs, devices, kwargs)
@@ -99,9 +102,10 @@ class DataParallelCriterion(DataParallel):
 		if not self.device_ids:
 			return self.module(inputs, *targets, **kwargs)
 		targets, kwargs = self.scatter(targets, kwargs, self.device_ids)
-		if (len(self.device_ids) == 1) or (len(targets) == 1):
+		targets = clean_list(targets)
+		ngpu = len(targets)
+		if (len(self.device_ids) == 1) or (ngpu == 1):
 			return self.module(inputs[0], *targets[0], **kwargs[0])
-		ngpu = len(inputs)
 		devices = self.device_ids[:ngpu]
 		replicas = self.replicate(self.module, devices) if self.nets is None else self.nets[:ngpu]
 		outputs = criterion_parallel_apply(replicas, inputs, targets, devices, kwargs)

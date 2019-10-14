@@ -1,8 +1,7 @@
 #encoding: utf-8
 
 import torch
-from torch import nn
-from utils import repeat_bsize_for_beam_tensor
+from utils.base import repeat_bsize_for_beam_tensor
 from math import sqrt
 
 from transformer.EnsembleDecoder import Decoder as DecoderBase
@@ -60,7 +59,7 @@ class Decoder(DecoderBase):
 
 			# out: input to the decoder for the first step (bsize, 1, isize)
 
-			out = sos_emb * sqrt_isize + model.pemb.get_pos(0).view(1, 1, -1).expand(bsize, 1, -1)
+			out = sos_emb * sqrt_isize + model.pemb.get_pos(0)
 
 			if model.drop is not None:
 				out = model.drop(out)
@@ -96,7 +95,7 @@ class Decoder(DecoderBase):
 
 			for model, inputu in zip(self.nets, inpute):
 
-				out = model.wemb(wds) * sqrt_isize + model.pemb.get_pos(step - 1).view(1, 1, -1).expand(bsize, 1, -1)
+				out = model.wemb(wds) * sqrt_isize + model.pemb.get_pos(step - 1)
 
 				if model.drop is not None:
 					out = model.drop(out)
@@ -150,7 +149,7 @@ class Decoder(DecoderBase):
 
 		for _inum, (model, inputu) in enumerate(zip(self.nets, inpute)):
 
-			out = model.get_sos_emb(inputu) * sqrt_isize + model.pemb.get_pos(0).view(1, 1, isize).expand(bsize, 1, isize)
+			out = model.get_sos_emb(inputu) * sqrt_isize + model.pemb.get_pos(0)
 
 			if model.drop is not None:
 				out = model.drop(out)
@@ -204,7 +203,7 @@ class Decoder(DecoderBase):
 
 			for _inum, (model, inputu) in enumerate(zip(self.nets, inpute)):
 
-				out = model.wemb(wds) * sqrt_isize + model.pemb.get_pos(step - 1).view(1, 1, isize).expand(real_bsize, 1, isize)
+				out = model.wemb(wds) * sqrt_isize + model.pemb.get_pos(step - 1)
 
 				if model.drop is not None:
 					out = model.drop(out)

@@ -1,19 +1,19 @@
 #!/bin/bash
 
 export cachedir=cache
-export srcd=un-data
+export srcd=w14ende
 
-export dataid=un
+export dataid=w14ed32
 
 export bpeops=32000
-export minfreq=50
+export minfreq=8
 export maxtokens=256
 
 
-export srctf=tok.zh
-export tgttf=tok.en
-export srcvf=06.tok.zh
-export tgtvf=06.tok.en0
+export srctf=train.tc.en
+export tgttf=train.tc.de
+export srcvf=dev.tc.en
+export tgtvf=dev.tc.de
 
 export vratio=0.2
 
