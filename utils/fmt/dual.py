@@ -73,7 +73,7 @@ def batch_padder(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtok
 			if curlen < mlen_t:
 				lined.extend([0 for i in range(mlen_t - curlen)])
 			rtd.append(lined)
-		rid.reverse()
-		rtd.reverse()
+		#rid.reverse()
+		#rtd.reverse()
 		#ld.reverse()
 		yield rid, rtd

@@ -2,6 +2,8 @@
 
 import torch
 from torch.nn.modules.loss import _Loss
+from torch.nn.modules.loss import NLLLoss as NLLLossBase
+
 import torch.nn.functional as F
 
 """	from: Rethinking the Inception Architecture for Computer Vision (https://arxiv.org/abs/1512.00567)
@@ -73,17 +75,18 @@ class LabelSmoothingLoss(_Loss):
 
 		return F.kl_div(_output, model_prob, reduction=self.reduction)
 
+class NLLLoss(NLLLossBase):
+
+	def forward(self, input, target):
+
+		isize = input.size()
+
+		return F.nll_loss(input.view(-1, isize[-1]), target.view(-1), weight=self.weight, ignore_index=self.ignore_index, reduction=self.reduction).view(isize[:-1])
+
 class RankingLoss(_Loss):
-
-	def __init__(self, reduction='mean'):
-
-		super(RankingLoss, self).__init__()
-
-		self.reduction = reduction
 
 	# output: (batch size)
 	# target: (batch size)
-
 	def forward(self, output, target):
 
 		loss = output * target

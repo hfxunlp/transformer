@@ -2,6 +2,8 @@
 
 # usage: python rank.py rsf h5f models...
 
+norm_token = True
+
 import sys
 
 import torch
@@ -15,10 +17,12 @@ import cnfg.base as cnfg
 from transformer.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
+from parallel.base import DataParallelCriterion
 
 from loss import LabelSmoothingLoss
 
 from utils.base import *
+from utils.fmt.base4torch import parse_cuda
 
 def load_fixing(module):
 
@@ -54,31 +58,7 @@ mymodel.eval()
 
 lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=0, reduction='none', forbidden_index=cnfg.forbidden_indexes)
 
-use_cuda = cnfg.use_cuda
-gpuid = cnfg.gpuid
-
-if use_cuda and torch.cuda.is_available():
-	use_cuda = True
-	if len(gpuid.split(",")) > 1:
-		if cnfg.multi_gpu_decoding:
-			cuda_device = torch.device(gpuid[:gpuid.find(",")].strip())
-			cuda_devices = [int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(",")]
-			multi_gpu = True
-		else:
-			cuda_device = torch.device("cuda:" + gpuid[gpuid.rfind(",") + 1:].strip())
-			multi_gpu = False
-			cuda_devices = None
-	else:
-		cuda_device = torch.device(gpuid)
-		multi_gpu = False
-		cuda_devices = None
-	torch.cuda.set_device(cuda_device.index)
-	#torch.backends.cudnn.benchmark = True
-else:
-	use_cuda = False
-	cuda_device = False
-	multi_gpu = False
-	cuda_devices = None
+use_cuda, cuda_device, cuda_devices, multi_gpu = parse_cuda(cnfg.use_cuda, cnfg.gpuid)
 
 # Important to make cudnn methods deterministic
 set_random_seed(cnfg.seed, use_cuda)
@@ -105,11 +85,11 @@ with open(sys.argv[1], "wb") as f:
 			lo = seq_o.size(1) - 1
 			ot = seq_o.narrow(1, 1, lo).contiguous()
 			output = mymodel(seq_batch, seq_o.narrow(1, 0, lo))
-			loss = lossf(output, ot)
-			lenv = (lo - ot.eq(0).sum(-1)).to(loss)
-			loss = loss.sum(-1).view(-1, lo).sum(-1) / lenv
+			loss = lossf(output, ot).sum(-1).view(-1, lo).sum(-1)
+			if norm_token:
+				lenv = ot.ne(0).int().sum(-1).to(loss)
+				loss = loss / lenv
 			f.write("\n".join([str(rsu) for rsu in loss.tolist()]).encode("utf-8"))
 			f.write(ens)
 
 td.close()
-

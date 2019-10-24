@@ -30,7 +30,7 @@ save_every = 1500
 num_checkpoint = 4
 epoch_start_checkpoint_save = 3
 
-epoch_save = True
+epoch_save = False
 
 beam_size = 4
 
@@ -45,7 +45,7 @@ report_eva = False
 
 use_cuda = True
 # enable Data Parallel multi-gpu support with values like: 'cuda:0, 1, 3'.
-gpuid = 'cuda:0'
+gpuid = 'cuda:0, 1'
 # [EXP] enable mixed precision (FP16) with "O1"
 amp_opt = None
 
@@ -85,7 +85,7 @@ share_emb = False
 
 nhead = max(1, isize // 64)
 
-cache_len = 260
+cache_len = 256
 
 warm_step = 8000
 

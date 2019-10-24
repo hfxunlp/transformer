@@ -70,7 +70,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			loss.backward()
 
 		sum_loss += loss_add
-		wd_add = ot.numel() - ot.eq(0).sum().item()
+		wd_add = ot.ne(0).int().sum().item()
 		if save_loss:
 			_ls[(i_d, t_d)] = loss_add / wd_add
 		sum_wd += wd_add

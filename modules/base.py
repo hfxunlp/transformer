@@ -14,13 +14,13 @@ class PositionwiseFF(nn.Module):
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residue=False, use_GeLU=False):
+	def __init__(self, isize, hsize=None, dropout=0.0, norm_residue=False, use_GeLU=False, enable_bias=False):
 
 		super(PositionwiseFF, self).__init__()
 
 		_hsize = isize * 4 if hsize is None else hsize
 
-		self.net = nn.Sequential(Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize))
+		self.net = nn.Sequential(Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_bias))
 
 		self.normer = nn.LayerNorm(isize, eps=1e-06)
 
