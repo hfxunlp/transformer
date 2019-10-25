@@ -1,17 +1,14 @@
 #encoding: utf-8
 
-from utils.fmt.base import list_reader, has_unk, get_bsize, no_unk_mapper
+from utils.fmt.base import list_reader, get_bsize, map_batch, pad_batch
 
 def batch_loader(finput, fref, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 
 	rsi = []
 	rsr = []
 	rst = []
-	nd = 0
-	maxlen = 0
+	nd = maxlen = mlen_i = mlen_r = 0
 	_bsize = bsize
-	mlen_i = 0
-	mlen_r = 0
 	for i_d, rd, td in zip(list_reader(finput), list_reader(fref), line_reader(ftarget)):
 		lid = len(i_d)
 		lrd = len(rd)
@@ -46,32 +43,10 @@ def batch_mapper(finput, fref, ftarget, vocabi, bsize, maxpad, maxpart, maxtoken
 	global has_unk
 
 	for i_d, rd, td, mlen_i, mlen_t in batch_loader(finput, fref, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
-		rsi = []
-		for lined in i_d:
-			tmp = [1]
-			tmp.extend([vocabi.get(wd, 3) for wd in lined] if has_unk else no_unk_mapper(vocabi, lined))#[vocabi[wd] for wd in lined if wd in vocabi]
-			tmp.append(2)
-			rsi.append(tmp)
-		rsr = []
-		for lined in rd:
-			tmp = [1]
-			tmp.extend([vocabi.get(wd, 3) for wd in lined] if has_unk else no_unk_mapper(vocabi, lined))#[vocabi[wd] for wd in lined if wd in vocabi]
-			tmp.append(2)
-			rsr.append(tmp)
-		yield rsi, rsr, td, mlen_i + 2, mlen_t + 2
+		rsi, extok_i = map_batch(i_d, vocabi)
+		rsr, extok_r = map_batch(rd, vocabi)
+		yield rsi, rsr, td, mlen_i + extok_i, mlen_t + extok_r
 
 def batch_padder(finput, fref, ftarget, vocabi, bsize, maxpad, maxpart, maxtoken, minbsize):
 	for i_d, rd, td, mlen_i, mlen_t in batch_mapper(finput, fref, ftarget, vocabi, bsize, maxpad, maxpart, maxtoken, minbsize):
-		rid = []
-		for lined in i_d:
-			curlen = len(lined)
-			if curlen < mlen_i:
-				lined.extend([0 for i in range(mlen_i - curlen)])
-			rid.append(lined)
-		rrd = []
-		for lined in rd:
-			curlen = len(lined)
-			if curlen < mlen_t:
-				lined.extend([0 for i in range(mlen_t - curlen)])
-			rrd.append(lined)
-		yield rid, rrd, td
+		yield pad_batch(i_d, mlen_i), pad_batch(rd, mlen_t), td

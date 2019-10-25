@@ -14,7 +14,7 @@ class PositionwiseFF(nn.Module):
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residue=False, use_GeLU=False, enable_bias=False):
+	def __init__(self, isize, hsize=None, dropout=0.0, norm_residue=False, use_GeLU=False, enable_bias=True):
 
 		super(PositionwiseFF, self).__init__()
 
@@ -333,14 +333,14 @@ class ResidueCombiner(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, use_GeLU=False):
+	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, use_GeLU=False, enable_bias=False):
 
 		super(ResidueCombiner, self).__init__()
 
 		_hsize = isize * 2 * ncomb if hsize is None else hsize
 
 		# should dropout be in front of sigmoid or not?
-		self.net = nn.Sequential(Linear(isize * ncomb, _hsize), GeLU_BERT() if use_GeLU else nn.Sigmoid(), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize * ncomb, _hsize), GeLU_BERT() if use_GeLU else nn.Sigmoid(), Linear(_hsize, isize))
+		self.net = nn.Sequential(Linear(isize * ncomb, _hsize), GeLU_BERT() if use_GeLU else nn.Sigmoid(), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize * ncomb, _hsize), GeLU_BERT() if use_GeLU else nn.Sigmoid(), Linear(_hsize, isize, bias=enable_bias))
 
 		self.out_normer = nn.LayerNorm(isize, eps=1e-06)
 
@@ -477,50 +477,6 @@ class Sparsemax(nn.Module):
 	def forward(self, input):
 
 		return SparsemaxFunction.apply(input, self.dim)
-
-class SigmoidIncremental:
-
-	# warm_steps: increase from 0.0 to about (0.9866 * target_value) in warm_steps
-	# target_value: target value returned after infinity calls to step() function
-
-	def __init__(self, warm_steps, target_value, cur_step=0):
-
-		self.wstep = float(warm_steps) /  5.0
-		self.tarv = target_value
-		self.cur_step = float(cur_step)
-
-	def step(self):
-
-		self.cur_step += 1.0
-
-		return (2.0 / (1.0 + exp(- self.cur_step / self.wstep)) - 1.0) * self.tarv
-
-class SigmoidITensor(nn.Module):
-
-	# warm_steps: increase from 0.0 to about (0.9866 * target_value) in warm_steps
-	# target_value: target value returned after infinity calls to step() function
-
-	def __init__(self, warm_steps, target_value, xseql=512):
-
-		super(SigmoidITensor, self).__init__()
-		self.wstep = float(warm_steps) /  5.0
-		self.tarv = target_value
-		self.xseql = xseql
-		self.register_buffer("w", ((((torch.arange(1, xseql + 1, dtype=torch.float, requires_grad=False) / self.wstep)).sigmoid() * 2 - 1) * self.tarv).unsqueeze(0).unsqueeze(-1))
-
-	def forward(self, x, expand=True):
-
-		seql = x.size(1)
-
-		out = self.get_ext(seql) if seql > self.xseql else self.w.narrow(1, 0, seql)
-
-		return out.expand_as(x) if expand else out
-
-	def get_ext(self, seql):
-
-		_tmp = ((((torch.arange(self.xseql + 1, seql + 1, dtype=self.w.dtype, device=self.w.device, requires_grad=False) / self.wstep)).sigmoid() * 2.0 - 1.0) * self.tarv).unsqueeze(0).unsqueeze(-1)
-
-		return torch.cat((self.w, _tmp), 1)
 
 class ApproximateEmb(nn.Module):
 
@@ -666,34 +622,6 @@ class FertSummer(nn.Module):
 		# (bsize, seql, 1)' * (bsize, seql, isize) => (bsize, 1, isize)
 		return self.normer(_weight).transpose(1, 2).bmm(x).squeeze(1)
 
-class Temperature(nn.Module):
-
-	def __init__(self, isize, minv = 0.125):
-
-		super(Temperature, self).__init__()
-
-		self.w = nn.Parameter(torch.Tensor(isize).uniform_(- sqrt(1.0 / isize), sqrt(1.0 / isize)))
-		self.bias = nn.Parameter(torch.zeros(1))
-		self.act = nn.Tanh()
-		self.k = nn.Parameter(torch.ones(1))
-		self.minv = minv
-
-	def forward(self, x):
-
-		xsize = x.size()
-
-		out = torch.addmv(self.bias, x.view(-1, xsize[-1]), self.w)
-
-		xsize = list(xsize)
-		xsize[-1] = 1
-
-		return ((self.k.abs() + self.minv) * (self.act(out) + 1)).view(xsize)
-
-	def fix_init(self):
-
-		self.k.data.fill_(1.0)
-		self.bias.data.zero_()
-
 class TokenDropout(nn.Module):
 
 	def __init__(self, p=0.5):
@@ -779,3 +707,75 @@ class CoordinateEmb(nn.Module):
 	def get_pos(self, step, layer):
 
 		return self.w[layer][step] if step < self.num_pos and layer < self.num_steps else self.get_ext(step, layer, True).squeeze(0)
+
+class SigmoidIncremental:
+
+	# warm_steps: increase from 0.0 to about (0.9866 * target_value) in warm_steps
+	# target_value: target value returned after infinity calls to step() function
+
+	def __init__(self, warm_steps, target_value, cur_step=0):
+
+		self.wstep = float(warm_steps) /  5.0
+		self.tarv = target_value
+		self.cur_step = float(cur_step)
+
+	def step(self):
+
+		self.cur_step += 1.0
+
+		return (2.0 / (1.0 + exp(- self.cur_step / self.wstep)) - 1.0) * self.tarv
+
+class SigmoidITensor(nn.Module):
+
+	# warm_steps: increase from 0.0 to about (0.9866 * target_value) in warm_steps
+	# target_value: target value returned after infinity calls to step() function
+
+	def __init__(self, warm_steps, target_value, xseql=512):
+
+		super(SigmoidITensor, self).__init__()
+		self.wstep = float(warm_steps) /  5.0
+		self.tarv = target_value
+		self.xseql = xseql
+		self.register_buffer("w", ((((torch.arange(1, xseql + 1, dtype=torch.float, requires_grad=False) / self.wstep)).sigmoid() * 2 - 1) * self.tarv).unsqueeze(0).unsqueeze(-1))
+
+	def forward(self, x, expand=True):
+
+		seql = x.size(1)
+
+		out = self.get_ext(seql) if seql > self.xseql else self.w.narrow(1, 0, seql)
+
+		return out.expand_as(x) if expand else out
+
+	def get_ext(self, seql):
+
+		_tmp = ((((torch.arange(self.xseql + 1, seql + 1, dtype=self.w.dtype, device=self.w.device, requires_grad=False) / self.wstep)).sigmoid() * 2.0 - 1.0) * self.tarv).unsqueeze(0).unsqueeze(-1)
+
+		return torch.cat((self.w, _tmp), 1)
+
+class Temperature(nn.Module):
+
+	def __init__(self, isize, minv = 0.125):
+
+		super(Temperature, self).__init__()
+
+		self.w = nn.Parameter(torch.Tensor(isize).uniform_(- sqrt(1.0 / isize), sqrt(1.0 / isize)))
+		self.bias = nn.Parameter(torch.zeros(1))
+		self.act = nn.Tanh()
+		self.k = nn.Parameter(torch.ones(1))
+		self.minv = minv
+
+	def forward(self, x):
+
+		xsize = x.size()
+
+		out = torch.addmv(self.bias, x.view(-1, xsize[-1]), self.w)
+
+		xsize = list(xsize)
+		xsize[-1] = 1
+
+		return ((self.k.abs() + self.minv) * (self.act(out) + 1)).view(xsize)
+
+	def fix_init(self):
+
+		self.k.data.fill_(1.0)
+		self.bias.data.zero_()

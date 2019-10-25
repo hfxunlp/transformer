@@ -4,11 +4,14 @@ from random import shuffle
 
 has_unk = True
 
+pad_id, sos_id, eos_id = 0, 1, 2
 if has_unk:
-	init_vocab = {"<pad>":0, "<sos>":1, "<eos>":2, "<unk>":3}
+	unk_id = 3
+	init_vocab = {"<pad>":pad_id, "<sos>":sos_id, "<eos>":eos_id, "<unk>":unk_id}
 	init_normal_token_id = 4
 else:
-	init_vocab = {"<pad>":0, "<sos>":1, "<eos>":2}
+	unk_id = None
+	init_vocab = {"<pad>":pad_id, "<sos>":sos_id, "<eos>":eos_id}
 	init_normal_token_id = 3
 init_token_id = 3
 
@@ -281,8 +284,7 @@ def dict_insert_list(dict_in, value, *keys):
 
 def legal_vocab(sent, ilgset, ratio):
 
-	total = 0
-	ilg = 0
+	total = ilg = 0
 	for tmpu in sent.split():
 		if tmpu:
 			if tmpu in ilgset:
@@ -294,9 +296,7 @@ def legal_vocab(sent, ilgset, ratio):
 
 def get_char_ratio(strin):
 
-	ntokens = 0
-	nchars = 0
-	nsp = 0
+	ntokens = nchars = nsp = 0
 	pbpe = False
 	for tmpu in strin.split():
 		if tmpu:
@@ -319,3 +319,27 @@ def get_bi_ratio(ls, lt):
 		return float(ls) / float(lt)
 	else:
 		return float(lt) / float(ls)
+
+def map_batch(i_d, vocabi):
+
+	global has_unk, sos_id, eos_id, unk_id
+
+	if isinstance(i_d[0], (tuple, list,)):
+		return [map_batch(idu, vocabi)[0] for idu in i_d], 2
+	else:
+		rsi = [sos_id]
+		rsi.extend([vocabi.get(wd, unk_id) for wd in i_d] if has_unk else no_unk_mapper(vocabi, i_d))#[vocabi[wd] for wd in i_d if wd in vocabi]
+		rsi.append(eos_id)
+		return rsi, 2
+
+def pad_batch(i_d, mlen_i):
+
+	global pad_id
+
+	if isinstance(i_d[0], (tuple, list,)):
+		return [pad_batch(idu, mlen_i) for idu in i_d]
+	else:
+		curlen = len(i_d)
+		if curlen < mlen_i:
+			i_d.extend([pad_id for i in range(mlen_i - curlen)])
+		return i_d

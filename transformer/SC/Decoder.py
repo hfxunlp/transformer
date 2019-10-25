@@ -3,9 +3,8 @@
 import torch
 from torch import nn
 
-from modules.base import SelfAttn, CrossAttn, Dropout
+from modules.base import SelfAttn, CrossAttn, Dropout, ResidueCombiner
 from modules.TA import PositionwiseFF
-from modules.SC import FtFFN, ResidueCombiner, FullResidueCombiner
 
 from utils.base import repeat_bsize_for_beam_tensor
 from math import sqrt
@@ -26,8 +25,7 @@ class DecoderLayer(nn.Module):
 		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 
 		self.ff = PositionwiseFF(isize, _fhsize, dropout)
-		#self.scff = FtFFN(isize, _fhsize, dropout)
-		self.scff = FullResidueCombiner(isize, 2, _fhsize)
+		self.scff = ResidueCombiner(isize, 2, _fhsize)
 
 		self.layer_normer1 = nn.LayerNorm(isize, eps=1e-06)
 		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
