@@ -10,7 +10,7 @@ export tgttf=tgt.train.bpe
 export srcvf=src.dev.bpe
 export tgtvf=tgt.dev.bpe
 
-export share_vcb=true
+export share_vcb=false
 export vsize=65536
 export maxtokens=256
 export ngpu=1

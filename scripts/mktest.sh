@@ -4,7 +4,7 @@ export srcd=w14ende
 export srctf=test.tc.en.w14ed32
 export modelf="expm/w14ende/checkpoint.t7"
 export rsf=w14trs/trans.txt
-export share_vcb=true
+export share_vcb=false
 
 export cachedir=cache
 export dataid=w14ed32

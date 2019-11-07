@@ -13,7 +13,7 @@ export tgttf=train.tc.de
 export srcvf=dev.tc.en
 export tgtvf=dev.tc.de
 
-export share_bpe=true
+export share_bpe=false
 export vratio=0.2
 export maxtokens=256
 

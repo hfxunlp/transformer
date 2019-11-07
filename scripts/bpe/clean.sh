@@ -18,15 +18,15 @@ export tgtvf=dev.tc.de
 # with development set.
 # As for numrules, choose from [1, 6], fewer data will be droped with larger value, none data would be droped if it was set to 6, details are described in:
 #	tools/check/chars.py
-export charatio=0.973
-export bperatio=36.01
+export charatio=1.01
+export bperatio=32.01
 export seperatio=1.01
-export bibperatio=7.51
-export bioratio=7.51
+export bibperatio=8.01
+export bioratio=8.01
 export numrules=1
 
 export maxtokens=256
-export share_bpe=true
+export share_bpe=false
 
 export tgtd=$cachedir/$dataid
 
