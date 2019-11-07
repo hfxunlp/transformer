@@ -2,7 +2,7 @@
 
 import sys
 
-from utils.fmt.base import clean_list_len, maxfreq_filter, shuffle_pair, iter_dict_sort
+from utils.fmt.base import clean_liststr_lentok, maxfreq_filter, shuffle_pair, iter_dict_sort
 
 from random import seed as rpyseed
 from os import walk, path
@@ -19,8 +19,8 @@ def handle(cached, srcf, rsf, remove_same=True, shuf=True, max_remove=True):
 		while src and tgt:
 			src, tgt = src.strip(), tgt.strip()
 			if src and tgt:
-				src, lsrc = clean_list_len(src.decode("utf-8").split())
-				tgt, ltgt = clean_list_len(tgt.decode("utf-8").split())
+				src, lsrc = clean_liststr_lentok(src.decode("utf-8").split())
+				tgt, ltgt = clean_liststr_lentok(tgt.decode("utf-8").split())
 				yield src, tgt, ltgt + lsrc, ltgt
 			src, tgt = srcf.readline(), tgtf.readline()
 		srcf.close()

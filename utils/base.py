@@ -2,7 +2,7 @@
 
 import torch
 from torch.nn.init import xavier_uniform_, kaiming_uniform_
-from torch.nn import Embedding, Linear, LayerNorm
+from torch.nn import Embedding, Linear, LayerNorm, ModuleDict
 
 from threading import Thread
 
@@ -29,6 +29,15 @@ def pad_tensors(tensor_list):
 			maxlen = tlen
 
 	return [tensor if tensor.size(-1) == maxlen else torch.cat((tensor, tensor.new_zeros(get_pad_size(tensor.size(), maxlen))), -1) for tensor in tensor_list]
+
+def clear_pad(batch_in, mask=None, dim=-1):
+
+	_mask = batch_in.eq(0) if mask is None else mask
+	npad = _mask.int().sum(dim).min().item()
+	if npad > 0:
+		return batch_in.narrow(dim, 0, batch_in.size(dim) - npad)
+	else:
+		return batch_in
 
 def freeze_module(module):
 
@@ -247,3 +256,7 @@ def filter_para_grad(plin):
 			rs.append(para)
 
 	return rs
+
+def ModuleList2Dict(modin):
+
+	return ModuleDict(zip([str(i) for i in range(len(modin))], modin))

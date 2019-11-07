@@ -142,9 +142,9 @@ class NMT(nn.Module):
 				scores, _inds = (_scores / lpv.expand(real_bsize, beam_size)).view(bsize, beam_size2).topk(beam_size, dim=-1)
 				_tinds = (_inds + torch.arange(0, bsizeb2, beam_size2, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 
-				# sum_scores: (bsize, beam_size)			
+				# sum_scores: (bsize, beam_size)
 				sum_scores = _scores.view(bsizeb2).index_select(0, _tinds).view(bsize, beam_size)
-				
+
 			else:
 				scores, _inds = _scores.view(bsize, beam_size2).topk(beam_size, dim=-1)
 				_tinds = (_inds + torch.arange(0, bsizeb2, beam_size2, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)

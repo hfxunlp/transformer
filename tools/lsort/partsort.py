@@ -23,8 +23,8 @@ def handle(srcfs, srcft, tgtd, max_len=256, cache_token=268435456):
 
 	data = {}
 
-	mem_token = 0
-	curf = 0
+	mem_token = curf = 0
+
 	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft:
 		for ls, lt in zip(fs, ft):
 			ls, lt = ls.strip(), lt.strip()

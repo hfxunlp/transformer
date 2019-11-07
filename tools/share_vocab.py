@@ -2,14 +2,9 @@
 
 import sys
 
-def handle(srcfl, rsf, vsize=32764):
+from utils.fmt.base import clean_list_iter
 
-	def clean(lin):
-		rs = []
-		for lu in lin:
-			if lu:
-				rs.append(lu)
-		return rs
+def handle(srcfl, rsf, vsize=32764):
 
 	vocab = {}
 
@@ -18,7 +13,7 @@ def handle(srcfl, rsf, vsize=32764):
 			for line in f:
 				tmp = line.strip()
 				if tmp:
-					for token in clean(tmp.decode("utf-8").split()):
+					for token in clean_list_iter(tmp.decode("utf-8").split()):
 						vocab[token] = vocab.get(token, 0) + 1
 
 	r_vocab = {}

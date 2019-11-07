@@ -90,6 +90,7 @@ with open(sys.argv[1], "wb") as f:
 				lenv = ot.ne(0).int().sum(-1).to(loss)
 				loss = loss / lenv
 			f.write("\n".join([str(rsu) for rsu in loss.tolist()]).encode("utf-8"))
+			loss = output = ot = seq_batch = seq_o = None
 			f.write(ens)
 
 td.close()

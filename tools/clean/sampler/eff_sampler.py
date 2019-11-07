@@ -17,7 +17,7 @@ def handle(srcfl, tgtfl, ratio):
 	nkeep = ntotal = 0
 
 	for srcl in zip(*sfl):
-		
+
 		if random() <=ratio:
 			tmp = [tl.strip().decode("utf-8") for tl in srcl]
 			for line, wrtf in zip(tmp, tfl):
@@ -37,4 +37,3 @@ if __name__ == "__main__":
 	rpyseed(666666)
 	spind = len(sys.argv) // 2
 	handle(sys.argv[1:spind], sys.argv[spind:-1], float(sys.argv[-1]))
-

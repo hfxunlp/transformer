@@ -8,8 +8,6 @@ from utils.fmt.base import clean_str
 
 def handle(srcf, tgtf, rankf, rssf, rstf, threshold):
 
-
-
 	with open(srcf, "rb") as frs, open(tgtf, "rb") as frt, open(rankf, "rb") as fs, open(rssf, "wb") as fws, open(rstf, "wb") as fwt:
 
 		ndata = 0
@@ -33,4 +31,3 @@ def handle(srcf, tgtf, rankf, rssf, rstf, threshold):
 
 if __name__ == "__main__":
 	handle(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], float(sys.argv[6]))
-

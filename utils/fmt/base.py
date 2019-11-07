@@ -127,29 +127,11 @@ def ldvocab_list(vfile, minf=False, omit_vsize=False):
 
 def clean_str(strin):
 
-	rs = []
-	for lu in strin.split():
-		if lu:
-			rs.append(lu)
-
-	return " ".join(rs)
+	return " ".join([tmpu for tmpu in strin.split() if tmpu])
 
 def clean_list(lin):
 
-	rs = []
-	for lu in lin:
-		if lu:
-			rs.append(lu)
-
-	return rs
-
-def clean_list_len(lin):
-
-	rs = []
-	for lu in lin:
-		if lu:
-			rs.append(lu)
-	return " ".join(rs), len(rs)
+	return [tmpu for tmpu in lin if tmpu]
 
 def clean_list_iter(lin):
 
@@ -157,12 +139,10 @@ def clean_list_iter(lin):
 		if lu:
 			yield lu
 
-def clean_str_lentok(lin):
+def clean_liststr_lentok(lin):
 
-	rs = []
-	for lu in lin.split():
-		if lu:
-			rs.append(lu)
+	rs = [tmpu for tmpu in lin if tmpu]
+
 	return " ".join(rs), len(rs)
 
 def maxfreq_filter(ls, lt, max_remove=True):
@@ -211,13 +191,13 @@ def get_bsize(maxlen, maxtoken, maxbsize):
 
 	return min(rs, maxbsize)
 
-def no_unk_mapper(vcb, ltm):
+def no_unk_mapper(vcb, ltm, prompt=True):
 
 	rs = []
 	for wd in ltm:
 		if wd in vcb:
 			rs.append(vcb[wd])
-		else:
+		elif prompt:
 			print("Error mapping: "+ wd)
 
 	return rs

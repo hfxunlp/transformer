@@ -211,7 +211,6 @@ def check_vocab_and_split(orig, bpe_codes, vocab, separator):
 
 	return out
 
-
 def read_vocabulary(vocab_file, threshold):
 	"""read vocabulary file produced by get_vocab.py, and filter according to frequency threshold.
 	"""
@@ -229,7 +228,7 @@ def read_vocabulary(vocab_file, threshold):
 def isolate_glossary(word, glossary):
 	"""
 	Isolate a glossary present inside a word.
-	Returns a list of subwords. In which all 'glossary' glossaries are isolated 
+	Returns a list of subwords. In which all 'glossary' glossaries are isolated
 	For example, if 'USA' is the glossary and '1934USABUSA' the word, the return value is:
 		['1934', 'USA', 'B', 'USA']
 	"""

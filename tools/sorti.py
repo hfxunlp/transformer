@@ -2,7 +2,7 @@
 
 import sys
 
-from utils.fmt.base import clean_list_len, iter_dict_sort
+from utils.fmt.base import clean_liststr_lentok, iter_dict_sort
 
 def handle(srcfs, tgtfs):
 
@@ -12,7 +12,7 @@ def handle(srcfs, tgtfs):
 		for ls in fs:
 			ls = ls.strip()
 			if ls:
-				ls, lgth = clean_list_len(ls.decode("utf-8").split())
+				ls, lgth = clean_liststr_lentok(ls.decode("utf-8").split())
 				if lgth in data:
 					if ls not in data[lgth]:
 						data[lgth].add(ls)

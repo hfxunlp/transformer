@@ -14,7 +14,7 @@ class PositionwiseFF(nn.Module):
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residue=False, use_GeLU=False, enable_bias=True):
+	def __init__(self, isize, hsize=None, dropout=0.0, norm_residue=False, use_GeLU=False, enable_bias=False):
 
 		super(PositionwiseFF, self).__init__()
 
@@ -43,7 +43,7 @@ class PositionalEmb(nn.Module):
 	# pos_offset: initial offset for position
 	# dim_offset: initial offset for dimension
 
-	def __init__(self, num_dim, num_pos=512, pos_offset=0, dim_offset=0):
+	def __init__(self, num_dim, num_pos=256, pos_offset=0, dim_offset=0, alpha=1.0):
 
 		super(PositionalEmb, self).__init__()
 
@@ -51,6 +51,7 @@ class PositionalEmb(nn.Module):
 		self.num_dim = num_dim
 		self.poff = pos_offset
 		self.doff = dim_offset
+		self.alpha = alpha
 		self.register_buffer('w', torch.Tensor(num_pos, num_dim))
 		self.reset_parameters()
 
@@ -64,15 +65,15 @@ class PositionalEmb(nn.Module):
 
 		return rs.expand(bsize, seql, self.num_dim) if expand else rs
 
-	# when self.num_dim % 2 == 1, a bug happened, since rdiv_term for sin and cos are different
-
 	def reset_parameters(self):
 
 		poff = self.poff
 		pos = torch.arange(poff, self.num_pos + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
-		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim)).exp()
+		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(1e4) / self.num_dim)).exp()
 		_tmp = pos * rdiv_term
-		self.w[:, 0::2], self.w[:, 1::2] = _tmp.sin(), _tmp.cos()
+		if self.alpha != 1.0:
+			_tmp.mul_(self.alpha)
+		self.w[:, 0::2], self.w[:, 1::2] = _tmp.sin(), (_tmp.cos().narrow(-1, 0, _tmp.size(-1) - 1) if self.num_dim % 2 == 1 else _tmp.cos())
 
 	def get_ext(self, length, step_pick=False):
 
@@ -85,9 +86,11 @@ class PositionalEmb(nn.Module):
 			npos = self.num_pos
 			pos = torch.arange(npos + poff, length + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
 			ed = self.w.new(length - npos, self.num_dim)
-		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim)).exp()
+		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(1e4) / self.num_dim)).exp()
 		_tmp = pos * rdiv_term
-		ed[:, 0::2], ed[:, 1::2] = _tmp.sin(), _tmp.cos()
+		if self.alpha != 1.0:
+			_tmp.mul_(self.alpha)
+		ed[:, 0::2], ed[:, 1::2] = _tmp.sin(), (_tmp.cos().narrow(-1, 0, _tmp.size(-1) - 1) if self.num_dim % 2 == 1 else _tmp.cos())
 
 		return ed
 
@@ -164,7 +167,6 @@ class MultiHeadAttn(nn.Module):
 		return self.outer(oMA.view(bsize, nquery, self.hsize))
 
 # Average Attention is proposed in Accelerating Neural Transformer via an Average Attention Network(https://arxiv.org/abs/1805.00631)
-
 class AverageAttn(nn.Module):
 
 	# isize: input size of Feed-forward NN
@@ -257,7 +259,7 @@ class SelfAttn(nn.Module):
 			real_iQ, real_iK, real_iV = self.adaptor(iQ).view(bsize, nquery, 3, nheads, adim).unbind(2)
 
 			real_iQ, real_iK, real_iV = real_iQ.transpose(1, 2), real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
-			
+
 		else:
 
 			seql = iK.size(1)
@@ -354,36 +356,67 @@ class ResidueCombiner(nn.Module):
 
 		return self.out_normer(out)
 
-class ACTLossFunction(Function):
+# 2 kinds of GELU activation function implementation according to https://github.com/huggingface/pytorch-pretrained-BERT/blob/master/pytorch_pretrained_bert/modeling.py#L53-L58
 
-	# Note that both forward and backward are @staticmethods
-	@staticmethod
-	def forward(ctx, weight, weight_loss, remain_value):
-
-		ctx.save_for_backward(weight_loss, remain_value)
-
-		return remain_value.sum()
-
-	@staticmethod
-	def backward(ctx, grad_output):
-
-		weight_loss, remain_value = ctx.saved_tensors
-
-		grad_weight = grad_output * weight_loss if ctx.needs_input_grad[0] else None
-
-		grad_remain = grad_output.view(1, 1, 1).expand_as(remain_value) if ctx.needs_input_grad[2] else None
-
-		return grad_weight, None, grad_remain
-
-class ACT_Loss(nn.Module):
+class GeLU_GPT(nn.Module):
 
 	def __init__(self):
 
-		super(ACT_Loss, self).__init__()
+		super(GeLU_GPT, self).__init__()
 
-	def forward(self, weight, weight_loss, remain_value):
+		self.k = sqrt(2.0 / pi)
 
-		return ACTLossFunction.apply(weight, weight_loss, remain_value)
+	def forward(self, x):
+
+		return 0.5 * x * (1.0 + (self.k * (x + 0.044715 * x.pow(3.0))).tanh())
+
+class GeLU_BERT(nn.Module):
+
+	def __init__(self):
+
+		super(GeLU_BERT, self).__init__()
+
+		self.k = sqrt(2.0)
+
+	def forward(self, x):
+
+		return 0.5 * x * (1.0 + (x / self.k).erf())
+
+class Scorer(nn.Module):
+
+	def __init__(self, isize, bias=True):
+
+		super(Scorer, self).__init__()
+
+		self.w = nn.Parameter(torch.Tensor(isize).uniform_(- sqrt(1.0 / isize), sqrt(1.0 / isize)))
+		self.bias = nn.Parameter(torch.zeros(1)) if bias else None
+
+	def forward(self, x):
+
+		xsize = x.size()
+
+		out = torch.addmv(self.bias, x.view(-1, xsize[-1]), self.w) if self.bias else x.view(-1, xsize[-1]).mv(self.w)
+
+		rsize = list(xsize)
+		rsize[-1] = 1
+
+		return out.view(rsize)
+
+class TokenDropout(nn.Module):
+
+	def __init__(self, p=0.5):
+
+		super(TokenDropout, self).__init__()
+		self.p = float(p)
+
+	def forward(self, inpute):
+
+		if self.training:
+			mask = inpute.new_full(inpute.size()[:-1], self.p, requires_grad=False).bernoulli().byte().unsqueeze(-1)
+
+			return inpute.masked_fill(mask, 0.0) * (1.0 / (1.0 - self.p))
+		else:
+			return inpute
 
 class GradientReversalFunction(Function):
 
@@ -415,6 +448,36 @@ class GradientReversalLayer(nn.Module):
 
 		return (GradientReversalFunction.apply(inputu, self.adv_weight) for inputu in inputs) if len(inputs) > 1 else GradientReversalFunction.apply(inputs[0], self.adv_weight)
 
+class ACTLossFunction(Function):
+
+	# Note that both forward and backward are @staticmethods
+	@staticmethod
+	def forward(ctx, weight, weight_loss, remain_value):
+
+		ctx.save_for_backward(weight_loss, remain_value)
+
+		return remain_value.sum()
+
+	@staticmethod
+	def backward(ctx, grad_output):
+
+		weight_loss, remain_value = ctx.saved_tensors
+
+		grad_weight = grad_output * weight_loss if ctx.needs_input_grad[0] else None
+
+		grad_remain = grad_output.view(1, 1, 1).expand_as(remain_value) if ctx.needs_input_grad[2] else None
+
+		return grad_weight, None, grad_remain
+
+class ACT_Loss(nn.Module):
+
+	def __init__(self):
+
+		super(ACT_Loss, self).__init__()
+
+	def forward(self, weight, weight_loss, remain_value):
+
+		return ACTLossFunction.apply(weight, weight_loss, remain_value)
 
 # SparseMax (https://arxiv.org/pdf/1602.02068) borrowed form OpenNMT-py( https://github.com/OpenNMT/OpenNMT-py/blob/master/onmt/modules/sparse_activations.py)
 class SparsemaxFunction(Function):
@@ -493,34 +556,7 @@ class ApproximateEmb(nn.Module):
 		isize[-1] = -1
 		return out.view(isize)
 
-# 2 kinds of GELU activation function implementation according to https://github.com/huggingface/pytorch-pretrained-BERT/blob/master/pytorch_pretrained_bert/modeling.py#L53-L58
-
-class GeLU_GPT(nn.Module):
-
-	def __init__(self):
-
-		super(GeLU_GPT, self).__init__()
-
-		self.k = sqrt(2.0 / pi)
-
-	def forward(self, x):
-
-		return 0.5 * x * (1.0 + (self.k * (x + 0.044715 * x.pow(3.0))).tanh())
-
-class GeLU_BERT(nn.Module):
-
-	def __init__(self):
-
-		super(GeLU_BERT, self).__init__()
-
-		self.k = sqrt(2.0)
-
-	def forward(self, x):
-
-		return 0.5 * x * (1.0 + (x / self.k).erf())
-
 # SparseNormer is proposed in GLoMo: Unsupervisedly Learned Relational Graphs as Transferable Representations(https://arxiv.org/abs/1806.05662)
-
 class SparseNormer(nn.Module):
 
 	# dim: dimension to normalize
@@ -569,26 +605,6 @@ class MHSparseNormer(nn.Module):
 
 		self.bias.data.zero_()
 
-class Scorer(nn.Module):
-
-	def __init__(self, isize, bias=True):
-
-		super(Scorer, self).__init__()
-
-		self.w = nn.Parameter(torch.Tensor(isize).uniform_(- sqrt(1.0 / isize), sqrt(1.0 / isize)))
-		self.bias = nn.Parameter(torch.zeros(1)) if bias else None
-
-	def forward(self, x):
-
-		xsize = x.size()
-
-		out = torch.addmv(self.bias, x.view(-1, xsize[-1]), self.w) if self.bias else x.view(-1, xsize[-1]).mv(self.w)
-
-		rsize = list(xsize)
-		rsize[-1] = 1
-
-		return out.view(rsize)
-
 class MHAttnSummer(nn.Module):
 
 	def __init__(self, isize, ahsize=None, num_head=8, attn_drop=0.0):
@@ -622,22 +638,6 @@ class FertSummer(nn.Module):
 		# (bsize, seql, 1)' * (bsize, seql, isize) => (bsize, 1, isize)
 		return self.normer(_weight).transpose(1, 2).bmm(x).squeeze(1)
 
-class TokenDropout(nn.Module):
-
-	def __init__(self, p=0.5):
-
-		super(TokenDropout, self).__init__()
-		self.p = float(p)
-
-	def forward(self, inpute):
-
-		if self.training:
-			mask = inpute.new_full(inpute.size()[:-1], self.p, requires_grad=False).bernoulli().byte().unsqueeze(-1)
-
-			return inpute.masked_fill(mask, 0.0) * (1.0 / (1.0 - self.p))
-		else:
-			return inpute
-
 class CoordinateEmb(nn.Module):
 
 	# num_dim: dimension of embedding
@@ -646,7 +646,7 @@ class CoordinateEmb(nn.Module):
 	# pos_offset: initial offset for position
 	# dim_offset: initial offset for dimension
 
-	def __init__(self, num_dim, num_pos=512, num_steps=8, pos_offset=0, dim_offset=0):
+	def __init__(self, num_dim, num_pos=512, num_steps=8, pos_offset=0, dim_offset=0, alpha=1.0):
 
 		super(CoordinateEmb, self).__init__()
 
@@ -655,6 +655,7 @@ class CoordinateEmb(nn.Module):
 		self.num_dim = num_dim
 		self.poff = pos_offset
 		self.doff = dim_offset
+		self.alpha = alpha
 		self.register_buffer('w', torch.Tensor(num_steps, num_pos, num_dim))
 		self.reset_parameters()
 
@@ -680,9 +681,12 @@ class CoordinateEmb(nn.Module):
 		nstep = self.num_steps
 		pos = torch.arange(poff, npos + poff, dtype=self.w.dtype, device=self.w.device).view(1, npos, 1)
 		step = torch.arange(poff, nstep + poff, dtype=self.w.dtype, device=self.w.device).view(nstep, 1, 1)
-		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim)).exp()
+		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(1e4) / self.num_dim)).exp()
 		_tmp1, _tmp2 = pos * rdiv_term, step * rdiv_term
-		self.w[:, :, 0::2], self.w[:, :, 1::2] = _tmp1.sin() + _tmp2.sin(), _tmp1.cos() + _tmp2.cos()
+		if self.alpha != 1.0:
+			_tmp1.mul_(self.alpha)
+			_tmp2.mul_(self.alpha)
+		self.w[:, :, 0::2], self.w[:, :, 1::2] = _tmp1.sin() + _tmp2.sin(), ((_tmp1.cos() + _tmp2.cos()).narrow(-1, 0, _tmp1.size(-1) - 1) if self.num_dim % 2 == 1 else _tmp1.cos() + _tmp2.cos())
 
 	def get_ext(self, length, step, step_pick=False):
 
@@ -696,9 +700,12 @@ class CoordinateEmb(nn.Module):
 			npos = self.num_pos
 			_pos = torch.arange(npos + poff if step < self.num_steps else poff, length + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
 			ed = self.w.new(length - npos, self.num_dim)
-		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(10000.0) / self.num_dim)).exp()
+		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(1e4) / self.num_dim)).exp()
 		_tmp1, _tmp2 = _pos * rdiv_term, _step * rdiv_term
-		ed[:, 0::2], ed[:, 1::2] = _tmp1.sin() + _tmp2.sin(), _tmp1.cos() + _tmp2.cos()
+		if self.alpha != 1.0:
+			_tmp1.mul_(self.alpha)
+			_tmp2.mul_(self.alpha)
+		ed[:, 0::2], ed[:, 1::2] = _tmp1.sin() + _tmp2.sin(), ((_tmp1.cos() + _tmp2.cos()).narrow(-1, 0, _tmp1.size(-1) - 1) if self.num_dim % 2 == 1 else _tmp1.cos() + _tmp2.cos())
 
 		return ed
 

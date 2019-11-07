@@ -293,7 +293,7 @@ class Decoder(nn.Module):
 
 			_done = False
 			if length_penalty > 0.0:
-				lpv = lpv.index_select(0, _inds)	
+				lpv = lpv.index_select(0, _inds)
 			elif (not return_all) and done_trans.select(1, 0).sum().item() == bsize:
 				_done = True
 

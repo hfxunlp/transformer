@@ -6,11 +6,12 @@ from modules.base import *
 from utils.base import repeat_bsize_for_beam_tensor
 from math import sqrt
 
+from transformer.Decoder import DecoderLayer as DecoderLayerBase
 from transformer.Decoder import Decoder as DecoderBase
 
 # Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network(https://arxiv.org/abs/1805.00631)
 
-class DecoderLayer(nn.Module):
+class DecoderLayer(DecoderLayerBase):
 
 	# isize: input size
 	# fhsize: hidden size of PositionwiseFeedForward
@@ -18,30 +19,14 @@ class DecoderLayer(nn.Module):
 	# num_head: number of heads in MultiHeadAttention
 	# ahsize: hidden size of MultiHeadAttention
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
-
-		super(DecoderLayer, self).__init__()
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None):
 
 		_ahsize = isize if ahsize is None else ahsize
-
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
+		super(DecoderLayer, self).__init__(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
+
 		self.self_attn = AverageAttn(isize, _fhsize, dropout)
-		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
-
-		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residue)
-
-		self.layer_normer1 = nn.LayerNorm(isize, eps=1e-06)
-		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
-
-		if dropout > 0:
-			self.d1 = Dropout(dropout, inplace=True)
-			self.d2 = Dropout(dropout, inplace=True)
-		else:
-			self.d1 = None
-			self.d2 = None
-
-		self.norm_residue = norm_residue
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: embedding of decoded translation (bsize, nquery, isize) during training, layer normed summed previous states for decoding
@@ -163,7 +148,6 @@ class Decoder(DecoderBase):
 		self.lsm = base_decoder.lsm
 
 		self.out_normer = None if self.out_normer is None else base_decoder.out_normer
-
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
@@ -371,7 +355,7 @@ class Decoder(DecoderBase):
 
 			_done = False
 			if length_penalty > 0.0:
-				lpv = lpv.index_select(0, _inds)	
+				lpv = lpv.index_select(0, _inds)
 			elif (not return_all) and done_trans.select(1, 0).sum().item() == bsize:
 				_done = True
 

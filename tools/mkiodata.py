@@ -8,7 +8,7 @@ import h5py
 from utils.fmt.base import ldvocab
 from utils.fmt.dual import batch_padder
 
-def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulgpu=True, bsize=768, maxpad=16, maxpart=4, maxtoken=3920, minfreq=False, vsize=False):
+def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulgpu=True, bsize=768, maxpad=16, maxpart=4, maxtoken=4352, minfreq=False, vsize=False):
 	vcbi, nwordi = ldvocab(fvocab_i, minfreq, vsize)
 	vcbt, nwordt = ldvocab(fvocab_t, minfreq, vsize)
 	if expand_for_mulgpu:

@@ -2,21 +2,14 @@
 
 import torch
 from torch import nn
-from modules.base import SelfAttn, Dropout
+from modules.base import Dropout
 from modules.TA import PositionwiseFF
 from math import sqrt
 
+from transformer.Encoder import EncoderLayer as EncoderLayerBase
 from transformer.Encoder import Encoder as EncoderBase
 
-# vocabulary:
-#	<pad>:0
-#	<sos>:1
-#	<eos>:2
-#	<unk>:3
-#	...
-# for the classier of the decoder, <sos> is omitted
-
-class EncoderLayer(nn.Module):
+class EncoderLayer(EncoderLayerBase):
 
 	# isize: input size
 	# fhsize: hidden size of PositionwiseFeedForward
@@ -26,19 +19,12 @@ class EncoderLayer(nn.Module):
 
 	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None):
 
-		super(EncoderLayer, self).__init__()
-
 		_ahsize = isize if ahsize is None else ahsize
-
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
+		super(EncoderLayer, self).__init__(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
 
 		self.ff = PositionwiseFF(isize, _fhsize, dropout)
-
-		self.layer_normer = nn.LayerNorm(isize, eps=1e-06)
-
-		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 	# inputs: input of this layer (bsize, seql, isize)
 

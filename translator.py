@@ -108,7 +108,7 @@ class TranslatorCore:
 
 			model = load_model_cpu(modelfs, model)
 			model.apply(load_fixing)
-				
+
 		cuda_device = torch.device(cnfg.gpuid)
 
 		model.eval()
@@ -147,6 +147,7 @@ class TranslatorCore:
 						else:
 							tmp.append(self.vcbt[tmpu])
 					rs.append(" ".join(tmp))
+				seq_batch = None
 		return rs
 
 class Translator:

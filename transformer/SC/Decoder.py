@@ -3,39 +3,26 @@
 import torch
 from torch import nn
 
-from modules.base import SelfAttn, CrossAttn, Dropout, ResidueCombiner
+from modules.base import ResidueCombiner
 from modules.TA import PositionwiseFF
 
 from utils.base import repeat_bsize_for_beam_tensor
 from math import sqrt
 
+from transformer.Decoder import DecoderLayer as DecoderLayerBase
 from transformer.Decoder import Decoder as DecoderBase
 
-class DecoderLayer(nn.Module):
+class DecoderLayer(DecoderLayerBase):
 
 	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None):
 
-		super(DecoderLayer, self).__init__()
-
 		_ahsize = isize if ahsize is None else ahsize
-
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
-		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
+		super(DecoderLayer, self).__init__(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
 
 		self.ff = PositionwiseFF(isize, _fhsize, dropout)
 		self.scff = ResidueCombiner(isize, 2, _fhsize)
-
-		self.layer_normer1 = nn.LayerNorm(isize, eps=1e-06)
-		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
-
-		if dropout > 0:
-			self.d1 = Dropout(dropout, inplace=True)
-			self.d2 = Dropout(dropout, inplace=True)
-		else:
-			self.d1 = None
-			self.d2 = None
 
 	def forward(self, inpute, inputh, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, concat_query=False):
 
@@ -259,7 +246,7 @@ class Decoder(DecoderBase):
 
 			_done = False
 			if length_penalty > 0.0:
-				lpv = lpv.index_select(0, _inds)	
+				lpv = lpv.index_select(0, _inds)
 			elif (not return_all) and done_trans.select(1, 0).sum().item() == bsize:
 				_done = True
 

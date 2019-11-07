@@ -69,8 +69,9 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 		else:
 			loss.backward()
 
-		sum_loss += loss_add
 		wd_add = ot.ne(0).int().sum().item()
+		loss = output = oi = ot = seq_batch = seq_o = None
+		sum_loss += loss_add
 		if save_loss:
 			_ls[(i_d, t_d)] = loss_add / wd_add
 		sum_wd += wd_add
@@ -166,10 +167,11 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu):
 			else:
 				trans = torch.argmax(output, -1)
 			sum_loss += loss.data.item()
-			data_mask = ot.ne(0)
-			correct = torch.gt(trans.eq(ot) + data_mask, 1)
+			data_mask = ot.ne(0).int()
+			correct = torch.gt(trans.eq(ot).int() + data_mask, 1).int()
 			w += data_mask.sum().item()
 			r += correct.sum().item()
+			correct = data_mask = trans = loss = output = ot = seq_batch = seq_o = None
 	w = float(w)
 	return sum_loss / w, (w - r) / w * 100.0
 
@@ -300,7 +302,7 @@ if fine_tune_state is not None:
 	optimizer.load_state_dict(torch.load(fine_tune_state))
 
 lrsch = GoogleLR(optimizer, cnfg.isize, cnfg.warm_step)
-lrsch.step()
+#lrsch.step()
 
 num_checkpoint = cnfg.num_checkpoint
 cur_checkid = 0

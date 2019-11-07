@@ -9,7 +9,7 @@ from utils.fmt.base import ldvocab
 from utils.fmt.single import batch_padder
 
 # maxtoken should be the maxtoken in mkiodata.py / 2 / beam size roughly, similar for bsize
-def handle(finput, fvocab_i, frs, minbsize=1, expand_for_mulgpu=True, bsize=768, maxpad=16, maxpart=4, maxtoken=3920, minfreq=False, vsize=False):
+def handle(finput, fvocab_i, frs, minbsize=1, expand_for_mulgpu=True, bsize=768, maxpad=16, maxpart=4, maxtoken=4352, minfreq=False, vsize=False):
 	vcbi, nwordi = ldvocab(fvocab_i, minfreq, vsize)
 	if expand_for_mulgpu:
 		_bsize = bsize * minbsize

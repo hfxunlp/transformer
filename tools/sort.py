@@ -3,7 +3,7 @@
 import sys
 from random import seed as rpyseed
 
-from utils.fmt.base import clean_list_len, maxfreq_filter, shuffle_pair, iter_dict_sort, dict_insert_list
+from utils.fmt.base import clean_liststr_lentok, maxfreq_filter, shuffle_pair, iter_dict_sort, dict_insert_list
 
 # remove_same: reduce same data in the corpus
 # shuf: shuffle the data of same source/target length
@@ -19,8 +19,8 @@ def handle(srcfs, srcft, tgtfs, tgtft, max_len=256, remove_same=False, shuf=True
 		for ls, lt in zip(fs, ft):
 			ls, lt = ls.strip(), lt.strip()
 			if ls and lt:
-				ls, slen = clean_list_len(ls.decode("utf-8").split())
-				lt, tlen = clean_list_len(lt.decode("utf-8").split())
+				ls, slen = clean_liststr_lentok(ls.decode("utf-8").split())
+				lt, tlen = clean_liststr_lentok(lt.decode("utf-8").split())
 				if (slen <= _max_len) and (tlen <= _max_len):
 					lgth = slen + tlen
 					data = dict_insert_list(data, (ls, lt,), lgth, tlen)

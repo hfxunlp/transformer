@@ -5,30 +5,35 @@
 export cachedir=cache
 export dataid=w14ed32
 
-export wkd=$cachedir/$dataid
-
-export vsize=65536
-export maxtokens=256
-export ngpu=1
-
 export srctf=src.train.bpe
 export tgttf=tgt.train.bpe
 export srcvf=src.dev.bpe
 export tgtvf=tgt.dev.bpe
+
+export share_vcb=true
+export vsize=65536
+export maxtokens=256
+export ngpu=1
+
+export wkd=$cachedir/$dataid
 
 python tools/sort.py $wkd/$srctf $wkd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens
 # use the following command to sort a very large dataset with limited memory
 #bash tools/lsort/sort.sh $wkd/$srctf $wkd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens
 python tools/sort.py $wkd/$srcvf $wkd/$tgtvf $wkd/src.dev.srt $wkd/tgt.dev.srt 1048576
 
-python tools/vocab.py $wkd/src.train.srt $wkd/src.vcb $vsize
-python tools/vocab.py $wkd/tgt.train.srt $wkd/tgt.vcb $vsize
-# use following lines if you want a shared vocabulary
-#python tools/share_vocab.py $wkd/src.train.srt $wkd/tgt.train.srt $wkd/common.vcb $vsize
-#python tools/check/fbindexes.py $wkd/common.vcb $wkd/tgt.train.srt $wkd/fbind.py
+if [[ $share_vcb == true ]];
+then
+	export src_vcb=$wkd/common.vcb
+	export tgt_vcb=$src_vcb
+	python tools/share_vocab.py $wkd/src.train.srt $wkd/tgt.train.srt $src_vcb $vsize
+	python tools/check/fbindexes.py $src_vcb $wkd/tgt.train.srt $wkd/fbind.py
+else
+	export src_vcb=$wkd/src.vcb
+	export tgt_vcb=$wkd/tgt.vcb
+	python tools/vocab.py $wkd/src.train.srt $src_vcb $vsize
+	python tools/vocab.py $wkd/tgt.train.srt $tgt_vcb $vsize
+fi
 
-python tools/mkiodata.py $wkd/src.train.srt $wkd/tgt.train.srt $wkd/src.vcb $wkd/tgt.vcb $wkd/train.h5 $ngpu
-python tools/mkiodata.py $wkd/src.dev.srt $wkd/tgt.dev.srt $wkd/src.vcb $wkd/tgt.vcb $wkd/dev.h5 $ngpu
-# use the following two lines if you want to share the embedding between encoder and decoder
-#python tools/mkiodata.py $wkd/src.train.srt $wkd/tgt.train.srt $wkd/common.vcb $wkd/common.vcb $wkd/train.h5 $ngpu
-#python tools/mkiodata.py $wkd/src.dev.srt $wkd/tgt.dev.srt $wkd/common.vcb $wkd/common.vcb $wkd/dev.h5 $ngpu
+python tools/mkiodata.py $wkd/src.train.srt $wkd/tgt.train.srt $src_vcb $tgt_vcb $wkd/train.h5 $ngpu
+python tools/mkiodata.py $wkd/src.dev.srt $wkd/tgt.dev.srt $src_vcb $tgt_vcb $wkd/dev.h5 $ngpu

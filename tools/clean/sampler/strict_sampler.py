@@ -41,4 +41,3 @@ if __name__ == "__main__":
 	rpyseed(666666)
 	spind = len(sys.argv) // 2
 	handle(sys.argv[1:spind], sys.argv[spind:-1], float(sys.argv[-1]))
-

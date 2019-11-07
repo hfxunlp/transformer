@@ -33,7 +33,7 @@ class DecoderLayer(nn.Module):
 
 		if dropout > 0:
 			self.d1 = Dropout(dropout, inplace=True)
-			self.d2 = Dropout(dropout, inplace=True)
+			self.d2 = self.d1
 		else:
 			self.d1 = None
 			self.d2 = None
@@ -404,7 +404,7 @@ class Decoder(nn.Module):
 
 			_done = False
 			if length_penalty > 0.0:
-				lpv = lpv.index_select(0, _inds)	
+				lpv = lpv.index_select(0, _inds)
 			elif (not return_all) and done_trans.select(1, 0).sum().item() == bsize:
 				_done = True
 
