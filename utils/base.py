@@ -13,22 +13,24 @@ from random import seed as rpyseed
 
 import logging
 
-def pad_tensors(tensor_list):
+mask_tensor_type = torch.uint8 if torch.__version__ < "1.2.0" else torch.bool
 
-	def get_pad_size(tsize, stdlen):
+def pad_tensors(tensor_list, dim=-1):
+
+	def get_pad_size(tsize, stdlen, dim=-1):
 
 		nsize = list(tsize)
-		nsize[-1] = stdlen - tsize[-1]
+		nsize[dim] = stdlen - tsize[dim]
 
 		return nsize
 
 	maxlen = 0
 	for tensor in tensor_list:
-		tlen = tensor.size(-1)
+		tlen = tensor.size(dim)
 		if tlen > maxlen:
 			maxlen = tlen
 
-	return [tensor if tensor.size(-1) == maxlen else torch.cat((tensor, tensor.new_zeros(get_pad_size(tensor.size(), maxlen))), -1) for tensor in tensor_list]
+	return [tensor if tensor.size(dim) == maxlen else torch.cat((tensor, tensor.new_zeros(get_pad_size(tensor.size(), maxlen))), dim) for tensor in tensor_list]
 
 def clear_pad(batch_in, mask=None, dim=-1):
 
@@ -38,6 +40,18 @@ def clear_pad(batch_in, mask=None, dim=-1):
 		return batch_in.narrow(dim, 0, batch_in.size(dim) - npad)
 	else:
 		return batch_in
+
+def clear_pad_mask(batch_list, mask, dims, mask_dim=-1, return_contiguous=True):
+
+	npad = mask.int().sum(mask_dim).min().item()
+	if npad > 0:
+		_n_ret = mask.size(mask_dim) - npad
+		if return_contiguous:
+			return [batchu.narrow(dim, 0, _n_ret).contiguous() for batchu, dim in zip(batch_list, dims)], mask.narrow(mask_dim, 0, _n_ret).contiguous()
+		else:
+			return [batchu.narrow(dim, 0, _n_ret) for batchu, dim in zip(batch_list, dims)], mask.narrow(mask_dim, 0, _n_ret)
+	else:
+		return batch_list, mask
 
 def freeze_module(module):
 

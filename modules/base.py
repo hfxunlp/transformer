@@ -73,7 +73,7 @@ class PositionalEmb(nn.Module):
 		_tmp = pos * rdiv_term
 		if self.alpha != 1.0:
 			_tmp.mul_(self.alpha)
-		self.w[:, 0::2], self.w[:, 1::2] = _tmp.sin(), (_tmp.cos().narrow(-1, 0, _tmp.size(-1) - 1) if self.num_dim % 2 == 1 else _tmp.cos())
+		self.w[:, 0::2], self.w[:, 1::2] = _tmp.sin(), (_tmp.narrow(-1, 0, _tmp.size(-1) - 1).cos() if self.num_dim % 2 == 1 else _tmp.cos())
 
 	def get_ext(self, length, step_pick=False):
 
@@ -90,7 +90,7 @@ class PositionalEmb(nn.Module):
 		_tmp = pos * rdiv_term
 		if self.alpha != 1.0:
 			_tmp.mul_(self.alpha)
-		ed[:, 0::2], ed[:, 1::2] = _tmp.sin(), (_tmp.cos().narrow(-1, 0, _tmp.size(-1) - 1) if self.num_dim % 2 == 1 else _tmp.cos())
+		ed[:, 0::2], ed[:, 1::2] = _tmp.sin(), (_tmp.narrow(-1, 0, _tmp.size(-1) - 1).cos() if self.num_dim % 2 == 1 else _tmp.cos())
 
 		return ed
 
@@ -109,7 +109,7 @@ class MultiHeadAttn(nn.Module):
 	# dropout: dropout probability
 	# sparsenorm: using sparse normer or standard softmax
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=False, sparsenorm=False):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=False, sparsenorm=False):
 
 		super(MultiHeadAttn, self).__init__()
 
@@ -118,8 +118,9 @@ class MultiHeadAttn(nn.Module):
 		self.num_head = num_head
 
 		self.query_adaptor = Linear(isize, self.hsize, bias=enable_bias)
-		self.value_adaptor = Linear(isize, self.hsize, bias=enable_bias)
-		self.key_adaptor = Linear(isize, self.hsize, bias=enable_bias)
+		_k_isize = isize if k_isize is None else k_isize
+		self.key_adaptor = Linear(_k_isize, self.hsize, bias=enable_bias)
+		self.value_adaptor = Linear(_k_isize if v_isize is None else v_isize, self.hsize, bias=enable_bias)
 
 		self.outer = Linear(self.hsize, osize, bias=enable_bias)
 
@@ -135,7 +136,7 @@ class MultiHeadAttn(nn.Module):
 
 	def forward(self, iQ, iK, iV, mask=None):
 
-		bsize, nquery, _ = iQ.size()
+		bsize, nquery = iQ.size()[:2]
 		seql = iK.size(1)
 		nheads = self.num_head
 		adim = self.attn_dim
@@ -151,7 +152,7 @@ class MultiHeadAttn(nn.Module):
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -inf)
+			scores.masked_fill_(mask.unsqueeze(1), -inf)
 
 		scores = self.normer(scores)
 
@@ -198,7 +199,7 @@ class AverageAttn(nn.Module):
 		if decoding:
 			avg = iV
 		else:
-			bsize, seql, _ = iV.size()
+			bsize, seql = iV.size()[:2]
 
 			# attn: (seql, seql)
 			if seql > self.num_pos:
@@ -250,7 +251,7 @@ class SelfAttn(nn.Module):
 
 	def forward(self, iQ, mask=None, iK=None):
 
-		bsize, nquery, _ = iQ.size()
+		bsize, nquery = iQ.size()[:2]
 		nheads = self.num_head
 		adim = self.attn_dim
 
@@ -272,7 +273,7 @@ class SelfAttn(nn.Module):
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -inf)
+			scores.masked_fill_(mask.unsqueeze(1), -inf)
 
 		scores = self.normer(scores)
 
@@ -286,7 +287,7 @@ class SelfAttn(nn.Module):
 # Accelerated MultiHeadAttn for cross attention, use when K == V
 class CrossAttn(nn.Module):
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=False, sparsenorm=False):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, enable_bias=False, sparsenorm=False):
 
 		super(CrossAttn, self).__init__()
 
@@ -295,7 +296,7 @@ class CrossAttn(nn.Module):
 		self.num_head = num_head
 
 		self.query_adaptor = Linear(isize, self.hsize, bias=enable_bias)
-		self.kv_adaptor = Linear(isize, self.hsize * 2, bias=enable_bias)
+		self.kv_adaptor = Linear(isize if k_isize is None else k_isize, self.hsize * 2, bias=enable_bias)
 
 		self.outer = Linear(self.hsize, osize, bias=enable_bias)
 
@@ -306,7 +307,7 @@ class CrossAttn(nn.Module):
 
 	def forward(self, iQ, iK, mask=None):
 
-		bsize, nquery, _ = iQ.size()
+		bsize, nquery = iQ.size()[:2]
 		seql = iK.size(1)
 		nheads = self.num_head
 		adim = self.attn_dim
@@ -319,7 +320,7 @@ class CrossAttn(nn.Module):
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(mask.unsqueeze(1).expand_as(scores), -inf)
+			scores.masked_fill_(mask.unsqueeze(1), -inf)
 
 		scores = self.normer(scores)
 
@@ -404,17 +405,21 @@ class Scorer(nn.Module):
 
 class TokenDropout(nn.Module):
 
-	def __init__(self, p=0.5):
+	def __init__(self, p=0.5, keep_magnitude=True):
 
 		super(TokenDropout, self).__init__()
 		self.p = float(p)
+		self.keep_magnitude = (1.0 / (1.0 - self.p)) if keep_magnitude else False
 
 	def forward(self, inpute):
 
 		if self.training:
 			mask = inpute.new_full(inpute.size()[:-1], self.p, requires_grad=False).bernoulli().byte().unsqueeze(-1)
+			out = inpute.masked_fill(mask, 0.0)
+			if self.keep_magnitude:
+				out = out * self.keep_magnitude
 
-			return inpute.masked_fill(mask, 0.0) * (1.0 / (1.0 - self.p))
+			return out
 		else:
 			return inpute
 
@@ -714,50 +719,6 @@ class CoordinateEmb(nn.Module):
 	def get_pos(self, step, layer):
 
 		return self.w[layer][step] if step < self.num_pos and layer < self.num_steps else self.get_ext(step, layer, True).squeeze(0)
-
-class SigmoidIncremental:
-
-	# warm_steps: increase from 0.0 to about (0.9866 * target_value) in warm_steps
-	# target_value: target value returned after infinity calls to step() function
-
-	def __init__(self, warm_steps, target_value, cur_step=0):
-
-		self.wstep = float(warm_steps) /  5.0
-		self.tarv = target_value
-		self.cur_step = float(cur_step)
-
-	def step(self):
-
-		self.cur_step += 1.0
-
-		return (2.0 / (1.0 + exp(- self.cur_step / self.wstep)) - 1.0) * self.tarv
-
-class SigmoidITensor(nn.Module):
-
-	# warm_steps: increase from 0.0 to about (0.9866 * target_value) in warm_steps
-	# target_value: target value returned after infinity calls to step() function
-
-	def __init__(self, warm_steps, target_value, xseql=512):
-
-		super(SigmoidITensor, self).__init__()
-		self.wstep = float(warm_steps) /  5.0
-		self.tarv = target_value
-		self.xseql = xseql
-		self.register_buffer("w", ((((torch.arange(1, xseql + 1, dtype=torch.float, requires_grad=False) / self.wstep)).sigmoid() * 2 - 1) * self.tarv).unsqueeze(0).unsqueeze(-1))
-
-	def forward(self, x, expand=True):
-
-		seql = x.size(1)
-
-		out = self.get_ext(seql) if seql > self.xseql else self.w.narrow(1, 0, seql)
-
-		return out.expand_as(x) if expand else out
-
-	def get_ext(self, seql):
-
-		_tmp = ((((torch.arange(self.xseql + 1, seql + 1, dtype=self.w.dtype, device=self.w.device, requires_grad=False) / self.wstep)).sigmoid() * 2.0 - 1.0) * self.tarv).unsqueeze(0).unsqueeze(-1)
-
-		return torch.cat((self.w, _tmp), 1)
 
 class Temperature(nn.Module):
 

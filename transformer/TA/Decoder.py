@@ -61,7 +61,7 @@ class Decoder(DecoderBase):
 	#	src_pad_mask = input.eq(0).unsqueeze(1)
 	# max_len: maximum length to generate
 
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512):
+	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False):
 
 		bsize, seql= inpute.size()[:2]
 
@@ -95,9 +95,9 @@ class Decoder(DecoderBase):
 
 		trans = [wds]
 
-		# done_trans: (bsize)
+		# done_trans: (bsize, 1)
 
-		done_trans = wds.squeeze(1).eq(2)
+		done_trans = wds.eq(2)
 
 		for i in range(1, max_len):
 
@@ -117,10 +117,10 @@ class Decoder(DecoderBase):
 			out = self.lsm(self.classifier(out))
 			wds = out.argmax(dim=-1)
 
-			trans.append(wds)
+			trans.append(wds.masked_fill(done_trans, 0) if fill_pad else wds)
 
-			done_trans = (done_trans + wds.squeeze(1).eq(2)).gt(0)
-			if done_trans.sum().item() == bsize:
+			done_trans = done_trans | wds.eq(2)
+			if done_trans.int().sum().item() == bsize:
 				break
 
 		return torch.cat(trans, 1)
@@ -131,7 +131,7 @@ class Decoder(DecoderBase):
 	# beam_size: beam size
 	# max_len: maximum length to generate
 
-	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False):
+	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False, fill_pad=False):
 
 		bsize, seql = inpute.size()[:2]
 
@@ -223,7 +223,7 @@ class Decoder(DecoderBase):
 			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
 
 			if length_penalty > 0.0:
-				lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
+				lpv = lpv.masked_fill(~done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
 
 			# clip from k ** 2 candidate and remain the top-k for each path
 			# scores: (bsize, beam_size * beam_size) => (bsize, beam_size)
@@ -252,9 +252,9 @@ class Decoder(DecoderBase):
 			# select the corresponding translation history for the top-k candidate and update translation records
 			# trans: (bsize * beam_size, nquery) => (bsize * beam_size, nquery + 1)
 
-			trans = torch.cat((trans.index_select(0, _inds), wds), 1)
+			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), 0) if fill_pad else wds), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) + wds.eq(2).squeeze(1)).gt(0).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)
@@ -263,12 +263,12 @@ class Decoder(DecoderBase):
 			_done = False
 			if length_penalty > 0.0:
 				lpv = lpv.index_select(0, _inds)
-			elif (not return_all) and done_trans.select(1, 0).sum().item() == bsize:
+			elif (not return_all) and done_trans.select(1, 0).int().sum().item() == bsize:
 				_done = True
 
 			# check beam states(done or not)
 
-			if _done or (done_trans.sum().item() == real_bsize):
+			if _done or (done_trans.int().sum().item() == real_bsize):
 				break
 
 			# update the corresponding hidden states

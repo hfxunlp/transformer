@@ -15,7 +15,7 @@ from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 
 from utils.base import *
-from utils.fmt.base import ldvocab, reverse_dict
+from utils.fmt.base import ldvocab, reverse_dict, eos_id
 from utils.fmt.base4torch import parse_cuda_decode
 
 def load_fixing(module):
@@ -87,7 +87,7 @@ with open(sys.argv[1], "wb") as f:
 			for tran in output:
 				tmp = []
 				for tmpu in tran:
-					if (tmpu == 2) or (tmpu == 0):
+					if tmpu == eos_id:
 						break
 					else:
 						tmp.append(vcbt[tmpu])

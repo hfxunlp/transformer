@@ -29,7 +29,7 @@ python tools/vocab.py $tgtd/tgt.clean.tmp $tgtd/tgt.full.vcb 1048576
 python tools/clean/vocab.py $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp $tgtd/src.train.tok.clean $tgtd/tgt.train.tok.clean $tgtd/src.full.vcb $tgtd/tgt.full.vcb $vratio
 rm -fr $tgtd/src.full.vcb $tgtd/tgt.full.vcb $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp
 
-if [[ $share_bpe == true ]];
+if $share_bpe;
 then
 # to learn joint bpe
 	export src_cdsf=$tgtd/bpe.cds

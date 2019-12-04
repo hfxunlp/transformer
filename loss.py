@@ -47,12 +47,10 @@ class LabelSmoothingLoss(_Loss):
 
 		smoothing_value = label_smoothing / (nclass - 1 - len(fbil))
 		weight = torch.full((nclass,), smoothing_value)
-		for _tmp in fbil:
-			weight[_tmp] = 0.0
+		weight.index_fill_(0, torch.tensor(tuple(fbil), dtype=torch.long, device=weight.device), 0.0)
 		self.register_buffer("weight", weight.unsqueeze(0))
 
 		self.reduction = reduction
-
 		self.conf = 1.0 - label_smoothing
 
 	# output: (batch size, num_classes)

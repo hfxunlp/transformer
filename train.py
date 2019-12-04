@@ -167,9 +167,9 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu):
 			else:
 				trans = torch.argmax(output, -1)
 			sum_loss += loss.data.item()
-			data_mask = ot.ne(0).int()
-			correct = torch.gt(trans.eq(ot).int() + data_mask, 1).int()
-			w += data_mask.sum().item()
+			data_mask = ot.ne(0)
+			correct = (trans.eq(ot) & data_mask).int()
+			w += data_mask.int().sum().item()
 			r += correct.sum().item()
 			correct = data_mask = trans = loss = output = ot = seq_batch = seq_o = None
 	w = float(w)
@@ -301,7 +301,7 @@ if fine_tune_state is not None:
 	logger.info("Load optimizer state from: " + fine_tune_state)
 	optimizer.load_state_dict(torch.load(fine_tune_state))
 
-lrsch = GoogleLR(optimizer, cnfg.isize, cnfg.warm_step)
+lrsch = GoogleLR(optimizer, cnfg.isize, cnfg.warm_step, scale=cnfg.lr_scale)
 #lrsch.step()
 
 num_checkpoint = cnfg.num_checkpoint

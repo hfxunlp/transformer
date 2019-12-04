@@ -15,7 +15,7 @@ export tgtd=$cachedir/$dataid
 
 export bpef=out.bpe
 
-if [[ $share_vcb == true ]];
+if $share_vcb;
 then
 	export src_vcb=$tgtd/common.vcb
 	export tgt_vcb=$src_vcb

@@ -34,8 +34,8 @@ class DecoderLayer(DecoderLayerBase):
 
 			context = self.self_attn(_inputo, mask=tgt_pad_mask)
 
-			if self.d1 is not None:
-				context = self.d1(context)
+			if self.drop is not None:
+				context = self.drop(context)
 
 			context = context + _inputo
 
@@ -51,8 +51,8 @@ class DecoderLayer(DecoderLayerBase):
 
 			context = self.self_attn(_query_unit, iK=inputo)
 
-			if self.d1 is not None:
-				context = self.d1(context)
+			if self.drop is not None:
+				context = self.drop(context)
 
 			context = context + _query_unit
 
@@ -60,8 +60,8 @@ class DecoderLayer(DecoderLayerBase):
 
 		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
 
-		if self.d2 is not None:
-			_context_new = self.d2(_context_new)
+		if self.drop is not None:
+			_context_new = self.drop(_context_new)
 
 		context = self.layer_normer2(_context_new + _context)
 
@@ -106,7 +106,7 @@ class Decoder(DecoderBase):
 
 		return out
 
-	def greedy_decode(self, inpute, inputh, src_pad_mask=None, max_len=512):
+	def greedy_decode(self, inpute, inputh, src_pad_mask=None, max_len=512, fill_pad=False):
 
 		bsize, seql= inpute.size()[:2]
 
@@ -133,7 +133,7 @@ class Decoder(DecoderBase):
 
 		trans = [wds]
 
-		done_trans = wds.squeeze(1).eq(2)
+		done_trans = wds.eq(2)
 
 		for i in range(1, max_len):
 
@@ -151,15 +151,15 @@ class Decoder(DecoderBase):
 			out = self.lsm(self.classifier(out))
 			wds = out.argmax(dim=-1)
 
-			trans.append(wds)
+			trans.append(wds.masked_fill(done_trans, 0) if fill_pad else wds)
 
-			done_trans = (done_trans + wds.squeeze(1).eq(2)).gt(0)
-			if done_trans.sum().item() == bsize:
+			done_trans = done_trans | wds.eq(2)
+			if done_trans.int().sum().item() == bsize:
 				break
 
 		return torch.cat(trans, 1)
 
-	def beam_decode(self, inpute, inputh, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False):
+	def beam_decode(self, inpute, inputh, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False, fill_pad=False):
 
 		bsize, seql = inpute.size()[:2]
 
@@ -225,7 +225,7 @@ class Decoder(DecoderBase):
 			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
 
 			if length_penalty > 0.0:
-				lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
+				lpv = lpv.masked_fill(~done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
 
 			if clip_beam and (length_penalty > 0.0):
 				scores, _inds = (_scores.view(real_bsize, beam_size) / lpv.expand(real_bsize, beam_size)).view(bsize, beam_size2).topk(beam_size, dim=-1)
@@ -240,17 +240,17 @@ class Decoder(DecoderBase):
 
 			_inds = (_inds / beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 
-			trans = torch.cat((trans.index_select(0, _inds), wds), 1)
+			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), 0) if fill_pad else wds), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) + wds.eq(2).squeeze(1)).gt(0).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
 
 			_done = False
 			if length_penalty > 0.0:
 				lpv = lpv.index_select(0, _inds)
-			elif (not return_all) and done_trans.select(1, 0).sum().item() == bsize:
+			elif (not return_all) and done_trans.select(1, 0).int().sum().item() == bsize:
 				_done = True
 
-			if _done or (done_trans.sum().item() == real_bsize):
+			if _done or (done_trans.int().sum().item() == real_bsize):
 				break
 
 			for key, value in states.items():
@@ -269,6 +269,6 @@ class Decoder(DecoderBase):
 
 			return trans.view(bsize, beam_size, -1).select(1, 0)
 
-	def decode(self, inpute, inputh, src_pad_mask, beam_size=1, max_len=512, length_penalty=0.0):
+	def decode(self, inpute, inputh, src_pad_mask, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
 
-		return self.beam_decode(inpute, inputh, src_pad_mask, beam_size, max_len, length_penalty) if beam_size > 1 else self.greedy_decode(inpute, inputh, src_pad_mask, max_len)
+		return self.beam_decode(inpute, inputh, src_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad) if beam_size > 1 else self.greedy_decode(inpute, inputh, src_pad_mask, max_len, fill_pad=fill_pad)

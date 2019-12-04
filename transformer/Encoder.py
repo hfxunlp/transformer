@@ -26,7 +26,6 @@ class EncoderLayer(nn.Module):
 		super(EncoderLayer, self).__init__()
 
 		_ahsize = isize if ahsize is None else ahsize
-
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)

@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 from modules.base import *
-from utils.base import repeat_bsize_for_beam_tensor
+from utils.base import repeat_bsize_for_beam_tensor, mask_tensor_type
 from math import sqrt, inf
 
 class DecoderLayer(nn.Module):
@@ -20,7 +20,6 @@ class DecoderLayer(nn.Module):
 		super(DecoderLayer, self).__init__()
 
 		_ahsize = isize if ahsize is None else ahsize
-
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
@@ -31,12 +30,7 @@ class DecoderLayer(nn.Module):
 		self.layer_normer1 = nn.LayerNorm(isize, eps=1e-06)
 		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
 
-		if dropout > 0:
-			self.d1 = Dropout(dropout, inplace=True)
-			self.d2 = self.d1
-		else:
-			self.d1 = None
-			self.d2 = None
+		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.norm_residue = norm_residue
 
@@ -56,8 +50,8 @@ class DecoderLayer(nn.Module):
 
 			context = self.self_attn(_inputo, mask=tgt_pad_mask)
 
-			if self.d1 is not None:
-				context = self.d1(context)
+			if self.drop is not None:
+				context = self.drop(context)
 
 			context = context + (_inputo if self.norm_residue else inputo)
 
@@ -70,16 +64,16 @@ class DecoderLayer(nn.Module):
 
 			context = self.self_attn(_query_unit, iK=_inputo)
 
-			if self.d1 is not None:
-				context = self.d1(context)
+			if self.drop is not None:
+				context = self.drop(context)
 
 			context = context + (_query_unit if self.norm_residue else query_unit)
 
 		_context = self.layer_normer2(context)
 		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
 
-		if self.d2 is not None:
-			_context_new = self.d2(_context_new)
+		if self.drop is not None:
+			_context_new = self.drop(_context_new)
 
 		context = _context_new + (_context if self.norm_residue else context)
 
@@ -114,7 +108,7 @@ class Decoder(nn.Module):
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.xseql = xseql
-		self.register_buffer('mask', torch.ones(xseql, xseql, dtype=torch.uint8).triu(1).unsqueeze(0))
+		self.register_buffer('mask', torch.ones(xseql, xseql, dtype=mask_tensor_type).triu(1).unsqueeze(0))
 
 		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
 		if emb_w is not None:
@@ -194,16 +188,16 @@ class Decoder(nn.Module):
 	# beam_size: the beam size for beam search
 	# max_len: maximum length to generate
 
-	def decode(self, inpute, src_pad_mask, beam_size=1, max_len=512, length_penalty=0.0):
+	def decode(self, inpute, src_pad_mask, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
 
-		return self.beam_decode(inpute, src_pad_mask, beam_size, max_len, length_penalty) if beam_size > 1 else self.greedy_decode(inpute, src_pad_mask, max_len)
+		return self.beam_decode(inpute, src_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad) if beam_size > 1 else self.greedy_decode(inpute, src_pad_mask, max_len, fill_pad=fill_pad)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
 	#	src_pad_mask = input.eq(0).unsqueeze(1)
 	# max_len: maximum length to generate
 
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512):
+	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False):
 
 		bsize, seql = inpute.size()[:2]
 
@@ -237,9 +231,9 @@ class Decoder(nn.Module):
 
 		trans = [wds]
 
-		# done_trans: (bsize)
+		# done_trans: (bsize, 1)
 
-		done_trans = wds.squeeze(1).eq(2)
+		done_trans = wds.eq(2)
 
 		for i in range(1, max_len):
 
@@ -259,10 +253,10 @@ class Decoder(nn.Module):
 			out = self.lsm(self.classifier(out))
 			wds = out.argmax(dim=-1)
 
-			trans.append(wds)
+			trans.append(wds.masked_fill(done_trans, 0) if fill_pad else wds)
 
-			done_trans = (done_trans + wds.squeeze(1).eq(2)).gt(0)
-			if done_trans.sum().item() == bsize:
+			done_trans = done_trans | wds.eq(2)
+			if done_trans.int().sum().item() == bsize:
 				break
 
 		return torch.cat(trans, 1)
@@ -273,7 +267,7 @@ class Decoder(nn.Module):
 	# beam_size: beam size
 	# max_len: maximum length to generate
 
-	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False):
+	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False, fill_pad=False):
 
 		bsize, seql = inpute.size()[:2]
 
@@ -365,7 +359,7 @@ class Decoder(nn.Module):
 			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
 
 			if length_penalty > 0.0:
-				lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
+				lpv = lpv.masked_fill(~done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
 
 			# clip from k ** 2 candidate and remain the top-k for each path
 			# scores: (bsize, beam_size * beam_size) => (bsize, beam_size)
@@ -394,9 +388,9 @@ class Decoder(nn.Module):
 			# select the corresponding translation history for the top-k candidate and update translation records
 			# trans: (bsize * beam_size, nquery) => (bsize * beam_size, nquery + 1)
 
-			trans = torch.cat((trans.index_select(0, _inds), wds), 1)
+			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), 0) if fill_pad else wds), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) + wds.eq(2).squeeze(1)).gt(0).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)
@@ -405,12 +399,12 @@ class Decoder(nn.Module):
 			_done = False
 			if length_penalty > 0.0:
 				lpv = lpv.index_select(0, _inds)
-			elif (not return_all) and done_trans.select(1, 0).sum().item() == bsize:
+			elif (not return_all) and done_trans.select(1, 0).int().sum().item() == bsize:
 				_done = True
 
 			# check beam states(done or not)
 
-			if _done or (done_trans.sum().item() == real_bsize):
+			if _done or (done_trans.int().sum().item() == real_bsize):
 				break
 
 			# update the corresponding hidden states
@@ -450,8 +444,16 @@ class Decoder(nn.Module):
 
 		if self.fbl is not None:
 			with torch.no_grad():
-				for ind in self.fbl:
-					self.classifier.bias[ind] = -inf
+				self.classifier.bias.index_fill_(0, torch.tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf)
+
+	def unbind_classifier_weight(self):
+
+		if self.classifier.weight.is_set_to(self.wemb.weight):
+			_tmp = self.classifier.weight
+			_new_w = nn.Parameter(torch.Tensor(_tmp.size()))
+			with torch.no_grad():
+				_new_w.data.copy_(_tmp.data)
+			self.classifier.weight = _new_w
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, seql), see Encoder, get by:
@@ -528,7 +530,7 @@ class Decoder(nn.Module):
 			# done_trans: (bsize)
 			done_trans = wds.squeeze(1).eq(2)
 
-			_ndone = done_trans.sum().item()
+			_ndone = done_trans.int().sum().item()
 			if _ndone == bsize:
 				for _iu, _tran in enumerate(torch.cat(trans, 1).unbind(0)):
 					rs[mapper[_iu]] = _tran
@@ -540,7 +542,7 @@ class Decoder(nn.Module):
 					rs[mapper[_iu]] = _tran
 
 				# reduce bsize for not finished decoding
-				_ndid = (1 - done_trans).nonzero().squeeze(1)
+				_ndid = (~done_trans).nonzero().squeeze(1)
 				bsize = _ndid.size(0)
 				wds = wds.index_select(0, _ndid)
 				inpute = inpute.index_select(0, _ndid)
@@ -659,7 +661,7 @@ class Decoder(nn.Module):
 			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
 
 			if length_penalty > 0.0:
-				lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
+				lpv = lpv.masked_fill(~done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
 
 			# clip from k ** 2 candidate and remain the top-k for each path
 			# scores: (bsize, beam_size * beam_size) => (bsize, beam_size)
@@ -690,7 +692,7 @@ class Decoder(nn.Module):
 
 			trans = torch.cat((trans.index_select(0, _inds), wds), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) + wds.eq(2).squeeze(1)).gt(0).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)
@@ -706,7 +708,7 @@ class Decoder(nn.Module):
 
 			# check beam states(done or not)
 
-			_ndone = _done_trans_u.sum().item()
+			_ndone = _done_trans_u.int().sum().item()
 			if _ndone == bsize:
 				if (not clip_beam) and (length_penalty > 0.0):
 					scores = scores / lpv.view(bsize, beam_size)
@@ -752,7 +754,7 @@ class Decoder(nn.Module):
 							rs[mapper[_iu]] = _tran[0]
 
 				# reduce bsize for not finished decoding
-				_ndid = (1 - _done_trans_u).nonzero().squeeze(1)
+				_ndid = (~_done_trans_u).nonzero().squeeze(1)
 
 				_bsize = _ndid.size(0)
 				bsizeb2 = _bsize * beam_size2

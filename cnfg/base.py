@@ -88,6 +88,7 @@ nhead = max(1, isize // 64)
 cache_len = 256
 
 warm_step = 8000
+lr_scale = 1.0
 
 attn_hsize = None
 
