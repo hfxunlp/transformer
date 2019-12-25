@@ -9,8 +9,7 @@ def handle(srcfs, srcft, tgtfs, tgtft, maxlen=256):
 	ens = "\n".encode("utf-8")
 
 	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft, open(tgtfs, "wb") as fsw, open(tgtft, "wb") as ftw:
-		total = 0
-		keep = 0
+		total = keep = 0
 		for ls, lt in zip(fs, ft):
 			ls, lt = ls.strip(), lt.strip()
 			if ls and lt:

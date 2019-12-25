@@ -6,6 +6,8 @@ from torch import nn
 from torch.nn import functional as nnFunc
 from torch.autograd import Function
 
+from utils.base import reduce_model_list
+
 Linear = nn.Linear
 Dropout = nn.Dropout
 
@@ -537,7 +539,7 @@ class SparsemaxFunction(Function):
 
 class Sparsemax(nn.Module):
 
-	def __init__(self, dim=0):
+	def __init__(self, dim=-1):
 
 		super(Sparsemax, self).__init__()
 		self.dim = dim
@@ -747,3 +749,8 @@ class Temperature(nn.Module):
 
 		self.k.data.fill_(1.0)
 		self.bias.data.zero_()
+
+def reduce_model(modin):
+
+	rsm = reduce_model_list(modin, [Dropout, nn.ReLU, nn.Softmax, PositionalEmb, TokenDropout, Sparsemax, CoordinateEmb], [lambda m: (m.p, m.inplace,), lambda m: (m.inplace,), lambda m: (m.dim,), lambda m: (m.num_pos, m.num_dim, m.poff, m.doff, m.alpha,), lambda m: (m.p, m.keep_magnitude,), lambda m: (m.dim,), lambda m: (m.num_pos, m.num_dim, m.poff, m.doff, m.alpha, m.num_steps,)])
+	return reduce_model_list(rsm, [GeLU_GPT, GeLU_BERT, nn.Tanh, nn.Sigmoid])

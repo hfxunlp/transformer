@@ -14,8 +14,7 @@ class SentenceSplitter:
 	def __call__(self, input):
 
 		rs = []
-		ind = 0
-		lind = 0
+		ind = lind = 0
 		for stru in input:
 			if stru in self.splc:
 				rs.append(input[lind:ind+1])

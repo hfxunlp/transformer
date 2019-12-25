@@ -274,3 +274,50 @@ def filter_para_grad(plin):
 def ModuleList2Dict(modin):
 
 	return ModuleDict(zip([str(i) for i in range(len(modin))], modin))
+
+def reduce_model_core(modin, redm, attr_func=None):
+
+	def add_module(m, strin, m_add):
+
+		if strin.find(".") < 0:
+			m.add_module(strin, m_add)
+		else:
+			_m, _name_list = m, strin.split(".")
+			# update _modules with pytorch: https://pytorch.org/docs/stable/_modules/torch/nn/modules/module.html#Module.add_module
+			for _tmp in _name_list[:-1]:
+				_m = _m._modules[_tmp]
+			_m._modules[_name_list[-1]] = m_add
+
+		return m
+
+	if attr_func is None:
+		_m_sel = None
+		for _name, _module in modin.named_modules():
+			if isinstance(_module, redm):
+				if _m_sel is None:
+					_m_sel = _module
+				else:
+					add_module(modin, _name, _m_sel)
+	else:
+		_m_sel = {}
+		for _name, _module in modin.named_modules():
+			if isinstance(_module, redm):
+				_key = attr_func(_module)
+				if _key in _m_sel:
+					add_module(modin, _name, _m_sel[_key])
+				else:
+					_m_sel[_key] = _module
+
+	return modin
+
+def reduce_model_list(modin, redml, attr_funcl=None):
+
+	rsm = modin
+	if attr_funcl is None:
+		for redm in redml:
+			rsm = reduce_model_core(rsm, redm)
+	else:
+		for redm, attr_func in zip(redml, attr_funcl):
+			rsm = reduce_model_core(rsm, redm, attr_func)
+
+	return rsm

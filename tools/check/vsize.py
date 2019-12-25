@@ -2,11 +2,11 @@
 
 import sys
 
-from utils.fmt.base import has_unk, clean_list_iter
+from utils.fmt.base import init_normal_token_id, clean_list_iter
 
 def handle(srcfl):
 
-	global has_unk
+	global init_normal_token_id
 
 	vocab = set()
 
@@ -20,7 +20,7 @@ def handle(srcfl):
 							vocab.add(token)
 
 	nvcb = len(vocab)
-	nvcb += 4 if has_unk else 3
+	nvcb += init_normal_token_id
 
 	print("The size of the vocabulary is: %d (with special tokens counted)" % (nvcb))
 

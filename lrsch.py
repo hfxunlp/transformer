@@ -10,13 +10,14 @@ class GoogleLR(_LRScheduler):
 		self.cur_step = 0
 		self.k = 1.0 / sqrt(dmodel)
 		self.wk = 1.0 / sqrt(warm_steps) / warm_steps
+		self.warm_steps = warm_steps
 		self.scale = scale
 		super(GoogleLR, self).__init__(optimizer, last_epoch)
 
 	def get_lr(self):
 
 		self.cur_step += 1
-		cur_lr = self.k * min(1.0 / sqrt(self.cur_step), self.cur_step * self.wk)
+		cur_lr = self.k * ((self.cur_step * self.wk) if self.cur_step <= self.warm_steps else (1.0 / sqrt(self.cur_step)))
 		if self.scale != 1.0:
 			cur_lr *= self.scale
 		return [cur_lr for i in range(len(self.base_lrs))]

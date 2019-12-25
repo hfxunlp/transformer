@@ -12,9 +12,7 @@ import sys
 def handle(srcfs, srcft, tgtfs, tgtft, cratio=0.8, bratio=5.0, sratio=0.8, pratio=3.0, oratio=3.0, num_rules_drop=1):
 
 	def legal_mono(strin, cratio, bratio, sratio):
-		ntokens = 0
-		nchars = 0
-		nsp = 0
+		ntokens = nchars = nsp = nrule = 0
 		pbpe = False
 		for tmpu in strin.split():
 			if tmpu:
@@ -28,7 +26,6 @@ def handle(srcfs, srcft, tgtfs, tgtft, cratio=0.8, bratio=5.0, sratio=0.8, prati
 				ntokens += 1
 		ntokens = float(ntokens)
 		lorigin = float(len(strin.replace("@@ ", "").split()))
-		nrule = 0
 		if float(nchars) / ntokens > cratio:
 			nrule += 1
 		if ntokens / lorigin > bratio:
@@ -60,8 +57,7 @@ def handle(srcfs, srcft, tgtfs, tgtft, cratio=0.8, bratio=5.0, sratio=0.8, prati
 	ens = "\n".encode("utf-8")
 
 	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft, open(tgtfs, "wb") as fsw, open(tgtft, "wb") as ftw:
-		total = 0
-		keep = 0
+		total = keep = 0
 		if num_rules_drop > 0:
 			for ls, lt in zip(fs, ft):
 				ls, lt = ls.strip(), lt.strip()
