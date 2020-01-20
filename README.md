@@ -169,6 +169,8 @@ cache_len = 256
 
 # warm up steps for the training.
 warm_step = 8000
+# scalar of learning rate
+lr_scale = 1.0
 
 # hidden size for the attention model.
 attn_hsize = None
@@ -359,69 +361,16 @@ Tools to filter the datasets.
 
 ## Performance
 
-Speed on nVidia TITAN X GPU(s) measured by decoding tokens (`<eos>` counted and `<pad>` discounted) per second during training:
+Settings: WMT 2014, English -> German, 32k joint BPE with 8 as vocabulary threshold for BPE. 2 nVidia GTX 1080 Ti GPU(s) for training, 1 for decoding.
 
-| Number of GPU(s) | ~ tokens/s |
-| :------| ------: |
-| 1 | 5800 |
-| 2 | 10100 |
+Tokenized case-sensitive BLEU measured with [multi-bleu.perl](https://github.com/moses-smt/mosesdecoder/blob/master/scripts/generic/multi-bleu.perl), Training speed and decoding speed are measured by the number of target tokens (`<eos>` counted and `<pad>` discounted) per second and the number of sentences per second:
 
-1, Settings: [WMT 2017, German -> English task](http://data.statmt.org/wmt17/translation-task/preprocessed/de-en/).
+| | BLEU | Training Speed | Decoding Speed |
+| :------| ------: | ------: | ------: |
+| Attention is all you need | 27.3 | | |
+| Neutron | 28.07 | 21562.98 | 68.25  |
 
-| Options | Value |
-| :------| ------: |
-| Vocabulary size (special tokens included) | 20130/23476 |
-| Maximum sentence length | 256 |
-| Embedding size | 512 |
-| Hidden units of Feed-forward neural network | 2048 |
-| Encoder/Decoder layers | 6 |
-| Minimum decoded tokens per optimization step | 32768 |
-| Number of heads in Multi-head Attention | 8 |
-| Dropout in Feed-forward neural network | 0.1 |
-| Dropout in Multi-head Attention | 0.1 |
-| Label smoothing | 0.1 |
-| Beam size | 4 |
-
-Measured with `multi-bleu-detok.perl`:
-
-| Newstest 2017 | THUMT | Epoch 26 | Epoch 72 | Epoch 72 (Length Penalty: 0.6) |
-| :------| ------: | ------: | ------: | ------: |
-| Case-sensitive | 32.63 | 32.26 | 32.97 | 32.89 |
-| Case-insensitive | 34.06 | 33.70 | 34.36 | 34.28 |
-
-Note: The result of [THUMT implementation](https://github.com/thumt/THUMT) is from [Accelerating Neural Transformer via an Average Attention Network](https://arxiv.org/abs/1805.00631). Averaging of models is not applied in the test of this implementation, since when layer normalization is applied between residue connections, averaging model might hurts performance. Results with length penalty as THUMT applied is reported, but length penalty does not improve the performance of transformer in my experiments. Outputs of last encoder layer and decoder layer are not normalised in this experiment.
-
-2, Settings: same with the first except the outputs of last encoder layer and decoder layer are normed and:
-
-| Options | Value |
-| :------| ------: |
-| Vocabulary size (special tokens included) | 19667/23006 |
-| Minimum decoded tokens per optimization step | 25000 |
-
-Measured with `multi-bleu-detok.perl`:
-
-| Newstest 2017 | Baseline 20 | Baseline 21 | Baseline 43 | Avg Attn 25 | GeLU 17 | SparseNorm 17 | Iterative DeepR 19 | Hierarchical DeepR 25 | Hierarchical 0.1 27 | Incept 25 | EncEmb Noise 21 |
-| :------| ------: | ------: | ------: | ------: | ------: | ------: | ------: | ------: | ------: | ------: | ------: |
-| Case-sensitive | 32.03 | 32.09 | 32.60 | 31.93 | 32.13 | 32.17 | 32.07 | 32.44 | 32.55 | 32.87 | 32.29 |
-| Case-insensitive | 33.46 | 33.55 | 34.06 | 33.33 | 33.53 | 33.63 | 33.47 | 33.89 | 33.93 | 34.32 | 33.73 |
-
-3, Settings: WMT 2014, English -> German, 32k independent BPE with 8 as vocabulary threshold for BPE.
-
-| Options | Value |
-| :------| ------: |
-| Vocabulary size (special tokens included) | 34324/34429 |
-| Minimum decoded tokens per optimization step | 25000 |
-
-Measured with `multi-bleu-detok.perl`:
-
-| Newstest 2014 | Original Paper | Averaging 5 Checkpoints for Original Paper | Original Implementation | Averaging 5 Checkpoints for Original Implementation |
-| :------| ------: | ------: | ------: | ------: |
-| Case-sensitive | 27.41 | 27.77 | 27.18  | 27.41 |
-| Case-insensitive | 27.95 | 28.32 | 27.72  | 27.96 |
-
-There is a difference between the Transformer in the original paper (residue connections are layer normalised) and their official implementation (not normalised).
-
-## Acknowledgements
+## Acknowledgments
 
 The project starts when Hongfei XU (the developer) was a postgraduate student at [Zhengzhou University](http://www5.zzu.edu.cn/nlp/), and continues when he is a PhD candidate at [Saarland University](https://www.uni-saarland.de/nc/en/home.html) supervised by [Prof. Dr. Josef van Genabith](https://www.dfki.de/en/web/about-us/employee/person/jova02/) and Prof. Dr. Deyi Xiong, and a Junior Researcher at [DFKI, MLT (German Research Center for Artificial Intelligence, Multilinguality and Language Technology)](https://www.dfki.de/en/web/research/research-departments-and-groups/multilinguality-and-language-technology/). Hongfei XU enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project.
 

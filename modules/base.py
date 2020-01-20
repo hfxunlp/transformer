@@ -7,6 +7,7 @@ from torch.nn import functional as nnFunc
 from torch.autograd import Function
 
 from utils.base import reduce_model_list
+from modules.act import GeLU_GPT, GeLU_BERT, GeLU
 
 Linear = nn.Linear
 Dropout = nn.Dropout
@@ -22,7 +23,7 @@ class PositionwiseFF(nn.Module):
 
 		_hsize = isize * 4 if hsize is None else hsize
 
-		self.net = nn.Sequential(Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_bias))
+		self.net = nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_bias))
 
 		self.normer = nn.LayerNorm(isize, eps=1e-06)
 
@@ -110,8 +111,9 @@ class MultiHeadAttn(nn.Module):
 	# num_head: number of heads
 	# dropout: dropout probability
 	# sparsenorm: using sparse normer or standard softmax
+	# bind_qk: query and key can share a same linear transformation for the Reformer: The Efficient Transformer(https://arxiv.org/abs/2001.04451) paper.
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=False, sparsenorm=False):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=False, sparsenorm=False, bind_qk=False):
 
 		super(MultiHeadAttn, self).__init__()
 
@@ -121,7 +123,7 @@ class MultiHeadAttn(nn.Module):
 
 		self.query_adaptor = Linear(isize, self.hsize, bias=enable_bias)
 		_k_isize = isize if k_isize is None else k_isize
-		self.key_adaptor = Linear(_k_isize, self.hsize, bias=enable_bias)
+		self.key_adaptor = self.query_adaptor if bind_qk and isize == _k_isize else Linear(_k_isize, self.hsize, bias=enable_bias)
 		self.value_adaptor = Linear(_k_isize if v_isize is None else v_isize, self.hsize, bias=enable_bias)
 
 		self.outer = Linear(self.hsize, osize, bias=enable_bias)
@@ -186,7 +188,7 @@ class AverageAttn(nn.Module):
 		self.num_pos = num_pos
 		self.register_buffer('w', torch.Tensor(num_pos, num_pos))
 
-		self.ffn = nn.Sequential(Linear(isize, _hsize), Dropout(dropout, inplace=True), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU_BERT() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize))
+		self.ffn = nn.Sequential(Linear(isize, _hsize), Dropout(dropout, inplace=True), GeLU() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize))
 
 		self.gw = Linear(isize * 2, isize * 2)
 
@@ -267,10 +269,10 @@ class SelfAttn(nn.Module):
 
 			seql = iK.size(1)
 
-			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), self.adaptor.bias.narrow(0, 0, self.hsize) if self.adaptor.bias else None).view(bsize, nquery, nheads, adim).transpose(1, 2), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize) if self.adaptor.bias else None).view(bsize, seql, 2, nheads, adim)
-
+			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), self.adaptor.bias.narrow(0, 0, self.hsize) if self.adaptor.bias else None).view(bsize, nquery, nheads, adim), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize) if self.adaptor.bias else None).view(bsize, seql, 2, nheads, adim)
 			real_iK, real_iV = _out.unbind(2)
-			real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
+
+			real_iQ, real_iK, real_iV = real_iQ.transpose(1, 2), real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
 
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
@@ -298,6 +300,7 @@ class CrossAttn(nn.Module):
 		self.num_head = num_head
 
 		self.query_adaptor = Linear(isize, self.hsize, bias=enable_bias)
+
 		self.kv_adaptor = Linear(isize if k_isize is None else k_isize, self.hsize * 2, bias=enable_bias)
 
 		self.outer = Linear(self.hsize, osize, bias=enable_bias)
@@ -314,10 +317,10 @@ class CrossAttn(nn.Module):
 		nheads = self.num_head
 		adim = self.attn_dim
 
-		real_iQ, _out = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2), self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim)
-
+		real_iQ, _out = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim), self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim)
 		real_iK, real_iV = _out.unbind(2)
-		real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
+
+		real_iQ, real_iK, real_iV = real_iQ.transpose(1, 2), real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
 
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
@@ -345,7 +348,7 @@ class ResidueCombiner(nn.Module):
 		_hsize = isize * 2 * ncomb if hsize is None else hsize
 
 		# should dropout be in front of sigmoid or not?
-		self.net = nn.Sequential(Linear(isize * ncomb, _hsize), GeLU_BERT() if use_GeLU else nn.Sigmoid(), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize * ncomb, _hsize), GeLU_BERT() if use_GeLU else nn.Sigmoid(), Linear(_hsize, isize, bias=enable_bias))
+		self.net = nn.Sequential(Linear(isize * ncomb, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize * ncomb, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Linear(_hsize, isize, bias=enable_bias))
 
 		self.out_normer = nn.LayerNorm(isize, eps=1e-06)
 
@@ -358,32 +361,6 @@ class ResidueCombiner(nn.Module):
 			out = out + inputu
 
 		return self.out_normer(out)
-
-# 2 kinds of GELU activation function implementation according to https://github.com/huggingface/pytorch-pretrained-BERT/blob/master/pytorch_pretrained_bert/modeling.py#L53-L58
-
-class GeLU_GPT(nn.Module):
-
-	def __init__(self):
-
-		super(GeLU_GPT, self).__init__()
-
-		self.k = sqrt(2.0 / pi)
-
-	def forward(self, x):
-
-		return 0.5 * x * (1.0 + (self.k * (x + 0.044715 * x.pow(3.0))).tanh())
-
-class GeLU_BERT(nn.Module):
-
-	def __init__(self):
-
-		super(GeLU_BERT, self).__init__()
-
-		self.k = sqrt(2.0)
-
-	def forward(self, x):
-
-		return 0.5 * x * (1.0 + (x / self.k).erf())
 
 class Scorer(nn.Module):
 
@@ -752,5 +729,5 @@ class Temperature(nn.Module):
 
 def reduce_model(modin):
 
-	rsm = reduce_model_list(modin, [Dropout, nn.ReLU, nn.Softmax, PositionalEmb, TokenDropout, Sparsemax, CoordinateEmb], [lambda m: (m.p, m.inplace,), lambda m: (m.inplace,), lambda m: (m.dim,), lambda m: (m.num_pos, m.num_dim, m.poff, m.doff, m.alpha,), lambda m: (m.p, m.keep_magnitude,), lambda m: (m.dim,), lambda m: (m.num_pos, m.num_dim, m.poff, m.doff, m.alpha, m.num_steps,)])
+	rsm = reduce_model_list(modin, [Dropout, nn.ReLU, nn.Softmax, PositionalEmb, TokenDropout, Sparsemax, CoordinateEmb, Swish], [lambda m: (m.p, m.inplace,), lambda m: (m.inplace,), lambda m: (m.dim,), lambda m: (m.num_pos, m.num_dim, m.poff, m.doff, m.alpha,), lambda m: (m.p, m.keep_magnitude,), lambda m: (m.dim,), lambda m: (m.num_pos, m.num_dim, m.poff, m.doff, m.alpha, m.num_steps,), lambda m: (m.reset_beta, m.beta,)])
 	return reduce_model_list(rsm, [GeLU_GPT, GeLU_BERT, nn.Tanh, nn.Sigmoid])

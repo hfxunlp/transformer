@@ -89,6 +89,18 @@ def updated_lr(oldlr, newlr):
 
 	return rs
 
+def reset_Adam(optm, amsgrad=False):
+
+	for group in optm.param_groups:
+		for p in group['params']:
+			state = optm.state[p]
+			if len(state) != 0:
+				state['step'] = 0
+				state['exp_avg'].zero_()
+				state['exp_avg_sq'].zero_()
+				if amsgrad:
+					state['max_exp_avg_sq'].zero_()
+
 def dynamic_sample(incd, dss_ws, dss_rm):
 
 	rd = {}

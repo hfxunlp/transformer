@@ -3,6 +3,7 @@
 import torch
 from torch import nn
 from modules.base import *
+from modules.act import GeLU
 
 def prepare_initState(hx, cx, bsize):
 
@@ -23,7 +24,7 @@ class LSTMCell4RNMT(nn.Module):
 		self.trans = Linear(isize + osize, osize * 4)
 		self.normer = nn.LayerNorm((4, osize), eps=1e-06)
 
-		self.act = GeLU_BERT() if use_GeLU else nn.Tanh()
+		self.act = GeLU() if use_GeLU else nn.Tanh()
 
 		self.osize = osize
 
@@ -56,7 +57,7 @@ class GRUCell4RNMT(nn.Module):
 
 		self.normer = nn.LayerNorm((2, osize), eps=1e-06)
 
-		self.act = GeLU_BERT() if use_GeLU else nn.Tanh()
+		self.act = GeLU() if use_GeLU else nn.Tanh()
 
 		self.osize = osize
 

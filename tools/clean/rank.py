@@ -10,8 +10,7 @@ def handle(srcf, tgtf, rankf, rssf, rstf, threshold):
 
 	with open(srcf, "rb") as frs, open(tgtf, "rb") as frt, open(rankf, "rb") as fs, open(rssf, "wb") as fws, open(rstf, "wb") as fwt:
 
-		ndata = 0
-		nkeep = 0
+		ndata = nkeep = 0
 
 		ens = "\n".encode("utf-8")
 

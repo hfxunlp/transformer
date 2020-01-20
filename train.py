@@ -175,16 +175,9 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu):
 	w = float(w)
 	return sum_loss / w, (w - r) / w * 100.0
 
-def hook_lr_update(optm, flags):
-	for group in optm.param_groups:
-		for p in group['params']:
-			state = optm.state[p]
-			if len(state) != 0:
-				state['step'] = 0
-				state['exp_avg'].zero_()
-				state['exp_avg_sq'].zero_()
-				if flags:
-					state['max_exp_avg_sq'].zero_()
+def hook_lr_update(optm, flags=None):
+
+	reset_Adam(optm, flags)
 
 def init_fixing(module):
 
