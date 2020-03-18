@@ -7,7 +7,7 @@ from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 
 from utils.base import *
-from utils.fmt.base import ldvocab, clean_str
+from utils.fmt.base import ldvocab, clean_str, reverse_dict, eos_id, clean_liststr_lentok, dict_insert_set, iter_dict_sort
 from utils.fmt.base4torch import parse_cuda_decode
 
 from utils.fmt.single import batch_padder
@@ -27,21 +27,9 @@ def sorti(lin):
 	for ls in lin:
 		ls = ls.strip()
 		if ls:
-			ls, lgth = clean_len(ls)
-			if lgth not in data:
-				data[lgth] = set([ls])
-			elif ls not in data[lgth]:
-				data[lgth].add(ls)
+			data = dict_insert_set(data, ls, len(ls.split()))
 
-	length = list(data.keys())
-	length.sort()
-
-	rs = []
-
-	for lgth in length:
-		rs.extend(data[lgth])
-
-	return rs
+	return list(iter_dict_sort(data))
 
 def restore(src, tsrc, trs):
 
@@ -52,27 +40,7 @@ def restore(src, tsrc, trs):
 		if _sl and _tl:
 			data[_sl] = clean_str(_tl)
 
-	rs = []
-	_tl = []
-	for line in src:
-		tmp = line.strip()
-		if tmp:
-			tmp = clean_str(tmp)
-			tmp = data.get(tmp, "").strip()
-			if tmp:
-				_tl.append(tmp)
-			elif _tl:
-				rs.append(" ".join(_tl))
-				_tl = []
-		elif _tl:
-			rs.append(" ".join(_tl))
-			_tl = []
-		else:
-			rs.append("")
-	if _tl:
-		rs.append(" ".join(_tl))
-
-	return rs
+	return [data.get(clean_str(line.strip()), line) for line in src]
 
 class TranslatorCore:
 
@@ -109,8 +77,6 @@ class TranslatorCore:
 			model = load_model_cpu(modelfs, model)
 			model.apply(load_fixing)
 
-		cuda_device = torch.device(cnfg.gpuid)
-
 		model.eval()
 
 		self.use_cuda, self.cuda_device, cuda_devices, self.multi_gpu = parse_cuda_decode(cnfg.use_cuda, cnfg.gpuid, cnfg.multi_gpu_decoding)
@@ -118,7 +84,7 @@ class TranslatorCore:
 		if self.use_cuda:
 			model.to(self.cuda_device)
 			if self.multi_gpu:
-				model = DataParallelMT(model, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
+				model = DataParallelMT(model, device_ids=cuda_devices, output_device=self.cuda_device.index, host_replicate=True, gather_output=False)
 
 		self.beam_size = cnfg.beam_size
 
@@ -142,7 +108,7 @@ class TranslatorCore:
 				for tran in output:
 					tmp = []
 					for tmpu in tran:
-						if (tmpu == 2) or (tmpu == 0):
+						if tmpu == eos_id:
 							break
 						else:
 							tmp.append(self.vcbt[tmpu])
@@ -174,48 +140,42 @@ class Translator:
 		if detok is not None:
 			self.flow.append(detok)
 
-	def __call__(self, paragraph):
+	def __call__(self, paragraphs):
 
-		_tmp = [tmpu.strip() for tmpu in paragraph.strip().split("\n")]
-		_rs = []
-		_tmpi = None
-		if self.sent_split is not None:
-			np = len(_tmp) - 1
-			if np > 0:
-				for _i, _tmpu in enumerate(_tmp):
-					if _tmpu:
-						_rs.extend(self.sent_split(_tmpu))
-					if _i < np:
-						_rs.append("")
-				_tmpi = sorti(_rs)
-				_tmp = _tmpi
-			else:
-				_tmp = [clean_str(_tmp[0])]
+		_paras = [clean_str(tmpu.strip()) for tmpu in paragraphs.strip().split("\n") if tmpu]
+
+		_tmp = []
+		if self.sent_split is None:
+			for _tmpu in paras:
+				_tmp.append(_tmpu)
+				_tmp.append("\n")
 		else:
-			_tmp = [clean_str(tmpu) for tmpu in _tmp]
+			for _tmpu in _paras:
+				_tmp.extend(clean_list([clean_str(_tmps) for _tmps in self.sent_split(_tmpu)]))
+				_tmp.append("\n")
+		_tmp_o = _tmpi = sorti(_tmp)
 
 		for pu in self.flow:
-			_tmp = pu(_tmp)
+			_tmp_o = pu(_tmp_o)
 
-		if len(_rs) > 1:
-			_tmp = restore(_rs, _tmpi, _tmp)
-			return "\n".join(_tmp)
+		_tmp = restore(_tmp, _tmpi, _tmp_o)
 
-		return " ".join(_tmp)
+		return " ".join(_tmp).replace(" \n", "\n").replace("\n ", "\n")
 
 #import cnfg
-#from datautils.moses import SentenceSplitter, Tokenizer, Detokenizer, Normalizepunctuation, Truecaser, Detruecaser
-#from datautils.bpe import BPEApplier, BPEApplier, BPERemover
+#from datautils.moses import SentenceSplitter
+#from datautils.pymoses import Tokenizer, Detokenizer, Normalizepunctuation, Truecaser, Detruecaser
+#from datautils.bpe import BPEApplier, BPERemover
 #if __name__ == "__main__":
-	#tl = ["28 @-@ jähriger Koch in San Francisco M@@ all tot a@@ u@@ f@@ gefunden", "ein 28 @-@ jähriger Koch , der vor kurzem nach San Francisco gezogen ist , wurde im T@@ r@@ e@@ p@@ p@@ e@@ n@@ haus eines örtlichen E@@ i@@ n@@ k@@ a@@ u@@ f@@ z@@ e@@ n@@ t@@ r@@ u@@ ms tot a@@ u@@ f@@ gefunden .", "der Bruder des O@@ p@@ f@@ e@@ r@@ s sagte aus , dass er sich niemanden vorstellen kann , der ihm schaden wollen würde , &quot; E@@ n@@ d@@ lich ging es bei ihm wieder b@@ e@@ r@@ g@@ auf &quot; .", "der am Mittwoch morgen in der W@@ e@@ s@@ t@@ field M@@ all g@@ e@@ f@@ u@@ n@@ d@@ e@@ n@@ e L@@ e@@ i@@ c@@ h@@ n@@ a@@ m wurde als der 28 Jahre alte Frank G@@ a@@ l@@ i@@ c@@ i@@ a aus San Francisco identifiziert , teilte die g@@ e@@ r@@ i@@ c@@ h@@ t@@ s@@ medizinische Abteilung in San Francisco mit .", "das San Francisco P@@ o@@ l@@ i@@ ce D@@ e@@ p@@ a@@ r@@ t@@ ment sagte , dass der Tod als Mord eingestuft wurde und die Ermittlungen am L@@ a@@ u@@ f@@ en sind .", "der Bruder des O@@ p@@ f@@ e@@ r@@ s , Louis G@@ a@@ l@@ i@@ c@@ i@@ a , teilte dem A@@ B@@ S Sender K@@ GO in San Francisco mit , dass Frank , der früher als Koch in B@@ o@@ s@@ t@@ on gearbeitet hat , vor sechs Monaten seinen T@@ r@@ a@@ u@@ m@@ j@@ ob als Koch im S@@ o@@ n@@ s &amp; D@@ a@@ u@@ g@@ h@@ t@@ e@@ r@@ s Restaurant in San Francisco e@@ r@@ g@@ a@@ t@@ t@@ e@@ r@@ t hatte .", "ein Sprecher des S@@ o@@ n@@ s &amp; D@@ a@@ u@@ g@@ h@@ t@@ e@@ r@@ s sagte , dass sie über seinen Tod &quot; s@@ c@@ h@@ o@@ c@@ k@@ i@@ e@@ r@@ t und am Boden zerstört seien &quot; .", "&quot; wir sind ein kleines Team , das wie eine enge Familie arbeitet und wir werden ihn s@@ c@@ h@@ m@@ e@@ r@@ z@@ lich vermissen &quot; , sagte der Sprecher weiter .", "unsere Gedanken und unser B@@ e@@ i@@ leid sind in dieser schweren Zeit bei F@@ r@@ a@@ n@@ k@@ s Familie und Freunden .", "Louis G@@ a@@ l@@ i@@ c@@ i@@ a gab an , dass Frank zunächst in Hostels lebte , aber dass , &quot; die Dinge für ihn endlich b@@ e@@ r@@ g@@ auf gingen &quot; ."]
+	#tl = []
 	#spl = SentenceSplitter("de")
 	#tok = Tokenizer("de")
 	#detok = Detokenizer("en")
 	#punc_norm = Normalizepunctuation("de")
-	#truecaser = Truecaser("c1207\\truecase-model.de")
+	#truecaser = Truecaser("truecase-model.de")
 	#detruecaser = Detruecaser()
-	#tran_core = TranslatorCore("c1207\\eva_20_1.384_1.088_26.74.t7", "c1207\\src.vcb", "c1207\\tgt.vcb", cnfg)
-	#bpe = BPEApplier("c1207\\src.cds", "c1207\\src.vcb.bpe", 50)
+	#tran_core = TranslatorCore("eva_20_1.384_1.088_26.74.t7", "src.vcb", "tgt.vcb", cnfg)
+	#bpe = BPEApplier("src.cds", "src.vcb.bpe", 8)
 	#debpe = BPERemover()
 	#trans = Translator(tran_core, spl, tok, detok, bpe, debpe, punc_norm, truecaser, detruecaser)
 	#rs = tran_core(tl)

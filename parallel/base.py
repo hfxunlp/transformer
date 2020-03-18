@@ -10,6 +10,7 @@ from torch.nn import DataParallel
 
 from threading import Lock, Thread
 
+from utils.base import filter_para_grad
 from utils.fmt.base import clean_list
 
 """	Example::
@@ -33,6 +34,7 @@ class DataParallelModel(DataParallel):
 			self.nets = None
 
 		self.gather_output = gather_output
+		self.ngradev = 0
 
 	def forward(self, *inputs, **kwargs):
 
@@ -41,15 +43,18 @@ class DataParallelModel(DataParallel):
 		inputs, kwargs = self.scatter(inputs, kwargs, self.device_ids)
 		inputs = clean_list(inputs)
 		ngpu = len(inputs)
+		if self.training and ngpu > self.ngradev:
+			self.ngradev = ngpu
 		if ngpu == 1:
-			return self.module(*inputs[0], **kwargs[0]) if self.gather_output else [self.module(*inputs[0], **kwargs[0])]
+			_fwd_m = self.module if self.nets is None else self.nets[0]
+			return _fwd_m(*inputs[0], **kwargs[0]) if self.gather_output else [_fwd_m(*inputs[0], **kwargs[0])]
 		devices = self.device_ids[:ngpu]
 		replicas = self.replicate(self.module, devices) if self.nets is None else self.nets[:ngpu]
 		outputs = parallel_apply(replicas, inputs, devices, kwargs)
-		# uncomment following two lines if your model have multiple outputs
-		#if isinstance(outputs[0], tuple):
-			#outputs = tuple(zip(*outputs))
-		return self.gather(outputs, self.output_device) if self.gather_output else outputs
+		if self.gather_output:
+			return self.gather(outputs, self.output_device)
+		else:
+			return tuple(zip(*outputs)) if isinstance(outputs[0], tuple) else outputs
 
 	def train(self, mode=True):
 
@@ -64,25 +69,29 @@ class DataParallelModel(DataParallel):
 	def make_replicas(self):
 
 		self.nets = replicate(self.module, self.device_ids, True)
+		self.ngradev = 0
 
 	def collect_gradients(self):
 
-		grads = comm.reduce_add_coalesced([[p.data.new_zeros(p.data.size()) if p.grad is None else p.grad for p in net.parameters()] for net in self.nets], self.output_device)
-		for mp, grad in zip(self.module.parameters(), grads):
-			mp.grad = grad
+		if self.ngradev > 0:
+			grads = comm.reduce_add_coalesced([[p.grad for p in filter_para_grad(net.parameters())] for net in self.nets[:self.ngradev]], self.output_device) if self.ngradev > 1 else [p.grad for p in filter_para_grad(self.nets[0].parameters())]
+			for mp, grad in zip(filter_para_grad(self.module.parameters()), grads):
+				mp.grad = grad
 
 # the parallelization of the update of parameters is supported, but not adviced, since the cost of multi threads is much higher and thus slower than the loop unless you are running on lots of GPUs.
 # Note that gradients will be cleared every time this function was called
 	def update_replicas(self, parallel=False):
 
-		params = [para.data for para in self.module.parameters()]
+		params = [para.data for para in filter_para_grad(self.module.parameters())]
 
 		if len(params) > 0:
 			param_copies = tuple([t for tensors in comm.broadcast_coalesced(params, self.device_ids) for t in tensors])
 
 			for module, param_copy in zip(self.nets[1:], [param_copies[i:i + len(params)] for i in range(len(params), len(param_copies), len(params))]):
-				for mp, para in zip(module.parameters(), param_copy):
+				for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
 					mp.data, mp.grad = para, None
+
+		self.ngradev = 0
 
 class DataParallelCriterion(DataParallel):
 

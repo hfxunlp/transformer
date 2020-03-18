@@ -22,8 +22,7 @@ python tools/sort.py $wkd/$srctf $wkd/$tgttf $wkd/src.train.srt $wkd/tgt.train.s
 #bash tools/lsort/sort.sh $wkd/$srctf $wkd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens
 python tools/sort.py $wkd/$srcvf $wkd/$tgtvf $wkd/src.dev.srt $wkd/tgt.dev.srt 1048576
 
-if $share_vcb;
-then
+if $share_vcb; then
 	export src_vcb=$wkd/common.vcb
 	export tgt_vcb=$src_vcb
 	python tools/share_vocab.py $wkd/src.train.srt $wkd/tgt.train.srt $src_vcb $vsize

@@ -193,14 +193,16 @@ def get_bsize(maxlen, maxtoken, maxbsize):
 
 def no_unk_mapper(vcb, ltm, prompt=True):
 
-	rs = []
-	for wd in ltm:
-		if wd in vcb:
-			rs.append(vcb[wd])
-		elif prompt:
-			print("Error mapping: "+ wd)
-
-	return rs
+	if prompt:
+		rs = []
+		for wd in ltm:
+			if wd in vcb:
+				rs.append(vcb[wd])
+			else:
+				print("Error mapping: "+ wd)
+		return rs
+	else:
+		return [vcb[wd] for wd in ltm if wd in vcb]
 
 def list2dict(lin):
 

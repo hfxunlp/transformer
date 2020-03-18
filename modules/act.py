@@ -46,10 +46,7 @@ class Swish(nn.Module):
 			self.reset_beta = None
 		else:
 			self.reset_beta = beta
-			if isize is None:
-				self.beta = nn.Parameter(torch.tensor([beta]))
-			else:
-				self.beta = nn.Parameter(torch.tensor([beta]).repeat(isize))
+			self.beta = nn.Parameter(torch.tensor([beta])) if isize is None else nn.Parameter(torch.tensor([beta]).repeat(isize))
 
 	def forward(self, x):
 

@@ -48,7 +48,10 @@ export ngpu=1
 Most parameters for configuration are saved in `cnfg/base.py`:
 
 ```
-# an ID for your experiment. Model, log and state files will be saved in: expm/data_id/run_id
+# the group ID for the experiment
+group_id = "std"
+
+# an ID for your experiment. Model, log and state files will be saved in: expm/data_id/group_id/run_id
 run_id = "base"
 
 # the ID of the dataset to use

@@ -2,6 +2,8 @@
 
 from torch import nn
 
+from numbers import Integral
+
 from transformer.SC.Encoder import Encoder
 from transformer.SC.Decoder import Decoder
 
@@ -13,11 +15,16 @@ class NMT(nn.Module):
 
 		super(NMT, self).__init__()
 
-		self.enc = Encoder(isize, snwd, num_layer, fhsize, dropout, attn_drop, num_head, xseql, ahsize, norm_output, num_layer)
+		if isinstance(num_layer, Integral):
+			enc_layer = dec_layer = num_layer
+		else:
+			enc_layer, dec_layer = num_layer
+
+		self.enc = Encoder(isize, snwd, enc_layer, fhsize, dropout, attn_drop, num_head, xseql, ahsize, norm_output, num_layer)
 
 		emb_w = self.enc.wemb.weight if global_emb else None
 
-		self.dec = Decoder(isize, tnwd, num_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
+		self.dec = Decoder(isize, tnwd, dec_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
 
 	def forward(self, inpute, inputo, mask=None):
 

@@ -1,8 +1,11 @@
 #encoding: utf-8
 
+import torch
 from torch import nn
 from modules.base import *
 from math import sqrt
+
+from utils.fmt.base import pad_id
 
 # vocabulary:
 #	<pad>:0
@@ -21,7 +24,7 @@ class EncoderLayer(nn.Module):
 	# ahsize: hidden size of MultiHeadAttention
 	# norm_residue: residue with layer normalized representation
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=True):
 
 		super(EncoderLayer, self).__init__()
 
@@ -64,13 +67,13 @@ class Encoder(nn.Module):
 	# num_head: number of heads in MultiHeadAttention
 	# xseql: maxmimum length of sequence
 	# ahsize: number of hidden units for MultiHeadAttention
+	# share_layer: using one shared encoder layer
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=512, ahsize=None, norm_output=True):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=512, ahsize=None, norm_output=True, share_layer=False):
 
 		super(Encoder, self).__init__()
 
 		_ahsize = isize if ahsize is None else ahsize
-
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
@@ -78,7 +81,11 @@ class Encoder(nn.Module):
 		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
 
 		self.pemb = PositionalEmb(isize, xseql, 0, 0)
-		self.nets = nn.ModuleList([EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
+		if share_layer:
+			_shared_layer = EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
+			self.nets = nn.ModuleList([_shared_layer for i in range(num_layer)])
+		else:
+			self.nets = nn.ModuleList([EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
 
 		self.out_normer = nn.LayerNorm(isize, eps=1e-06) if norm_output else None
 
@@ -109,6 +116,13 @@ class Encoder(nn.Module):
 
 		_nets = list(base_encoder.nets)
 
-		self.nets = nn.ModuleList(_nets + list(self.nets[len(_nets):]))
+		self.nets = nn.ModuleList(_nets[:len(self.nets)] + list(self.nets[len(_nets):]))
 
 		self.out_normer = None if self.out_normer is None else base_encoder.out_normer
+
+	def fix_init(self):
+
+		if "fix_load" in dir(self):
+			self.fix_load()
+		with torch.no_grad():
+			self.wemb.weight[pad_id].zero_()

@@ -7,7 +7,7 @@ from torch.nn import functional as nnFunc
 from torch.autograd import Function
 
 from utils.base import reduce_model_list
-from modules.act import GeLU_GPT, GeLU_BERT, GeLU
+from modules.act import GeLU_GPT, GeLU_BERT, GeLU, Swish
 
 Linear = nn.Linear
 Dropout = nn.Dropout
@@ -269,7 +269,7 @@ class SelfAttn(nn.Module):
 
 			seql = iK.size(1)
 
-			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), self.adaptor.bias.narrow(0, 0, self.hsize) if self.adaptor.bias else None).view(bsize, nquery, nheads, adim), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize) if self.adaptor.bias else None).view(bsize, seql, 2, nheads, adim)
+			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), None if self.adaptor.bias is None else self.adaptor.bias.narrow(0, 0, self.hsize)).view(bsize, nquery, nheads, adim), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), None if self.adaptor.bias is None else self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize)).view(bsize, seql, 2, nheads, adim)
 			real_iK, real_iV = _out.unbind(2)
 
 			real_iQ, real_iK, real_iV = real_iQ.transpose(1, 2), real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)

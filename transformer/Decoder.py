@@ -6,6 +6,8 @@ from modules.base import *
 from utils.base import repeat_bsize_for_beam_tensor, mask_tensor_type
 from math import sqrt, inf
 
+from utils.fmt.base import pad_id
+
 class DecoderLayer(nn.Module):
 
 	# isize: input size
@@ -15,7 +17,7 @@ class DecoderLayer(nn.Module):
 	# ahsize: hidden size of MultiHeadAttention
 	# norm_residue: residue with layer normalized representation
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=False):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=True):
 
 		super(DecoderLayer, self).__init__()
 
@@ -96,13 +98,13 @@ class Decoder(nn.Module):
 	# xseql: maxmimum length of sequence
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
+	# share_layer: using one shared decoder layer
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False):
 
 		super(Decoder, self).__init__()
 
 		_ahsize = isize if ahsize is None else ahsize
-
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
@@ -115,7 +117,11 @@ class Decoder(nn.Module):
 			self.wemb.weight = emb_w
 
 		self.pemb = PositionalEmb(isize, xseql, 0, 0)
-		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
+		if share_layer:
+			_shared_layer = DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
+			self.nets = nn.ModuleList([_shared_layer for i in range(num_layer)])
+		else:
+			self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
 
 		self.classifier = Linear(isize, nwd)
 		# be careful since this line of code is trying to share the weight of the wemb and the classifier, which may cause problems if torch.nn updates
@@ -170,7 +176,7 @@ class Decoder(nn.Module):
 
 		_nets = list(base_decoder.nets)
 
-		self.nets = nn.ModuleList(_nets + list(self.nets[len(_nets):]))
+		self.nets = nn.ModuleList(_nets[:len(self.nets)] + list(self.nets[len(_nets):]))
 
 		self.classifier = base_decoder.classifier
 
@@ -439,6 +445,9 @@ class Decoder(nn.Module):
 	def fix_init(self):
 
 		self.fix_load()
+		with torch.no_grad():
+			self.wemb.weight[pad_id].zero_()
+			self.classifier.weight[pad_id].zero_()
 
 	def fix_load(self):
 

@@ -1,0 +1,30 @@
+#!/bin/bash
+
+export srcd=w19edoc
+export srctf=test.en.w19edoc
+export modelf="expm/w19edoc/checkpoint.t7"
+export rsf=w19edoctrs/trans.txt
+export share_vcb=false
+
+export cachedir=cache
+export dataid=w19edoc
+
+export ngpu=1
+
+export tgtd=$cachedir/$dataid
+
+export bpef=out.bpe
+
+if $share_vcb; then
+	export src_vcb=$tgtd/common.vcb
+	export tgt_vcb=$src_vcb
+else
+	export src_vcb=$tgtd/src.vcb
+	export tgt_vcb=$tgtd/tgt.vcb
+fi
+
+python tools/doc/mono/sort.py $srcd/$srctf $tgtd/$srctf.srt
+python tools/doc/para/mktest.py $tgtd/$srctf.srt $src_vcb $tgtd/test.h5 $ngpu
+python predict_doc_para.py $tgtd/$bpef.srt $tgt_vcb $modelf
+python tools/doc/para/restore.py $srcd/$srctf w19ed/test.en.w19ed w19edtrs/base_avg.tbrs $tgtd/$srctf.srt $tgtd/$bpef.srt $tgtd/$bpef
+sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/$bpef > $rsf

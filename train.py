@@ -210,7 +210,7 @@ epoch_save = cnfg.epoch_save
 
 remain_steps = cnfg.training_steps
 
-wkdir = "".join(("expm/", cnfg.data_id, "/", rid, "/"))
+wkdir = "".join(("expm/", cnfg.data_id, "/", cnfg.group_id, "/", rid, "/"))
 if not p_check(wkdir):
 	makedirs(wkdir)
 
@@ -256,10 +256,10 @@ fine_tune_m = cnfg.fine_tune_m
 tl = [str(i) for i in range(ntrain)]
 
 mymodel = init_model_params(mymodel)
+mymodel.apply(init_fixing)
 if fine_tune_m is not None:
 	logger.info("Load pre-trained model from: " + fine_tune_m)
 	mymodel = load_model_cpu(fine_tune_m, mymodel)
-mymodel.apply(init_fixing)
 
 #lw = torch.ones(nwordt).float()
 #lw[0] = 0.0

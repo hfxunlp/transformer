@@ -1,5 +1,7 @@
 #encoding: utf-8
 
+group_id = "std"
+
 run_id = "base"
 
 data_id = "w14ed32"

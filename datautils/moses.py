@@ -41,15 +41,17 @@ class BatchProcessor(ProcessWrapper):
 
 	def __call__(self, input):
 
-		if not isinstance(input, (list, tuple)):
-			input = [input]
+		if isinstance(input, (list, tuple)):
+			rs = []
 
-		rs = []
-
-		for inputu in input:
-			self.process.stdin.write(("%s\n" % inputu.strip()).encode("utf-8", "ignore"))
+			for inputu in input:
+				self.process.stdin.write(("%s\n" % inputu.strip()).encode("utf-8", "ignore"))
+				self.process.stdin.flush()
+				rs.append(self.process.stdout.readline().strip().decode("utf-8", "ignore"))
+		else:
+			self.process.stdin.write(("%s\n" % input.strip()).encode("utf-8", "ignore"))
 			self.process.stdin.flush()
-			rs.append(self.process.stdout.readline().strip().decode("utf-8", "ignore"))
+			rs = self.process.stdout.readline().strip().decode("utf-8", "ignore")
 
 		return rs
 

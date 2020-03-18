@@ -32,9 +32,11 @@ class BPE(object):
 
 		self.glossaries = glossaries if glossaries else []
 
+		self.glossaries_regex = re.compile('^({})$'.format('|'.join(glossaries))) if glossaries else None
+
 		self.cache = {}
 
-	def process_line(self, line):
+	def process_line(self, line, dropout=0):
 		"""segment line, dealing with leading and trailing whitespace"""
 
 		out = ""
@@ -43,7 +45,7 @@ class BPE(object):
 		if leading_whitespace:
 			out += line[:leading_whitespace]
 
-		out += self.segment(line)
+		out += self.segment(line, dropout)
 
 		trailing_whitespace = len(line)-len(line.rstrip('\r\n '))
 		if trailing_whitespace and trailing_whitespace != len(line):
@@ -51,12 +53,12 @@ class BPE(object):
 
 		return out
 
-	def segment(self, sentence):
+	def segment(self, sentence, dropout=0):
 		"""segment single sentence (whitespace-tokenized string) with BPE encoding"""
-		segments = self.segment_tokens(sentence.strip('\r\n ').split(' '))
+		segments = self.segment_tokens(sentence.strip('\r\n ').split(' '), dropout)
 		return ' '.join(segments)
 
-	def segment_tokens(self, tokens):
+	def segment_tokens(self, tokens, dropout=0):
 		"""segment a sequence of tokens with BPE encoding"""
 		output = []
 		for word in tokens:
@@ -71,7 +73,8 @@ class BPE(object):
 										  self.separator,
 										  self.version,
 										  self.cache,
-										  self.glossaries)]
+										  self.glossaries_regex,
+										  dropout)]
 
 			for item in new_word[:-1]:
 				output.append(item + self.separator)
@@ -86,76 +89,61 @@ class BPE(object):
 								 for out_segments in isolate_glossary(segment, gloss)]
 		return word_segments
 
-def get_pairs(word):
-	"""Return set of symbol pairs in a word.
-	word is represented as tuple of symbols (symbols being variable-length strings)
-	"""
-	pairs = set()
-	prev_char = word[0]
-	for char in word[1:]:
-		pairs.add((prev_char, char))
-		prev_char = char
-	return pairs
-
-def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache, glossaries=None):
+def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache, glossaries_regex=None, dropout=0):
 	"""Encode word based on list of BPE merge operations, which are applied consecutively
 	"""
 
-	if orig in cache:
+	if not dropout and orig in cache:
 		return cache[orig]
 
-	for glossary in glossaries:
-		if re.match('^'+glossary+'$', orig):
-			cache[orig] = (orig,)
-			return (orig,)
+	if glossaries_regex and glossaries_regex.match(orig):
+		cache[orig] = (orig,)
+		return (orig,)
+
+	if len(orig) == 1:
+		return orig
 
 	if version == (0, 1):
-		word = tuple(orig) + ('</w>',)
+		word = list(orig) + ['</w>']
 	elif version == (0, 2): # more consistent handling of word-final segments
-		word = tuple(orig[:-1]) + ( orig[-1] + '</w>',)
+		word = list(orig[:-1]) + [orig[-1] + '</w>']
 	else:
 		raise NotImplementedError
 
-	pairs = get_pairs(word)
+	while len(word) > 1:
 
-	if not pairs:
-		return orig
+		# get list of symbol pairs; optionally apply dropout
+		pairs = [(bpe_codes[pair],i,pair) for (i,pair) in enumerate(zip(word, word[1:])) if (not dropout or random.random() > dropout) and pair in bpe_codes]
 
-	while True:
-		bigram = min(pairs, key = lambda pair: bpe_codes.get(pair, float('inf')))
-		if bigram not in bpe_codes:
+		if not pairs:
 			break
-		first, second = bigram
-		new_word = []
+
+		#get first merge operation in list of BPE codes
+		bigram = min(pairs)[2]
+
+		# find start position of all pairs that we want to merge
+		positions = [i for (rank,i,pair) in pairs if pair == bigram]
+
 		i = 0
-		while i < len(word):
-			try:
-				j = word.index(first, i)
-				new_word.extend(word[i:j])
-				i = j
-			except:
-				new_word.extend(word[i:])
-				break
-
-			if word[i] == first and i < len(word)-1 and word[i+1] == second:
-				new_word.append(first+second)
-				i += 2
-			else:
-				new_word.append(word[i])
-				i += 1
-		new_word = tuple(new_word)
+		new_word = []
+		bigram = ''.join(bigram)
+		for j in positions:
+			# merges are invalid if they start before current position. This can happen if there are overlapping pairs: (x x x -> xx x)
+			if j < i:
+				continue
+			new_word.extend(word[i:j]) # all symbols before merged pair
+			new_word.append(bigram) # merged pair
+			i = j+2 # continue after merged pair
+		new_word.extend(word[i:]) # add all symbols until end of word
 		word = new_word
-		if len(word) == 1:
-			break
-		else:
-			pairs = get_pairs(word)
 
 	# don't print end-of-word symbols
 	if word[-1] == '</w>':
 		word = word[:-1]
 	elif word[-1].endswith('</w>'):
-		word = word[:-1] + (word[-1].replace('</w>',''),)
+		word[-1] = word[-1][:-4]
 
+	word = tuple(word)
 	if vocab:
 		word = check_vocab_and_split(word, bpe_codes_reverse, vocab, separator)
 
@@ -236,22 +224,22 @@ def isolate_glossary(word, glossary):
 	if re.match('^'+glossary+'$', word) or not re.search(glossary, word):
 		return [word]
 	else:
-		splits = re.split(glossary, word)
-		segments = [segment.strip('\r\n ') for (n_split, split) in enumerate(splits[:-1]) for segment in [split, re.findall(glossary, word)[n_split]] if segment != '']
-		return segments + [splits[-1].strip('\r\n ')] if splits[-1] != '' else segments
+		segments = re.split(r'({})'.format(glossary), word)
+		segments, ending = segments[:-1], segments[-1]
+		segments = list(filter(None, segments)) # Remove empty strings in regex group.
+		return segments + [ending.strip('\r\n ')] if ending != '' else segments
 
 class BPERemover:
 
 	def __call__(self, input):
 
-		if not isinstance(input, (list, tuple)):
-			input = [input]
-
-		rs = []
-		for inputu in input:
-			rs.append(inputu.replace("@@ ", ""))
-
-		return rs
+		if isinstance(input, (list, tuple)):
+			rs = []
+			for inputu in input:
+				rs.append(inputu.replace("@@ ", ""))
+			return rs
+		else:
+			return inputu.replace("@@ ", "")
 
 class BPEApplier:
 
@@ -262,16 +250,15 @@ class BPEApplier:
 		else:
 			vocabulary = None
 		if glossaries is not None:
-			glossaries = [g.decode('UTF-8') for g in glossaries]
+			glossaries = [g.decode('utf-8') for g in glossaries]
 		self.bpe = BPE(codecs.open(codesf, encoding='utf-8'), merges, separator, vocabulary, glossaries)
 
 	def __call__(self, input):
 
-		if not isinstance(input, (list, tuple)):
-			input = [input]
-
-		rs = []
-		for inputu in input:
-			rs.append(self.bpe.process_line(inputu))
-
-		return rs
+		if isinstance(input, (list, tuple)):
+			rs = []
+			for inputu in input:
+				rs.append(self.bpe.process_line(inputu))
+			return rs
+		else:
+			return self.bpe.process_line(inputu)

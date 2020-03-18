@@ -37,8 +37,7 @@ sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/src.clean.tmp > $tgtd/src.train.tok.clean
 sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/tgt.clean.tmp > $tgtd/tgt.train.tok.clean
 rm -fr $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp
 
-if $share_bpe;
-then
+if $share_bpe; then
 # to learn joint bpe
 	export src_cdsf=$tgtd/bpe.cds
 	export tgt_cdsf=$tgtd/bpe.cds

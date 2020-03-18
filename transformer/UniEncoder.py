@@ -28,7 +28,6 @@ class Encoder(nn.Module):
 		super(Encoder, self).__init__()
 
 		_ahsize = isize if ahsize is None else ahsize
-
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.num_layer = num_layer

@@ -61,15 +61,15 @@ def freeze_module(module):
 
 def unfreeze_module(module):
 
-	#def unfreeze_fixing(mod):
+	def unfreeze_fixing(mod):
 
-		#if "fix_unfreeze" in dir(mod):
-			#mod.fix_unfreeze()
+		if "fix_unfreeze" in dir(mod):
+			mod.fix_unfreeze()
 
 	for p in module.parameters():
 		p.requires_grad_(True)
 
-	#module.apply(unfreeze_fixing)
+	module.apply(unfreeze_fixing)
 
 def getlr(optm):
 
@@ -100,6 +100,12 @@ def reset_Adam(optm, amsgrad=False):
 				state['exp_avg_sq'].zero_()
 				if amsgrad:
 					state['max_exp_avg_sq'].zero_()
+
+def reinit_Adam(optm, amsgrad=False):
+
+	for group in optm.param_groups:
+		for p in group['params']:
+			optm.state[p].clear()
 
 def dynamic_sample(incd, dss_ws, dss_rm):
 
@@ -207,15 +213,16 @@ def init_model_params(modin, scale_glorot=None, scale_kaiming=None):
 
 	_tmpm = init_model_params_kaiming(modin, scale_kaiming)
 
-	for _m in _tmpm.modules():
-		if isinstance(_m, Embedding):
-			init_model_params_glorot(_m, scale_glorot)
-		elif isinstance(_m, Linear):
-			if _m.bias is not None:
-				with torch.no_grad():
+	with torch.no_grad():
+		for _m in _tmpm.modules():
+			if isinstance(_m, Embedding):
+				init_model_params_glorot(_m, scale_glorot)
+				if _m.padding_idx is not None:
+					_m.weight[_m.padding_idx].zero_()
+			elif isinstance(_m, Linear):
+				if _m.bias is not None:
 					_m.bias.zero_()
-		elif isinstance(_m, LayerNorm):
-			with torch.no_grad():
+			elif isinstance(_m, LayerNorm):
 				_m.weight.fill_(1.0)
 				_m.bias.zero_()
 
@@ -333,3 +340,11 @@ def reduce_model_list(modin, redml, attr_funcl=None):
 			rsm = reduce_model_core(rsm, redm, attr_func)
 
 	return rsm
+
+def report_parameters(modin):
+
+	rs = 0
+	for _para in modin.parameters():
+		rs += _para.numel()
+
+	return rs

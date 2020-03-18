@@ -3,6 +3,8 @@
 import torch
 from torch import nn
 
+from numbers import Integral
+
 # import Encoder and Decoder from transformer.AGG.InceptEncoder and transformer.AGG.InceptDecoder/transformer.AGG.InceptAvgDecoder to learn complex representation with incepted transformer, transformer.TA.Encoder for Transparent Encoder.
 from transformer.Encoder import Encoder
 
@@ -27,12 +29,17 @@ class NMT(nn.Module):
 
 		super(NMT, self).__init__()
 
-		self.enc = Encoder(isize, snwd, num_layer, fhsize, dropout, attn_drop, num_head, xseql, ahsize, norm_output)
+		if isinstance(num_layer, Integral):
+			enc_layer = dec_layer = num_layer
+		else:
+			enc_layer, dec_layer = num_layer
+
+		self.enc = Encoder(isize, snwd, enc_layer, fhsize, dropout, attn_drop, num_head, xseql, ahsize, norm_output)
 
 		emb_w = self.enc.wemb.weight if global_emb else None
 
-		self.dec = Decoder(isize, tnwd, num_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
-		#self.dec = Decoder(isize, tnwd, num_layer + 2, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
+		self.dec = Decoder(isize, tnwd, dec_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
+		#self.dec = Decoder(isize, tnwd, dec_layer, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)# for RNMT
 
 	# inpute: source sentences from encoder (bsize, seql)
 	# inputo: decoded translation (bsize, nquery)
@@ -44,6 +51,17 @@ class NMT(nn.Module):
 		_mask = inpute.eq(0).unsqueeze(1) if mask is None else mask
 
 		return self.dec(self.enc(inpute, _mask), inputo, _mask)
+
+	def load_base(self, base_nmt):
+
+		if "load_base" in dir(self.enc):
+			self.enc.load_base(base_nmt.enc)
+		else:
+			self.enc = base_nmt.enc
+		if "load_base" in dir(self.dec):
+			self.dec.load_base(base_nmt.dec)
+		else:
+			self.dec = base_nmt.dec
 
 	# inpute: source sentences from encoder (bsize, seql)
 	# beam_size: the beam size for beam search
