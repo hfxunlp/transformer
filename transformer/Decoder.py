@@ -4,9 +4,11 @@ import torch
 from torch import nn
 from modules.base import *
 from utils.base import repeat_bsize_for_beam_tensor, mask_tensor_type
-from math import sqrt, inf
+from math import sqrt
 
 from utils.fmt.base import pad_id
+
+from cnfg.ihyp import *
 
 class DecoderLayer(nn.Module):
 
@@ -15,26 +17,27 @@ class DecoderLayer(nn.Module):
 	# attn_drop: dropout for MultiHeadAttention
 	# num_head: number of heads in MultiHeadAttention
 	# ahsize: hidden size of MultiHeadAttention
-	# norm_residue: residue with layer normalized representation
+	# norm_residual: residue with layer normalized representation
+	# k_rel_pos: window size (one side) of relative positional embeddings in self attention
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residue=True):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_decoder):
 
 		super(DecoderLayer, self).__init__()
 
 		_ahsize = isize if ahsize is None else ahsize
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
+		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop, k_rel_pos=k_rel_pos)
 		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
 
-		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residue)
+		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residual)
 
-		self.layer_normer1 = nn.LayerNorm(isize, eps=1e-06)
-		self.layer_normer2 = nn.LayerNorm(isize, eps=1e-06)
+		self.layer_normer1 = nn.LayerNorm(isize, eps=ieps_ln_default)
+		self.layer_normer2 = nn.LayerNorm(isize, eps=ieps_ln_default)
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
-		self.norm_residue = norm_residue
+		self.norm_residual = norm_residual
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: embedding of decoded translation (bsize, nquery, isize)
@@ -55,7 +58,7 @@ class DecoderLayer(nn.Module):
 			if self.drop is not None:
 				context = self.drop(context)
 
-			context = context + (_inputo if self.norm_residue else inputo)
+			context = context + (_inputo if self.norm_residual else inputo)
 
 		else:
 			_query_unit = self.layer_normer1(query_unit)
@@ -69,7 +72,7 @@ class DecoderLayer(nn.Module):
 			if self.drop is not None:
 				context = self.drop(context)
 
-			context = context + (_query_unit if self.norm_residue else query_unit)
+			context = context + (_query_unit if self.norm_residual else query_unit)
 
 		_context = self.layer_normer2(context)
 		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
@@ -77,7 +80,7 @@ class DecoderLayer(nn.Module):
 		if self.drop is not None:
 			_context_new = self.drop(_context_new)
 
-		context = _context_new + (_context if self.norm_residue else context)
+		context = _context_new + (_context if self.norm_residual else context)
 
 		context = self.ff(context)
 
@@ -99,8 +102,9 @@ class Decoder(nn.Module):
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
 	# share_layer: using one shared decoder layer
+	# disable_pemb: disable the standard positional embedding, can be enabled when use relative postional embeddings in self attention or AAN
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False, disable_pemb=disable_std_pemb_decoder):
 
 		super(Decoder, self).__init__()
 
@@ -116,7 +120,7 @@ class Decoder(nn.Module):
 		if emb_w is not None:
 			self.wemb.weight = emb_w
 
-		self.pemb = PositionalEmb(isize, xseql, 0, 0)
+		self.pemb = None if disable_pemb else PositionalEmb(isize, xseql, 0, 0)
 		if share_layer:
 			_shared_layer = DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
 			self.nets = nn.ModuleList([_shared_layer for i in range(num_layer)])
@@ -130,7 +134,7 @@ class Decoder(nn.Module):
 
 		self.lsm = nn.LogSoftmax(-1)
 
-		self.out_normer = nn.LayerNorm(isize, eps=1e-06) if norm_output else None
+		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default) if norm_output else None
 
 		self.fbl = None if forbidden_index is None else tuple(set(forbidden_index))
 
@@ -145,7 +149,9 @@ class Decoder(nn.Module):
 
 		out = self.wemb(inputo)
 
-		out = out * sqrt(out.size(-1)) + self.pemb(inputo, expand=False)
+		out = out * sqrt(out.size(-1))
+		if self.pemb is not None:
+			out = out + self.pemb(inputo, expand=False)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -213,7 +219,9 @@ class Decoder(nn.Module):
 
 		# out: input to the decoder for the first step (bsize, 1, isize)
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
+		out = sos_emb * sqrt_isize
+		if self.pemb is not None:
+			 out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -243,7 +251,9 @@ class Decoder(nn.Module):
 
 		for i in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i)
+			out = self.wemb(wds) * sqrt_isize
+			if self.pemb is not None:
+				out = out + self.pemb.get_pos(i)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -290,7 +300,9 @@ class Decoder(nn.Module):
 			lpv = sos_emb.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
+		out = sos_emb * sqrt_isize
+		if self.pemb is not None:
+			 out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -337,7 +349,9 @@ class Decoder(nn.Module):
 
 		for step in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step)
+			out = self.wemb(wds) * sqrt_isize
+			if self.pemb is not None:
+				out = out + self.pemb.get_pos(step)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -453,7 +467,7 @@ class Decoder(nn.Module):
 
 		if self.fbl is not None:
 			with torch.no_grad():
-				self.classifier.bias.index_fill_(0, torch.tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf)
+				self.classifier.bias.index_fill_(0, torch.tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf_default)
 
 	def unbind_classifier_weight(self):
 
@@ -489,7 +503,9 @@ class Decoder(nn.Module):
 
 		# out: input to the decoder for the first step (bsize, 1, isize)
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
+		out = sos_emb * sqrt_isize
+		if self.pemb is not None:
+			 out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -518,7 +534,9 @@ class Decoder(nn.Module):
 
 		for i in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i)
+			out = self.wemb(wds) * sqrt_isize
+			if self.pemb is not None:
+				out = out + self.pemb.get_pos(i)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -590,7 +608,9 @@ class Decoder(nn.Module):
 			lpv = sos_emb.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
+		out = sos_emb * sqrt_isize
+		if self.pemb is not None:
+			 out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -642,7 +662,9 @@ class Decoder(nn.Module):
 
 		for step in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step)
+			out = self.wemb(wds) * sqrt_isize
+			if self.pemb is not None:
+				out = out + self.pemb.get_pos(step)
 
 			if self.drop is not None:
 				out = self.drop(out)

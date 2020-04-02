@@ -36,7 +36,7 @@ def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 
 def batch_mapper(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize):
 
-	global has_unk
+	global use_unk
 
 	for i_d, td, mlen_i, mlen_t in batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 		rsi, extok_i = map_batch(i_d, vocabi)

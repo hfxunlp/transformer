@@ -10,6 +10,8 @@ from math import sqrt
 from transformer.Decoder import DecoderLayer as DecoderLayerBase
 from transformer.Decoder import Decoder as DecoderBase
 
+from cnfg.ihyp import *
+
 class DecoderLayer(DecoderLayerBase):
 
 	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, ncross=2):
@@ -19,7 +21,7 @@ class DecoderLayer(DecoderLayerBase):
 		super(DecoderLayer, self).__init__(isize, fhsize, dropout, attn_drop, num_head, _ahsize)
 
 		self.cattns = nn.ModuleList([CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop) for i in range(ncross)])
-		self.cattn_ln = nn.ModuleList([nn.LayerNorm(isize, eps=1e-06) for i in range(ncross)])
+		self.cattn_ln = nn.ModuleList([nn.LayerNorm(isize, eps=ieps_ln_default) for i in range(ncross)])
 		self.grs = nn.ModuleList([GateResidual(isize) for i in range(ncross)])
 
 	def forward(self, inpute, inputo, inputc, src_pad_mask=None, tgt_pad_mask=None, context_mask=None, query_unit=None):
@@ -34,7 +36,7 @@ class DecoderLayer(DecoderLayerBase):
 			if self.drop is not None:
 				context = self.drop(context)
 
-			context = context + (_inputo if self.norm_residue else inputo)
+			context = context + (_inputo if self.norm_residual else inputo)
 
 		else:
 			_query_unit = self.layer_normer1(query_unit)
@@ -48,7 +50,7 @@ class DecoderLayer(DecoderLayerBase):
 			if self.drop is not None:
 				context = self.drop(context)
 
-			context = context + (_query_unit if self.norm_residue else query_unit)
+			context = context + (_query_unit if self.norm_residual else query_unit)
 
 		_context = self.layer_normer2(context)
 		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
@@ -56,14 +58,14 @@ class DecoderLayer(DecoderLayerBase):
 		if self.drop is not None:
 			_context_new = self.drop(_context_new)
 
-		context = _context_new + (_context if self.norm_residue else context)
+		context = _context_new + (_context if self.norm_residual else context)
 
 		for _ln, _cattn, _gr, _inputc, _maskc in zip(self.cattn_ln, self.cattns, self.grs, inputc, [None for i in range(len(inputc))] if context_mask is None else context_mask):
 			_inputs = _ln(context)
 			_context = _cattn(_inputs, _inputc, mask=_maskc)
 			if self.drop is not None:
 				_context = self.drop(_context)
-			context = _gr(_context, (_inputs if self.norm_residue else context))
+			context = _gr(_context, (_inputs if self.norm_residual else context))
 
 		context = self.ff(context)
 
@@ -83,7 +85,7 @@ class DecoderLayer(DecoderLayerBase):
 
 class Decoder(DecoderBase):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, nprev_context=2):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, nprev_context=2):
 
 		_ahsize = isize if ahsize is None else ahsize
 
@@ -100,7 +102,9 @@ class Decoder(DecoderBase):
 
 		out = self.wemb(_inputo)
 		isize = out.size(-1)
-		out = out * sqrt(isize) + self.pemb(_inputo, expand=False)
+		out = out * sqrt(isize)
+		if self.pemb is not None:
+			out = out + self.pemb(_inputo, expand=False)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -147,7 +151,9 @@ class Decoder(DecoderBase):
 
 		sqrt_isize = sqrt(sos_emb.size(-1))
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
+		out = sos_emb * sqrt_isize
+		if self.pemb is not None:
+			 out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -171,7 +177,9 @@ class Decoder(DecoderBase):
 
 		for i in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i)
+			out = self.wemb(wds) * sqrt_isize
+			if self.pemb is not None:
+				out = out + self.pemb.get_pos(i)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -210,7 +218,9 @@ class Decoder(DecoderBase):
 			lpv = sos_emb.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
+		out = sos_emb * sqrt_isize
+		if self.pemb is not None:
+			 out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -248,7 +258,9 @@ class Decoder(DecoderBase):
 
 		for step in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step)
+			out = self.wemb(wds) * sqrt_isize
+			if self.pemb is not None:
+				out = out + self.pemb.get_pos(step)
 
 			if self.drop is not None:
 				out = self.drop(out)

@@ -14,6 +14,8 @@ from transformer.Encoder import Encoder as EncoderBase
 #	...
 # for the classier of the decoder, <sos> is omitted
 
+from cnfg.ihyp import *
+
 class EncoderLayer(nn.Module):
 
 	# isize: input size
@@ -59,7 +61,7 @@ class Encoder(EncoderBase):
 	# xseql: maxmimum length of sequence
 	# ahsize: number of hidden units for MultiHeadAttention
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=512, ahsize=None, norm_output=False, num_sub=1):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=False, num_sub=1):
 
 		_ahsize = isize if ahsize is None else ahsize
 

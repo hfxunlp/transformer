@@ -36,7 +36,9 @@ class Decoder(nn.Module):
 
 			out = model.wemb(inputo)
 
-			out = out * sqrt(out.size(-1)) + model.pemb(inputo, expand=False)
+			out = out * sqrt(out.size(-1))
+			if model.pemb is not None:
+				out = out + model.pemb(inputo, expand=False)
 
 			if model.drop is not None:
 				out = model.drop(out)
@@ -80,7 +82,9 @@ class Decoder(nn.Module):
 
 			# out: input to the decoder for the first step (bsize, 1, isize)
 
-			out = sos_emb * sqrt_isize + model.pemb.get_pos(0)
+			out = sos_emb * sqrt_isize
+			if model.pemb is not None:
+				out = out + model.pemb.get_pos(0)
 
 			if model.drop is not None:
 				out = model.drop(out)
@@ -116,7 +120,9 @@ class Decoder(nn.Module):
 
 			for model, inputu in zip(self.nets, inpute):
 
-				out = model.wemb(wds) * sqrt_isize + model.pemb.get_pos(i)
+				out = model.wemb(wds) * sqrt_isize
+				if model.pemb is not None:
+					out = out + model.pemb.get_pos(i)
 
 				if model.drop is not None:
 					out = model.drop(out)
@@ -224,7 +230,9 @@ class Decoder(nn.Module):
 
 			for _inum, (model, inputu) in enumerate(zip(self.nets, inpute)):
 
-				out = model.wemb(wds) * sqrt_isize + model.pemb.get_pos(step)
+				out = model.wemb(wds) * sqrt_isize
+				if model.pemb is not None:
+					out = out + model.pemb.get_pos(step)
 
 				if model.drop is not None:
 					out = model.drop(out)

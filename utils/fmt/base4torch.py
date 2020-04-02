@@ -4,6 +4,7 @@ import torch
 
 from math import sqrt
 from utils.fmt.base import list_reader
+from utils.h5serial import h5save, h5load
 
 def parse_cuda(use_cuda_arg, gpuid):
 
@@ -66,7 +67,7 @@ def load_emb_txt(vcb, embf):
 
 def load_emb(embf, embt, nword, scale_down_emb, freeze_emb):
 
-	_emb = torch.load(embf, map_location='cpu')
+	_emb = h5load(embf)
 	if nword < _emb.size(0):
 		_emb = _emb.narrow(0, 0, nword).contiguous()
 	if scale_down_emb:

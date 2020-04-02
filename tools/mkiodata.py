@@ -8,7 +8,9 @@ import h5py
 from utils.fmt.base import ldvocab
 from utils.fmt.dual import batch_padder
 
-def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulgpu=True, bsize=768, maxpad=16, maxpart=4, maxtoken=4352, minfreq=False, vsize=False):
+from cnfg.ihyp import *
+
+def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulgpu=True, bsize=max_sentences_gpu, maxpad=max_pad_tokens_sentence, maxpart=normal_tokens_vs_pad_tokens, maxtoken=max_tokens_gpu, minfreq=False, vsize=False):
 	vcbi, nwordi = ldvocab(fvocab_i, minfreq, vsize)
 	vcbt, nwordt = ldvocab(fvocab_t, minfreq, vsize)
 	if expand_for_mulgpu:
@@ -26,8 +28,8 @@ def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulg
 		rtd = numpy.array(td, dtype = numpy.int32)
 		#rld = numpy.array(ld, dtype = numpy.int32)
 		wid = str(curd)
-		src_grp[wid] = rid
-		tgt_grp[wid] = rtd
+		src_grp.create_dataset(wid, data=rid, **h5datawargs)
+		tgt_grp.create_dataset(wid, data=rtd, **h5datawargs)
 		#rsf["l" + wid] = rld
 		curd += 1
 	rsf["ndata"] = numpy.array([curd], dtype = numpy.int32)

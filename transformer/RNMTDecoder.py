@@ -8,6 +8,8 @@ from torch import nn
 from modules.base import *
 from modules.rnncells import *
 
+from cnfg.ihyp import *
+
 class FirstLayer(nn.Module):
 
 	# isize: input size
@@ -100,7 +102,7 @@ class Decoder(nn.Module):
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
 
-	def __init__(self, isize, nwd, num_layer, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None, projector=False):
+	def __init__(self, isize, nwd, num_layer, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None, projector=False):
 
 		super(Decoder, self).__init__()
 
@@ -129,7 +131,7 @@ class Decoder(nn.Module):
 
 		self.lsm = nn.LogSoftmax(-1)
 
-		self.out_normer = nn.LayerNorm(isize, eps=1e-06) if norm_output else None
+		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default) if norm_output else None
 
 		self.fbl = None if forbidden_index is None else tuple(set(forbidden_index))
 

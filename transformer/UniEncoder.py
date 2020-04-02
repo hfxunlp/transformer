@@ -12,6 +12,8 @@ from transformer.Encoder import EncoderLayer
 #	...
 # for the classier of the decoder, <sos> is omitted
 
+from cnfg.ihyp import *
+
 class Encoder(nn.Module):
 
 	# isize: size of word embedding
@@ -23,7 +25,7 @@ class Encoder(nn.Module):
 	# xseql: maxmimum length of sequence
 	# ahsize: number of hidden units for MultiHeadAttention
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=512, ahsize=None, norm_output=True):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True):
 
 		super(Encoder, self).__init__()
 
@@ -40,7 +42,7 @@ class Encoder(nn.Module):
 		self.net = EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
 		self.halter = nn.Sequential(Scorer(isize), nn.Sigmoid())
 
-		self.out_normer = nn.LayerNorm(isize, eps=1e-06) if norm_output else None
+		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default) if norm_output else None
 
 		self.act_loss = ACT_Loss()
 

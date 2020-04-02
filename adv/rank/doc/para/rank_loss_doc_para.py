@@ -13,13 +13,14 @@ from tqdm import tqdm
 import h5py
 
 import cnfg.docpara as cnfg
+from cnfg.ihyp import *
 
 from transformer.Doc.Para.Base.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 from parallel.base import DataParallelCriterion
 
-from loss import LabelSmoothingLoss
+from loss.base import LabelSmoothingLoss
 
 from utils.base import *
 from utils.fmt.base4torch import parse_cuda
@@ -38,7 +39,7 @@ nwordi, nwordt = nword[0], nword[-1]
 cuda_device = torch.device(cnfg.gpuid)
 
 if len(sys.argv) == 4:
-	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
+	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
 
 	mymodel = load_model_cpu(sys.argv[3], mymodel)
 	mymodel.apply(load_fixing)
@@ -46,7 +47,7 @@ if len(sys.argv) == 4:
 else:
 	models = []
 	for modelf in sys.argv[3:]:
-		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
+		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
 
 		tmp = load_model_cpu(modelf, tmp)
 		tmp.apply(load_fixing)
@@ -59,9 +60,8 @@ mymodel.eval()
 lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=0, reduction='none', forbidden_index=cnfg.forbidden_indexes)
 
 use_cuda, cuda_device, cuda_devices, multi_gpu = parse_cuda(cnfg.use_cuda, cnfg.gpuid)
-# disable multi_gpu, not supported
-multi_gpu, cuda_devices = False, None
 
+# Important to make cudnn methods deterministic
 set_random_seed(cnfg.seed, use_cuda)
 
 if use_cuda:

@@ -7,17 +7,17 @@ import torch
 from torch import optim
 
 from parallel.base import DataParallelCriterion
-from parallel.parallelMT import DataParallelMT
+from parallel.parallelMTFP import DataParallelMT
 
 from utils.base import *
+from utils.h5serial import h5save, h5load
 from utils.fmt.base import tostr, save_states, load_states
 from utils.fmt.base4torch import parse_cuda, load_emb
 
 from lrsch import GoogleLR
-from loss import LabelSmoothingLoss
+from loss.base import LabelSmoothingLoss
 
 from random import shuffle
-from math import inf
 
 from tqdm import tqdm
 
@@ -27,6 +27,7 @@ from os.path import exists as p_check
 import h5py
 
 import cnfg.docpara as cnfg
+from cnfg.ihyp import *
 
 from transformer.Doc.Para.Base.NMT import NMT
 from transformer.NMT import NMT as BaseNMT
@@ -91,7 +92,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			if _cur_rstep is not None:
 				if save_checkp_epoch and (save_every is not None) and (_cur_rstep % save_every == 0) and (chkpf is not None) and (_cur_rstep > 0):
 					if num_checkpoint > 1:
-						_fend = "_%d.t7" % (_cur_checkid)
+						_fend = "_%d.h5" % (_cur_checkid)
 						_chkpf = chkpf[:-3] + _fend
 						if chkpof is not None:
 							_chkpof = chkpof[:-3] + _fend
@@ -101,7 +102,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 						_chkpof = chkpof
 					save_model(model, _chkpf, multi_gpu, logger)
 					if chkpof is not None:
-						torch.save(optm.state_dict(), _chkpof)
+						h5save(optm.state_dict(), _chkpof)
 					if statesf is not None:
 						save_states(statesf, tl[cur_b - 1:])
 				_cur_rstep -= 1
@@ -125,7 +126,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 
 		if save_checkp_epoch and (_cur_rstep is None) and (save_every is not None) and (cur_b % save_every == 0) and (chkpf is not None) and (cur_b < ndata):
 			if num_checkpoint > 1:
-				_fend = "_%d.t7" % (_cur_checkid)
+				_fend = "_%d.h5" % (_cur_checkid)
 				_chkpf = chkpf[:-3] + _fend
 				if chkpof is not None:
 					_chkpof = chkpof[:-3] + _fend
@@ -135,7 +136,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				_chkpof = chkpof
 			save_model(model, _chkpf, multi_gpu, logger)
 			if chkpof is not None:
-				torch.save(optm.state_dict(), _chkpof)
+				h5save(optm.state_dict(), _chkpof)
 			if statesf is not None:
 				save_states(statesf, tl[cur_b - 1:])
 		cur_b += 1
@@ -168,9 +169,9 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu):
 			loss = lossf(output, ot)
 			if multi_gpu:
 				loss = loss.sum()
-				trans = torch.cat([torch.argmax(outu, -1).to(mv_device) for outu in output], 0)
+				trans = torch.cat([outu.argmax(-1).to(mv_device) for outu in output], 0)
 			else:
-				trans = torch.argmax(output, -1)
+				trans = output.argmax(-1)
 			sum_loss += loss.data.item()
 			data_mask = ot.ne(0)
 			correct = (trans.eq(ot) & data_mask).int()
@@ -219,9 +220,9 @@ chkpf = None
 chkpof = None
 statesf = None
 if save_every is not None:
-	chkpf = wkdir + "checkpoint.t7"
+	chkpf = wkdir + "checkpoint.h5"
 	if save_optm_state:
-		chkpof = wkdir + "checkpoint.optm.t7"
+		chkpof = wkdir + "checkpoint.optm.h5"
 	if cnfg.save_train_state:
 		statesf = wkdir + "checkpoint.states"
 
@@ -248,7 +249,7 @@ nword = td["nword"][:].tolist()
 nwordi, nwordt = nword[0], nword[-1]
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
-mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
+mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
 
 fine_tune_m = cnfg.fine_tune_m
 
@@ -257,10 +258,9 @@ ntrain = len(tl)
 vl = [(str(nsent), str(_curd),) for nsent, ndata in zip(vd["nsent"][:].tolist(), vd["ndata"][:].tolist()) for _curd in range(ndata)]
 
 mymodel = init_model_params(mymodel)
-mymodel.apply(init_fixing)
 if fine_tune_m is not None:
 	logger.info("Load pre-trained model from: " + fine_tune_m)
-	_tmpm = BaseNMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
+	_tmpm = BaseNMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 	_tmpm = load_model_cpu(fine_tune_m, _tmpm)
 	#with torch.no_grad():
 		#_tmpm.dec.classifier.bias[_tmpm.dec.classifier.bias.lt(-1e3)] = -1e3
@@ -270,6 +270,7 @@ if fine_tune_m is not None:
 			_tmpm.dec.classifier.bias.requires_grad_(True)
 	mymodel.load_base(_tmpm)
 	_tmpm = None
+mymodel.apply(init_fixing)
 
 lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=0, reduction='sum', forbidden_index=cnfg.forbidden_indexes)
 if cnfg.src_emb is not None:
@@ -283,7 +284,7 @@ if use_cuda:
 	mymodel.to(cuda_device)
 	lossf.to(cuda_device)
 
-optimizer = optim.Adam(filter_para_grad(mymodel.parameters()), lr=1e-4, betas=(0.9, 0.98), eps=1e-9, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
+optimizer = optim.Adam(filter_para_grad(mymodel.parameters()), lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
 optimizer.zero_grad()
 
 if use_amp:
@@ -296,20 +297,20 @@ if multi_gpu:
 fine_tune_state = cnfg.fine_tune_state
 if fine_tune_state is not None:
 	logger.info("Load optimizer state from: " + fine_tune_state)
-	optimizer.load_state_dict(torch.load(fine_tune_state))
+	optimizer.load_state_dict(h5load(fine_tune_state))
 
 lrsch = GoogleLR(optimizer, cnfg.isize, cnfg.warm_step, scale=cnfg.lr_scale)
 
 num_checkpoint = cnfg.num_checkpoint
 cur_checkid = 0
 
-tminerr = inf
+tminerr = inf_default
 
 minloss, minerr = eva(vd, vl, mymodel, lossf, cuda_device, multi_gpu)
 logger.info("".join(("Init lr: ", ",".join(tostr(getlr(optimizer))), ", Dev Loss/Error: %.3f %.2f" % (minloss, minerr))))
 
 if fine_tune_m is None:
-	save_model(mymodel, wkdir + "init.t7", multi_gpu, logger)
+	save_model(mymodel, wkdir + "init.h5", multi_gpu, logger)
 	logger.info("Initial model saved")
 else:
 	cnt_states = cnfg.train_statesf
@@ -318,9 +319,9 @@ else:
 		tminerr, done_tokens, cur_checkid, remain_steps, _ = train(td, load_states(cnt_states), vd, vl, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, False, False, use_amp)
 		vloss, vprec = eva(vd, vl, mymodel, lossf, cuda_device, multi_gpu)
 		logger.info("Epoch: 0, train loss: %.3f, valid loss/error: %.3f %.2f" % (tminerr, vloss, vprec))
-		save_model(mymodel, wkdir + "train_0_%.3f_%.3f_%.2f.t7" % (tminerr, vloss, vprec), multi_gpu, logger)
+		save_model(mymodel, wkdir + "train_0_%.3f_%.3f_%.2f.h5" % (tminerr, vloss, vprec), multi_gpu, logger)
 		if save_optm_state:
-			torch.save(optimizer.state_dict(), wkdir + "train_0_%.3f_%.3f_%.2f.optm.t7" % (tminerr, vloss, vprec))
+			h5save(optimizer.state_dict(), wkdir + "train_0_%.3f_%.3f_%.2f.optm.h5" % (tminerr, vloss, vprec))
 		logger.info("New best model saved")
 
 if cnfg.dss_ws is not None and cnfg.dss_ws > 0.0 and cnfg.dss_ws < 1.0:
@@ -347,9 +348,9 @@ for i in range(1, maxrun + 1):
 	logger.info("Epoch: %d, train loss: %.3f, valid loss/error: %.3f %.2f" % (i, terr, vloss, vprec))
 
 	if (vprec <= minerr) or (vloss <= minloss):
-		save_model(mymodel, wkdir + "eva_%d_%.3f_%.3f_%.2f.t7" % (i, terr, vloss, vprec), multi_gpu, logger)
+		save_model(mymodel, wkdir + "eva_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, logger)
 		if save_optm_state:
-			torch.save(optimizer.state_dict(), wkdir + "eva_%d_%.3f_%.3f_%.2f.optm.t7" % (i, terr, vloss, vprec))
+			h5save(optimizer.state_dict(), wkdir + "eva_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec))
 		logger.info("New best model saved")
 
 		namin = 0
@@ -362,11 +363,11 @@ for i in range(1, maxrun + 1):
 	else:
 		if terr < tminerr:
 			tminerr = terr
-			save_model(mymodel, wkdir + "train_%d_%.3f_%.3f_%.2f.t7" % (i, terr, vloss, vprec), multi_gpu, logger)
+			save_model(mymodel, wkdir + "train_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, logger)
 			if save_optm_state:
-				torch.save(optimizer.state_dict(), wkdir + "train_%d_%.3f_%.3f_%.2f.optm.t7" % (i, terr, vloss, vprec))
+				h5save(optimizer.state_dict(), wkdir + "train_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec))
 		elif epoch_save:
-			save_model(mymodel, wkdir + "epoch_%d_%.3f_%.3f_%.2f.t7" % (i, terr, vloss, vprec), multi_gpu, logger)
+			save_model(mymodel, wkdir + "epoch_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, logger)
 
 		namin += 1
 		if namin >= earlystop:
@@ -397,9 +398,9 @@ if done_tokens > 0:
 		mymodel.collect_gradients()
 	optimizer.step()
 
-save_model(mymodel, wkdir + "last.t7", multi_gpu, logger)
+save_model(mymodel, wkdir + "last.h5", multi_gpu, logger)
 if save_optm_state:
-	torch.save(optimizer.state_dict(), wkdir + "last.optm.t7")
+	h5save(optimizer.state_dict(), wkdir + "last.optm.h5")
 logger.info("model saved")
 
 td.close()

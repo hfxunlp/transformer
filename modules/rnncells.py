@@ -5,6 +5,8 @@ from torch import nn
 from modules.base import *
 from modules.act import GeLU
 
+from cnfg.ihyp import *
+
 def prepare_initState(hx, cx, bsize):
 
 	return hx.expand(bsize, -1), cx.expand(bsize, -1)
@@ -16,7 +18,7 @@ class LSTMCell4RNMT(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, osize, use_GeLU=False):
+	def __init__(self, isize, osize, use_GeLU=use_adv_act_default):
 
 		super(LSTMCell4RNMT, self).__init__()
 
@@ -47,7 +49,7 @@ class GRUCell4RNMT(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, osize, use_GeLU=False):
+	def __init__(self, isize, osize, use_GeLU=use_adv_act_default):
 
 		super(GRUCell4RNMT, self).__init__()
 

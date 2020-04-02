@@ -1,6 +1,6 @@
 #encoding: utf-8
 
-from math import sqrt, log, exp, pi, inf
+from math import sqrt, log, exp, pi
 import torch
 from torch import nn
 from torch.nn import functional as nnFunc
@@ -8,6 +8,8 @@ from torch.autograd import Function
 
 from utils.base import reduce_model_list
 from modules.act import GeLU_GPT, GeLU_BERT, GeLU, Swish
+
+from cnfg.ihyp import *
 
 Linear = nn.Linear
 Dropout = nn.Dropout
@@ -17,17 +19,17 @@ class PositionwiseFF(nn.Module):
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residue=False, use_GeLU=False, enable_bias=False):
+	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, use_GeLU=use_adv_act_default, enable_bias=enable_residual_bias_default):
 
 		super(PositionwiseFF, self).__init__()
 
 		_hsize = isize * 4 if hsize is None else hsize
 
-		self.net = nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_bias))
+		self.net = nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_bias))
 
-		self.normer = nn.LayerNorm(isize, eps=1e-06)
+		self.normer = nn.LayerNorm(isize, eps=ieps_ln_default)
 
-		self.norm_residue = norm_residue
+		self.norm_residual = norm_residual
 
 	def forward(self, x):
 
@@ -35,7 +37,7 @@ class PositionwiseFF(nn.Module):
 
 		out = self.net(_out)
 
-		out = out + (_out if self.norm_residue else x)
+		out = out + (_out if self.norm_residual else x)
 
 		return out
 
@@ -101,7 +103,7 @@ class PositionalEmb(nn.Module):
 
 	def get_pos(self, step):
 
-		return self.w[step] if step < self.num_pos else self.get_ext(step, True).squeeze(0)
+		return self.w[step] if step <= self.num_pos else self.get_ext(step, True).squeeze(0)
 
 class MultiHeadAttn(nn.Module):
 
@@ -113,7 +115,7 @@ class MultiHeadAttn(nn.Module):
 	# sparsenorm: using sparse normer or standard softmax
 	# bind_qk: query and key can share a same linear transformation for the Reformer: The Efficient Transformer(https://arxiv.org/abs/2001.04451) paper.
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=False, sparsenorm=False, bind_qk=False):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=enable_residual_bias_default, k_rel_pos=0, sparsenorm=False, bind_qk=False, xseql=cache_len_default):
 
 		super(MultiHeadAttn, self).__init__()
 
@@ -132,6 +134,17 @@ class MultiHeadAttn(nn.Module):
 		self.normer = SparseNormer(dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 
 		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
+
+		if k_rel_pos > 0:
+			self.k_rel_pos = k_rel_pos
+			self.rel_pemb = nn.Embedding(k_rel_pos * 2 + 1, self.attn_dim)
+			_rpm = torch.arange(-xseql + 1, 1).unsqueeze(0)
+			self.register_buffer("rel_pos", (_rpm - _rpm.t()).clamp(min=-k_rel_pos, max=k_rel_pos) + k_rel_pos)
+			self.xseql = xseql
+			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
+			self.ref_rel_posm = None
+		else:
+			self.rel_pemb = None
 
 	# iQ: query (bsize, num_query, vsize)
 	# iK: keys (bsize, seql, vsize)
@@ -153,10 +166,16 @@ class MultiHeadAttn(nn.Module):
 
 		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, adim, seql) => (bsize, nheads, nquery, seql)
 
-		scores = real_iQ.matmul(real_iK) / sqrt(adim)
+		scores = real_iQ.matmul(real_iK)
+
+		if self.rel_pemb is not None:
+			self.rel_pos_cache = self.get_rel_pos(seql).narrow(0, seql - nquery, nquery).contiguous() if self.ref_rel_posm is None else self.ref_rel_posm.rel_pos_cache
+			scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.get_rel_pos(seql).narrow(0, seql - nquery, nquery)).transpose(1, 2)).view(nquery, bsize, nheads, seql).permute(1, 2, 0, 3)
+
+		scores = scores / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(mask.unsqueeze(1), -inf)
+			scores.masked_fill_(mask.unsqueeze(1), -inf_default)
 
 		scores = self.normer(scores)
 
@@ -171,6 +190,14 @@ class MultiHeadAttn(nn.Module):
 
 		return self.outer(oMA.view(bsize, nquery, self.hsize))
 
+	def get_rel_pos(self, length):
+
+		if length <= self.xseql:
+			return self.rel_pos.narrow(0, 0, length).narrow(1, 0, length)
+		else:
+			_rpm = torch.arange(-length + 1, 1, dtype=self.rel_pos.dtype, device=self.rel_pos.device).unsqueeze(0)
+			return ((_rpm - _rpm.t()).clamp(min=-self.k_rel_pos, max=self.k_rel_pos) + self.k_rel_pos)
+
 # Average Attention is proposed in Accelerating Neural Transformer via an Average Attention Network(https://arxiv.org/abs/1805.00631)
 class AverageAttn(nn.Module):
 
@@ -179,7 +206,7 @@ class AverageAttn(nn.Module):
 	# dropout: dropout rate for Feed-forward NN
 	# num_pos: maximum length of sentence cached, extended length will be generated while needed and droped immediately after that
 
-	def __init__(self, isize, hsize=None, dropout=0.0, num_pos=512, use_GeLU=False):
+	def __init__(self, isize, hsize=None, dropout=0.0, num_pos=512, use_GeLU=use_adv_act_default):
 
 		super(AverageAttn, self).__init__()
 
@@ -206,20 +233,14 @@ class AverageAttn(nn.Module):
 			bsize, seql = iV.size()[:2]
 
 			# attn: (seql, seql)
-			if seql > self.num_pos:
-				attn = self.get_ext(seql)
-			else:
-				attn = self.w.narrow(0, 0, seql).narrow(1, 0, seql)
+			attn = self.get_ext(seql) if seql > self.num_pos else self.w.narrow(0, 0, seql).narrow(1, 0, seql)
 
 			# avg: (bsize, seql, vsize)
 			avg = attn.unsqueeze(0).expand(bsize, seql, seql).matmul(iV)
 
 		avg = self.ffn(avg)
 
-		ifg = self.gw(torch.cat((iQ, avg), -1)).sigmoid()
-		isize = avg.size(-1)
-		igate = ifg.narrow(-1, 0, isize)
-		fgate = ifg.narrow(-1, isize, isize)
+		igate, fgate = self.gw(torch.cat((iQ, avg), -1)).sigmoid().chunk(2, -1)
 
 		return igate * iQ + fgate * avg
 
@@ -229,14 +250,12 @@ class AverageAttn(nn.Module):
 
 	def get_ext(self, npos):
 
-		_tmp = (1.0 / torch.arange(1, npos + 1, dtype=self.w.dtype, device=self.w.device)).unsqueeze(1).repeat(1, npos)
-
-		return _tmp.tril(0)
+		return (1.0 / torch.arange(1, npos + 1, dtype=self.w.dtype, device=self.w.device)).unsqueeze(1).expand(-1, npos).tril(0.0)
 
 # Accelerated MultiHeadAttn for self attention, use when Q == K == V
 class SelfAttn(nn.Module):
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=False, sparsenorm=False):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=enable_residual_bias_default, k_rel_pos=use_k_relative_position, sparsenorm=False, xseql=cache_len_default):
 
 		super(SelfAttn, self).__init__()
 
@@ -252,6 +271,18 @@ class SelfAttn(nn.Module):
 		self.normer = SparseNormer(dim=-1) if sparsenorm else nn.Softmax(dim=-1)
 
 		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
+
+		if k_rel_pos > 0:
+			self.k_rel_pos = k_rel_pos
+			self.rel_pemb = nn.Embedding(k_rel_pos * 2 + 1, self.attn_dim)
+			_rpm = torch.arange(-xseql + 1, 1).unsqueeze(0)
+			self.register_buffer("rel_pos", (_rpm - _rpm.t()).clamp(min=-k_rel_pos, max=k_rel_pos) + k_rel_pos)
+			self.xseql = xseql
+			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
+			self.ref_rel_posm = None
+			self.register_buffer("rel_pos_cache", None)
+		else:
+			self.rel_pemb = None
 
 	def forward(self, iQ, mask=None, iK=None):
 
@@ -274,10 +305,20 @@ class SelfAttn(nn.Module):
 
 			real_iQ, real_iK, real_iV = real_iQ.transpose(1, 2), real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
 
-		scores = real_iQ.matmul(real_iK) / sqrt(adim)
+		scores = real_iQ.matmul(real_iK)
+
+		if self.rel_pemb is not None:
+			if iK is None:
+				self.rel_pos_cache = self.get_rel_pos(nquery).contiguous() if self.ref_rel_posm is None else self.ref_rel_posm.rel_pos_cache
+				scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.rel_pos_cache).transpose(1, 2)).view(nquery, bsize, nheads, nquery).permute(1, 2, 0, 3)
+			else:
+				self.rel_pos_cache = self.get_rel_pos(seql).narrow(0, seql - nquery, nquery).contiguous() if self.ref_rel_posm is None else self.ref_rel_posm.rel_pos_cache
+				scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.rel_pos_cache).transpose(1, 2)).view(nquery, bsize, nheads, seql).permute(1, 2, 0, 3)
+
+		scores = scores / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(mask.unsqueeze(1), -inf)
+			scores.masked_fill_(mask.unsqueeze(1), -inf_default)
 
 		scores = self.normer(scores)
 
@@ -288,10 +329,18 @@ class SelfAttn(nn.Module):
 
 		return self.outer(oMA.view(bsize, nquery, self.hsize))
 
+	def get_rel_pos(self, length):
+
+		if length <= self.xseql:
+			return self.rel_pos.narrow(0, 0, length).narrow(1, 0, length)
+		else:
+			_rpm = torch.arange(-length + 1, 1, dtype=self.rel_pos.dtype, device=self.rel_pos.device).unsqueeze(0)
+			return ((_rpm - _rpm.t()).clamp(min=-self.k_rel_pos, max=self.k_rel_pos) + self.k_rel_pos)
+
 # Accelerated MultiHeadAttn for cross attention, use when K == V
 class CrossAttn(nn.Module):
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, enable_bias=False, sparsenorm=False):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, enable_bias=enable_residual_bias_default, sparsenorm=False):
 
 		super(CrossAttn, self).__init__()
 
@@ -325,7 +374,7 @@ class CrossAttn(nn.Module):
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
 		if mask is not None:
-			scores.masked_fill_(mask.unsqueeze(1), -inf)
+			scores.masked_fill_(mask.unsqueeze(1), -inf_default)
 
 		scores = self.normer(scores)
 
@@ -341,16 +390,16 @@ class ResidueCombiner(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, use_GeLU=False, enable_bias=False):
+	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_residual_bias_default):
 
 		super(ResidueCombiner, self).__init__()
 
 		_hsize = isize * 2 * ncomb if hsize is None else hsize
 
 		# should dropout be in front of sigmoid or not?
-		self.net = nn.Sequential(Linear(isize * ncomb, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Dropout(dropout, inplace=use_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize * ncomb, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Linear(_hsize, isize, bias=enable_bias))
+		self.net = nn.Sequential(Linear(isize * ncomb, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Dropout(dropout, inplace=inplace_after_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize * ncomb, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Linear(_hsize, isize, bias=enable_bias))
 
-		self.out_normer = nn.LayerNorm(isize, eps=1e-06)
+		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default)
 
 	def forward(self, *xl):
 
@@ -617,7 +666,7 @@ class FertSummer(nn.Module):
 
 		_weight = self.net(x)
 		if mask is not None:
-			_weight.masked_fill_(mask, -inf)
+			_weight.masked_fill_(mask, -inf_default)
 
 		# (bsize, seql, 1)' * (bsize, seql, isize) => (bsize, 1, isize)
 		return self.normer(_weight).transpose(1, 2).bmm(x).squeeze(1)
@@ -649,7 +698,7 @@ class CoordinateEmb(nn.Module):
 
 		bsize, seql = x.size()[:2]
 
-		if step < self.num_steps:
+		if step <= self.num_steps:
 			rs = self.w[step][:seql] if seql <= self.num_pos else torch.cat((self.w[step], self.get_ext(seql, step, False)), 0)
 		else:
 			rs = self.get_ext(seql, step, False)
@@ -682,14 +731,14 @@ class CoordinateEmb(nn.Module):
 			ed = self.w.new(1, self.num_dim)
 		else:
 			npos = self.num_pos
-			_pos = torch.arange(npos + poff if step < self.num_steps else poff, length + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
+			_pos = torch.arange(npos + poff if step <= self.num_steps else poff, length + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
 			ed = self.w.new(length - npos, self.num_dim)
 		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(1e4) / self.num_dim)).exp()
 		_tmp1, _tmp2 = _pos * rdiv_term, _step * rdiv_term
 		if self.alpha != 1.0:
 			_tmp1.mul_(self.alpha)
 			_tmp2.mul_(self.alpha)
-		ed[:, 0::2], ed[:, 1::2] = _tmp1.sin() + _tmp2.sin(), ((_tmp1.cos() + _tmp2.cos()).narrow(-1, 0, _tmp1.size(-1) - 1) if self.num_dim % 2 == 1 else _tmp1.cos() + _tmp2.cos())
+		ed[:, 0::2], ed[:, 1::2] = _tmp1.sin() + _tmp2.sin(), ((_tmp1.narrow(-1, 0, _tmp1.size(-1) - 1).cos() + _tmp2.narrow(-1, 0, _tmp1.size(-1) - 1).cos()) if self.num_dim % 2 == 1 else _tmp1.cos() + _tmp2.cos())
 
 		return ed
 
@@ -697,7 +746,7 @@ class CoordinateEmb(nn.Module):
 
 	def get_pos(self, step, layer):
 
-		return self.w[layer][step] if step < self.num_pos and layer < self.num_steps else self.get_ext(step, layer, True).squeeze(0)
+		return self.w[layer][step] if step <= self.num_pos and layer <= self.num_steps else self.get_ext(step, layer, True).squeeze(0)
 
 class Temperature(nn.Module):
 

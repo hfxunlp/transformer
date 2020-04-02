@@ -7,6 +7,8 @@ from math import sqrt
 
 from transformer.Decoder import Decoder as DecoderBase
 
+from cnfg.ihyp import *
+
 class Decoder(DecoderBase):
 
 	# isize: size of word embedding
@@ -20,7 +22,7 @@ class Decoder(DecoderBase):
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
 
 		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindemb, forbidden_index)
 
@@ -35,7 +37,9 @@ class Decoder(DecoderBase):
 
 		out = self.wemb(inputo)
 
-		out = out * sqrt(out.size(-1)) + self.pemb(inputo, expand=False)
+		out = out * sqrt(out.size(-1))
+		if self.pemb is not None:
+			out = out + self.pemb(inputo, expand=False)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -71,7 +75,9 @@ class Decoder(DecoderBase):
 
 		# out: input to the decoder for the first step (bsize, 1, isize)
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
+		out = sos_emb * sqrt_isize
+		if self.pemb is not None:
+			 out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -101,7 +107,9 @@ class Decoder(DecoderBase):
 
 		for i in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i)
+			out = self.wemb(wds) * sqrt_isize
+			if self.pemb is not None:
+				out = out + self.pemb.get_pos(i)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -148,7 +156,9 @@ class Decoder(DecoderBase):
 			lpv = sos_emb.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
+		out = sos_emb * sqrt_isize
+		if self.pemb is not None:
+			 out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -195,7 +205,9 @@ class Decoder(DecoderBase):
 
 		for step in range(1, max_len):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step)
+			out = self.wemb(wds) * sqrt_isize
+			if self.pemb is not None:
+				out = out + self.pemb.get_pos(step)
 
 			if self.drop is not None:
 				out = self.drop(out)

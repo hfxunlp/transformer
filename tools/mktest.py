@@ -8,8 +8,11 @@ import h5py
 from utils.fmt.base import ldvocab
 from utils.fmt.single import batch_padder
 
+from cnfg.ihyp import *
+
 # maxtoken should be the maxtoken in mkiodata.py / 2 / beam size roughly, similar for bsize
-def handle(finput, fvocab_i, frs, minbsize=1, expand_for_mulgpu=True, bsize=768, maxpad=16, maxpart=4, maxtoken=4352, minfreq=False, vsize=False):
+
+def handle(finput, fvocab_i, frs, minbsize=1, expand_for_mulgpu=True, bsize=max_sentences_gpu, maxpad=max_pad_tokens_sentence, maxpart=normal_tokens_vs_pad_tokens, maxtoken=max_tokens_gpu, minfreq=False, vsize=False):
 	vcbi, nwordi = ldvocab(fvocab_i, minfreq, vsize)
 	if expand_for_mulgpu:
 		_bsize = bsize * minbsize
@@ -24,7 +27,7 @@ def handle(finput, fvocab_i, frs, minbsize=1, expand_for_mulgpu=True, bsize=768,
 		rid = numpy.array(i_d, dtype = numpy.int32)
 		#rld = numpy.array(ld, dtype = numpy.int32)
 		wid = str(curd)
-		src_grp[wid] = rid
+		src_grp.create_dataset(wid, data=rid, **h5datawargs)
 		#rsf["l" + wid] = rld
 		curd += 1
 	rsf["ndata"] = numpy.array([curd], dtype = numpy.int32)

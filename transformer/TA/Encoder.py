@@ -9,6 +9,8 @@ from math import sqrt
 from transformer.Encoder import EncoderLayer as EncoderLayerBase
 from transformer.Encoder import Encoder as EncoderBase
 
+from cnfg.ihyp import *
+
 class EncoderLayer(EncoderLayerBase):
 
 	# isize: input size
@@ -52,7 +54,7 @@ class Encoder(EncoderBase):
 	# xseql: maxmimum length of sequence
 	# ahsize: number of hidden units for MultiHeadAttention
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=512, ahsize=None, norm_output=True, num_layer_dec=6):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, num_layer_dec=6):
 
 		_ahsize = isize if ahsize is None else ahsize
 
@@ -73,7 +75,9 @@ class Encoder(EncoderBase):
 
 		bsize, seql = inputs.size()
 		out = self.wemb(inputs)
-		out = out * sqrt(out.size(-1)) + self.pemb(inputs, expand=False)
+		out = out * sqrt(out.size(-1))
+		if self.pemb is not None:
+			out = out + self.pemb(inputs, expand=False)
 
 		if self.drop is not None:
 			out = self.drop(out)

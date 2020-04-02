@@ -2,10 +2,10 @@
 
 from random import shuffle
 
-has_unk = True
+from cnfg.hyp import use_unk
 
 pad_id, sos_id, eos_id = 0, 1, 2
-if has_unk:
+if use_unk:
 	unk_id = 3
 	init_vocab = {"<pad>":pad_id, "<sos>":sos_id, "<eos>":eos_id, "<unk>":unk_id}
 	init_normal_token_id = 4
@@ -204,13 +204,15 @@ def no_unk_mapper(vcb, ltm, prompt=True):
 	else:
 		return [vcb[wd] for wd in ltm if wd in vcb]
 
-def list2dict(lin):
+def list2dict(lin, kfunc=None):
 
-	rsd = {}
-	for i, lu in enumerate(lin):
-		rsd[i] = lu
+	return {k: lu for k, lu in enumerate(lin)} if kfunc is None else {kfunc(k): lu for k, lu in enumerate(lin)}
 
-	return rsd
+def dict_is_list(sdin, kfunc=None):
+
+	_lset = set(range(len(sdin))) if kfunc is None else set(kfunc(i) for i in range(len(sdin)))
+
+	return False if (_lset - sdin) else True
 
 def dict2pairs(dict_in):
 
@@ -304,13 +306,13 @@ def get_bi_ratio(ls, lt):
 
 def map_batch(i_d, vocabi):
 
-	global has_unk, sos_id, eos_id, unk_id
+	global use_unk, sos_id, eos_id, unk_id
 
 	if isinstance(i_d[0], (tuple, list,)):
 		return [map_batch(idu, vocabi)[0] for idu in i_d], 2
 	else:
 		rsi = [sos_id]
-		rsi.extend([vocabi.get(wd, unk_id) for wd in i_d] if has_unk else no_unk_mapper(vocabi, i_d))#[vocabi[wd] for wd in i_d if wd in vocabi]
+		rsi.extend([vocabi.get(wd, unk_id) for wd in i_d] if use_unk else no_unk_mapper(vocabi, i_d))#[vocabi[wd] for wd in i_d if wd in vocabi]
 		rsi.append(eos_id)
 		return rsi, 2
 
@@ -325,3 +327,14 @@ def pad_batch(i_d, mlen_i):
 		if curlen < mlen_i:
 			i_d.extend([pad_id for i in range(mlen_i - curlen)])
 		return i_d
+
+def parse_none(vin, value):
+
+	return value if vin is None else vin
+
+def parse_double_value_tuple(vin):
+
+	if isinstance(vin, (list, tuple,)):
+		return vin[0], vin[-1]
+	else:
+		return vin, vin

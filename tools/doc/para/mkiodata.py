@@ -8,7 +8,9 @@ import h5py
 from utils.fmt.base import ldvocab, dict2pairs
 from utils.fmt.doc.para.dual import batch_padder
 
-def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulgpu=True, bsize=512, maxpad=16, maxpart=4, maxtoken=5120, minfreq=False, vsize=False):
+from cnfg.ihyp import *
+
+def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulgpu=True, bsize=max_sentences_gpu, maxpad=max_pad_tokens_sentence, maxpart=normal_tokens_vs_pad_tokens, maxtoken=max_tokens_gpu, minfreq=False, vsize=False):
 	vcbi, nwordi = ldvocab(fvocab_i, minfreq, vsize)
 	vcbt, nwordt = ldvocab(fvocab_t, minfreq, vsize)
 	if expand_for_mulgpu:
@@ -30,8 +32,8 @@ def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulg
 			src_grp.create_group(_nsentgid)
 			tgt_grp.create_group(_nsentgid)
 		_curid = str(_curd)
-		src_grp[_nsentgid][_curid] = rid
-		tgt_grp[_nsentgid][_curid] = rtd
+		src_grp[_nsentgid].create_dataset(_curid, data=rid, **h5datawargs)
+		tgt_grp[_nsentgid].create_dataset(_curid, data=rtd, **h5datawargs)
 		curd[nsent] = _curd + 1
 	sents, ndl = dict2pairs(curd)
 	rsf["nsent"] = numpy.array(sents, dtype = numpy.int32)

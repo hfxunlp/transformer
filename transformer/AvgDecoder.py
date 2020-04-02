@@ -11,6 +11,8 @@ from transformer.Decoder import Decoder as DecoderBase
 
 # Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network(https://arxiv.org/abs/1805.00631)
 
+from cnfg.ihyp import *
+
 class DecoderLayer(DecoderLayerBase):
 
 	# isize: input size
@@ -47,7 +49,7 @@ class DecoderLayer(DecoderLayerBase):
 			if self.drop is not None:
 				context = self.drop(context)
 
-			context = context + (_inputo if self.norm_residue else inputo)
+			context = context + (_inputo if self.norm_residual else inputo)
 		else:
 			_query_unit = self.layer_normer1(query_unit)
 
@@ -63,7 +65,7 @@ class DecoderLayer(DecoderLayerBase):
 			if self.drop is not None:
 				context = self.drop(context)
 
-			context = context + (_query_unit if self.norm_residue else query_unit)
+			context = context + (_query_unit if self.norm_residual else query_unit)
 
 		_context = self.layer_normer2(context)
 		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
@@ -71,7 +73,7 @@ class DecoderLayer(DecoderLayerBase):
 		if self.drop is not None:
 			_context_new = self.drop(_context_new)
 
-		context = _context_new + (_context if self.norm_residue else context)
+		context = _context_new + (_context if self.norm_residual else context)
 
 		context = self.ff(context)
 
@@ -95,7 +97,7 @@ class Decoder(DecoderBase):
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
 
 		_ahsize = isize if ahsize is None else ahsize
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
@@ -115,7 +117,9 @@ class Decoder(DecoderBase):
 
 		out = self.wemb(inputo)
 
-		out = out * sqrt(out.size(-1)) + self.pemb(inputo, expand=False)
+		out = out * sqrt(out.size(-1))
+		if self.pemb is not None:
+			out = out + self.pemb(inputo, expand=False)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -163,7 +167,9 @@ class Decoder(DecoderBase):
 
 		# out: input to the decoder for the first step (bsize, 1, isize)
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
+		out = sos_emb * sqrt_isize
+		if self.pemb is not None:
+			 out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -193,7 +199,9 @@ class Decoder(DecoderBase):
 
 		for i in range(2, max_len + 1):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(i - 1)
+			out = self.wemb(wds) * sqrt_isize
+			if self.pemb is not None:
+				out = out + self.pemb.get_pos(i - 1)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -240,7 +248,9 @@ class Decoder(DecoderBase):
 			lpv = sos_emb.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		out = sos_emb * sqrt_isize + self.pemb.get_pos(0)
+		out = sos_emb * sqrt_isize
+		if self.pemb is not None:
+			 out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -287,7 +297,9 @@ class Decoder(DecoderBase):
 
 		for step in range(2, max_len + 1):
 
-			out = self.wemb(wds) * sqrt_isize + self.pemb.get_pos(step - 1)
+			out = self.wemb(wds) * sqrt_isize
+			if self.pemb is not None:
+				 out = out + self.pemb.get_pos(step - 1)
 
 			if self.drop is not None:
 				out = self.drop(out)

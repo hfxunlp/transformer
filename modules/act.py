@@ -5,6 +5,8 @@ from torch import nn
 
 from math import sqrt
 
+from cnfg.ihyp import *
+
 # 2 kinds of GELU activation function implementation according to https://github.com/huggingface/pytorch-pretrained-BERT/blob/master/pytorch_pretrained_bert/modeling.py#L53-L58
 
 class GeLU_GPT(nn.Module):
@@ -31,8 +33,6 @@ class GeLU_BERT(nn.Module):
 
 		return 0.5 * x * (1.0 + (x / self.k).erf())
 
-GeLU = GeLU_BERT
-
 # Swish approximates GeLU when beta=1.702 (https://mp.weixin.qq.com/s/LEPalstOc15CX6fuqMRJ8Q).
 # GELU is nonmonotonic function that has a shape similar to Swish with beta = 1.4 (https://arxiv.org/abs/1710.05941).
 class Swish(nn.Module):
@@ -56,3 +56,10 @@ class Swish(nn.Module):
 
 		if self.reset_beta is not None:
 			self.beta.fill_(self.reset_beta)
+
+if override_GeLU_Swish:
+	GeLU = Swish
+elif override_GeLU_Sigmoid:
+	GeLU = nn.Sigmoid
+else:
+	GeLU = GeLU_BERT

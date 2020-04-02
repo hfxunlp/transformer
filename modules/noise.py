@@ -5,6 +5,8 @@ from torch import nn
 
 from modules.base import PositionwiseFF as PositionwiseFFBase
 
+from cnfg.ihyp import *
+
 class GausNoiser(nn.Module):
 
 	def __init__(self, power):
@@ -86,9 +88,9 @@ Noiser = UniNoiserVec
 
 class PositionwiseFF(PositionwiseFFBase):
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residue=False, use_GeLU=False, power=None):
+	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, use_GeLU=use_adv_act_default, power=None):
 
-		super(PositionwiseFF, self).__init__(isize, hsize, dropout, norm_residue, use_GeLU)
+		super(PositionwiseFF, self).__init__(isize, hsize, dropout, norm_residual, use_GeLU)
 
 		self.noiser = None if power is None else Noiser(power)
 
@@ -100,6 +102,6 @@ class PositionwiseFF(PositionwiseFFBase):
 
 		out = self.net(_out)
 
-		out = out + (_out if self.norm_residue else x)
+		out = out + (_out if self.norm_residual else x)
 
 		return out

@@ -11,6 +11,8 @@ from utils.base import mask_tensor_type
 from transformer.Encoder import EncoderLayer as EncoderLayerBase
 from transformer.Encoder import Encoder as EncoderBase
 
+from cnfg.ihyp import *
+
 class CrossEncoderLayer(EncoderLayerBase):
 
 	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, ncross=2):
@@ -20,7 +22,7 @@ class CrossEncoderLayer(EncoderLayerBase):
 		super(CrossEncoderLayer, self).__init__(isize, fhsize, dropout, attn_drop, num_head, _ahsize)
 
 		self.cattns = nn.ModuleList([CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop) for i in range(ncross)])
-		self.cattn_ln = nn.ModuleList([nn.LayerNorm(isize, eps=1e-06) for i in range(ncross)])
+		self.cattn_ln = nn.ModuleList([nn.LayerNorm(isize, eps=ieps_ln_default) for i in range(ncross)])
 		self.grs = nn.ModuleList([GateResidual(isize) for i in range(ncross)])
 
 	def forward(self, inputs, inputc, mask=None, context_mask=None):
@@ -31,14 +33,14 @@ class CrossEncoderLayer(EncoderLayerBase):
 		if self.drop is not None:
 			context = self.drop(context)
 
-		context = context + (_inputs if self.norm_residue else inputs)
+		context = context + (_inputs if self.norm_residual else inputs)
 
 		for _ln, _cattn, _gr, _inputc, _maskc in zip(self.cattn_ln, self.cattns, self.grs, inputc, [None for i in range(len(inputc))] if context_mask is None else context_mask):
 			_inputs = _ln(context)
 			_context = _cattn(_inputs, _inputc, mask=_maskc)
 			if self.drop is not None:
 				_context = self.drop(_context)
-			context = _gr(_context, (_inputs if self.norm_residue else context))
+			context = _gr(_context, (_inputs if self.norm_residual else context))
 
 		context = self.ff(context)
 
@@ -53,7 +55,7 @@ class CrossEncoderLayer(EncoderLayerBase):
 
 class CrossEncoder(EncoderBase):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=512, ahsize=None, norm_output=True, nprev_context=2):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, nprev_context=2):
 
 		_ahsize = isize if ahsize is None else ahsize
 
@@ -66,7 +68,9 @@ class CrossEncoder(EncoderBase):
 	def forward(self, inputs, inputc, mask=None, context_mask=None):
 
 		out = self.wemb(inputs)
-		out = out * sqrt(out.size(-1)) + self.pemb(inputs, expand=False)
+		out = out * sqrt(out.size(-1))
+		if self.pemb is not None:
+			out = out + self.pemb(inputs, expand=False)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -91,7 +95,7 @@ class CrossEncoder(EncoderBase):
 
 class Encoder(nn.Module):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=512, ahsize=None, norm_output=True, nprev_context=2, num_layer_context=1):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, nprev_context=2, num_layer_context=1):
 
 		super(Encoder, self).__init__()
 

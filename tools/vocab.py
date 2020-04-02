@@ -4,7 +4,7 @@ import sys
 
 from utils.fmt.base import clean_list_iter
 
-def handle(srcf, rsf, vsize=32764):
+def handle(srcf, rsf, vsize=65532):
 
 	vocab = {}
 
@@ -41,4 +41,4 @@ def handle(srcf, rsf, vsize=32764):
 				break
 
 if __name__ == "__main__":
-	handle(sys.argv[1], sys.argv[2], int(sys.argv[3]))
+	handle(sys.argv[1], sys.argv[2]) if len(sys.argv) == 3 else handle(sys.argv[1], sys.argv[2], int(sys.argv[-1]))

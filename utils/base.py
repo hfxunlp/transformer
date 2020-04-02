@@ -13,6 +13,8 @@ from random import seed as rpyseed
 
 import logging
 
+from utils.h5serial import h5save, h5load
+
 mask_tensor_type = torch.uint8 if torch.__version__ < "1.2.0" else torch.bool
 
 def pad_tensors(tensor_list, dim=-1):
@@ -125,7 +127,7 @@ def dynamic_sample(incd, dss_ws, dss_rm):
 
 def load_model_cpu(modf, base_model):
 
-	mpg = torch.load(modf, map_location='cpu')
+	mpg = h5load(modf)
 
 	for para, mp in zip(base_model.parameters(), mpg):
 		para.data = mp.data
@@ -134,7 +136,7 @@ def load_model_cpu(modf, base_model):
 
 def load_model_cpu_old(modf, base_model):
 
-	base_model.load_state_dict(torch.load(modf, map_location='cpu'))
+	base_model.load_state_dict(h5load(modf))
 
 	return base_model
 
@@ -142,7 +144,7 @@ def save_model(model, fname, sub_module=False, logger=None):
 
 	_msave = model.module if sub_module else model
 	try:
-		torch.save([t.data for t in _msave.parameters()], fname)
+		h5save([t.data for t in _msave.parameters()], fname)
 	except Exception as e:
 		if logger is None:
 			print(e)
@@ -157,10 +159,10 @@ def async_save_model(model, fname, sub_module=False, logger=None, para_lock=None
 		_msave = model.module if sub_module else model
 		try:
 			if para_lock is None:
-				torch.save([t.data for t in _msave.parameters()], fname)
+				h5save([t.data for t in _msave.parameters()], fname)
 			else:
 				with para_lock:
-					torch.save([t.data for t in _msave.parameters()], fname)
+					h5save([t.data for t in _msave.parameters()], fname)
 		except Exception as e:
 			if logger is None:
 				print(e)

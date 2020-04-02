@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 
-from numbers import Integral
+from utils.fmt.base import parse_double_value_tuple
 
 # import Encoder and Decoder from transformer.AGG.InceptEncoder and transformer.AGG.InceptDecoder/transformer.AGG.InceptAvgDecoder to learn complex representation with incepted transformer, transformer.TA.Encoder for Transparent Encoder.
 from transformer.Encoder import Encoder
@@ -11,6 +11,8 @@ from transformer.Encoder import Encoder
 # switch the comment between the following two lines to choose standard decoder or average decoder. Using transformer.TA.Decoder for Transparent Decoder.
 from transformer.Decoder import Decoder
 #from transformer.AvgDecoder import Decoder
+
+from cnfg.ihyp import *
 
 class NMT(nn.Module):
 
@@ -25,14 +27,11 @@ class NMT(nn.Module):
 	# xseql: maxmimum length of sequence
 	# ahsize: number of hidden units for MultiHeadAttention
 
-	def __init__(self, isize, snwd, tnwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, global_emb=False, num_head=8, xseql=512, ahsize=None, norm_output=True, bindDecoderEmb=False, forbidden_index=None):
+	def __init__(self, isize, snwd, tnwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, global_emb=False, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindDecoderEmb=False, forbidden_index=None):
 
 		super(NMT, self).__init__()
 
-		if isinstance(num_layer, Integral):
-			enc_layer = dec_layer = num_layer
-		else:
-			enc_layer, dec_layer = num_layer
+		enc_layer, dec_layer = parse_double_value_tuple(num_layer)
 
 		self.enc = Encoder(isize, snwd, enc_layer, fhsize, dropout, attn_drop, num_head, xseql, ahsize, norm_output)
 

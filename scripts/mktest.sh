@@ -1,9 +1,10 @@
 #!/bin/bash
 
-export srcd=w14ende
+export srcd=wmt14
 export srctf=test.tc.en.w14ed32
-export modelf="expm/w14ende/checkpoint.t7"
-export rsf=w14trs/trans.txt
+export modelf="expm/w14ed32/checkpoint.t7"
+export rsd=w14trs
+export rsf=$rsd/trans.txt
 export share_vcb=false
 
 export cachedir=cache
@@ -22,6 +23,8 @@ else
 	export src_vcb=$tgtd/src.vcb
 	export tgt_vcb=$tgtd/tgt.vcb
 fi
+
+mkdir -p $rsd
 
 python tools/sorti.py $srcd/$srctf $tgtd/$srctf.srt
 python tools/mktest.py $tgtd/$srctf.srt $src_vcb $tgtd/test.h5 $ngpu

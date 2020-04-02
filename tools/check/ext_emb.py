@@ -10,6 +10,7 @@ import torch
 
 from utils.fmt.base import ldvocab, reverse_dict
 from utils.fmt.base4torch import load_emb_txt
+from utils.h5serial import h5save, h5load
 
 def handle(vcbf, embf, rsf):
 
@@ -20,7 +21,7 @@ def handle(vcbf, embf, rsf):
 	rs = []
 	for i in range(nwd):
 		rs.append(emb.get(vcb[i], unkemb))
-	torch.save(torch.stack(rs, 0), rsf)
+	h5save(torch.stack(rs, 0), rsf)
 
 if __name__ == "__main__":
 	handle(sys.argv[1], sys.argv[2], sys.argv[3])

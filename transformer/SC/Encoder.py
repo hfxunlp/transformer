@@ -3,13 +3,15 @@
 import torch
 from torch import nn
 from modules.base import *
-from math import sqrt, inf
+from math import sqrt
 
 from transformer.TA.Encoder import Encoder as EncoderBase
 
+from cnfg.ihyp import *
+
 class Encoder(EncoderBase):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=512, ahsize=None, norm_output=True, num_layer_dec=6):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, num_layer_dec=6):
 
 		_ahsize = isize if ahsize is None else ahsize
 
@@ -40,7 +42,9 @@ class Encoder(EncoderBase):
 
 		bsize, seql = inputs.size()
 		out = self.wemb(inputs)
-		out = out * sqrt(out.size(-1)) + self.pemb(inputs, expand=False)
+		out = out * sqrt(out.size(-1))
+		if self.pemb is not None:
+			out = out + self.pemb(inputs, expand=False)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -48,7 +52,7 @@ class Encoder(EncoderBase):
 		out = self.out_normer(out)
 		outs = [out]
 
-		_h0 = out.max(dim=1, keepdim=True)[0] if mask is None else out.masked_fill(mask.squeeze(1).unsqueeze(-1), -inf).max(dim=1, keepdim=True)[0]
+		_h0 = out.max(dim=1, keepdim=True)[0] if mask is None else out.masked_fill(mask.squeeze(1).unsqueeze(-1), -inf_default).max(dim=1, keepdim=True)[0]
 		hl = [_h0]
 
 		for net, attn in zip(self.nets, self.attns):

@@ -4,7 +4,7 @@ import sys
 
 from utils.fmt.base import clean_list_iter
 
-def handle(srcfl, rsf, vsize=32764):
+def handle(srcfl, rsf, vsize=65532):
 
 	vocab = {}
 

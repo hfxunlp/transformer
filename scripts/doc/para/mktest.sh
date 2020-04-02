@@ -3,7 +3,8 @@
 export srcd=w19edoc
 export srctf=test.en.w19edoc
 export modelf="expm/w19edoc/checkpoint.t7"
-export rsf=w19edoctrs/trans.txt
+export rsd=w19edoctrs
+export rsf=$rsd/trans.txt
 export share_vcb=false
 
 export cachedir=cache
@@ -22,6 +23,8 @@ else
 	export src_vcb=$tgtd/src.vcb
 	export tgt_vcb=$tgtd/tgt.vcb
 fi
+
+mkdir -p $rsd
 
 python tools/doc/mono/sort.py $srcd/$srctf $tgtd/$srctf.srt
 python tools/doc/para/mktest.py $tgtd/$srctf.srt $src_vcb $tgtd/test.h5 $ngpu

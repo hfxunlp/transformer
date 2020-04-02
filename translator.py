@@ -12,6 +12,8 @@ from utils.fmt.base4torch import parse_cuda_decode
 
 from utils.fmt.single import batch_padder
 
+from cnfg.ihyp import *
+
 def data_loader(sentences_iter, vcbi, minbsize=1, bsize=768, maxpad=16, maxpart=4, maxtoken=3920):
 	for i_d in batch_padder(sentences_iter, vcbi, bsize, maxpad, maxpart, maxtoken, minbsize):
 		yield torch.tensor(i_d, dtype=torch.long)
@@ -63,7 +65,7 @@ class TranslatorCore:
 		if isinstance(modelfs, (list, tuple)):
 			models = []
 			for modelf in modelfs:
-				tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
+				tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
 				tmp = load_model_cpu(modelf, tmp)
 				tmp.apply(load_fixing)
@@ -72,7 +74,7 @@ class TranslatorCore:
 			model = Ensemble(models)
 
 		else:
-			model = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cnfg.cache_len, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
+			model = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
 			model = load_model_cpu(modelfs, model)
 			model.apply(load_fixing)
@@ -167,15 +169,15 @@ class Translator:
 #from datautils.pymoses import Tokenizer, Detokenizer, Normalizepunctuation, Truecaser, Detruecaser
 #from datautils.bpe import BPEApplier, BPERemover
 #if __name__ == "__main__":
-	#tl = []
+	#tl = ["28 @-@ jähriger Koch in San Francisco M@@ all tot a@@ u@@ f@@ gefunden", "ein 28 @-@ jähriger Koch , der vor kurzem nach San Francisco gezogen ist , wurde im T@@ r@@ e@@ p@@ p@@ e@@ n@@ haus eines örtlichen E@@ i@@ n@@ k@@ a@@ u@@ f@@ z@@ e@@ n@@ t@@ r@@ u@@ ms tot a@@ u@@ f@@ gefunden .", "der Bruder des O@@ p@@ f@@ e@@ r@@ s sagte aus , dass er sich niemanden vorstellen kann , der ihm schaden wollen würde , &quot; E@@ n@@ d@@ lich ging es bei ihm wieder b@@ e@@ r@@ g@@ auf &quot; .", "der am Mittwoch morgen in der W@@ e@@ s@@ t@@ field M@@ all g@@ e@@ f@@ u@@ n@@ d@@ e@@ n@@ e L@@ e@@ i@@ c@@ h@@ n@@ a@@ m wurde als der 28 Jahre alte Frank G@@ a@@ l@@ i@@ c@@ i@@ a aus San Francisco identifiziert , teilte die g@@ e@@ r@@ i@@ c@@ h@@ t@@ s@@ medizinische Abteilung in San Francisco mit .", "das San Francisco P@@ o@@ l@@ i@@ ce D@@ e@@ p@@ a@@ r@@ t@@ ment sagte , dass der Tod als Mord eingestuft wurde und die Ermittlungen am L@@ a@@ u@@ f@@ en sind .", "der Bruder des O@@ p@@ f@@ e@@ r@@ s , Louis G@@ a@@ l@@ i@@ c@@ i@@ a , teilte dem A@@ B@@ S Sender K@@ GO in San Francisco mit , dass Frank , der früher als Koch in B@@ o@@ s@@ t@@ on gearbeitet hat , vor sechs Monaten seinen T@@ r@@ a@@ u@@ m@@ j@@ ob als Koch im S@@ o@@ n@@ s &amp; D@@ a@@ u@@ g@@ h@@ t@@ e@@ r@@ s Restaurant in San Francisco e@@ r@@ g@@ a@@ t@@ t@@ e@@ r@@ t hatte .", "ein Sprecher des S@@ o@@ n@@ s &amp; D@@ a@@ u@@ g@@ h@@ t@@ e@@ r@@ s sagte , dass sie über seinen Tod &quot; s@@ c@@ h@@ o@@ c@@ k@@ i@@ e@@ r@@ t und am Boden zerstört seien &quot; .", "&quot; wir sind ein kleines Team , das wie eine enge Familie arbeitet und wir werden ihn s@@ c@@ h@@ m@@ e@@ r@@ z@@ lich vermissen &quot; , sagte der Sprecher weiter .", "unsere Gedanken und unser B@@ e@@ i@@ leid sind in dieser schweren Zeit bei F@@ r@@ a@@ n@@ k@@ s Familie und Freunden .", "Louis G@@ a@@ l@@ i@@ c@@ i@@ a gab an , dass Frank zunächst in Hostels lebte , aber dass , &quot; die Dinge für ihn endlich b@@ e@@ r@@ g@@ auf gingen &quot; ."]
 	#spl = SentenceSplitter("de")
 	#tok = Tokenizer("de")
 	#detok = Detokenizer("en")
 	#punc_norm = Normalizepunctuation("de")
-	#truecaser = Truecaser("truecase-model.de")
+	#truecaser = Truecaser("c1207\\truecase-model.de")
 	#detruecaser = Detruecaser()
-	#tran_core = TranslatorCore("eva_20_1.384_1.088_26.74.t7", "src.vcb", "tgt.vcb", cnfg)
-	#bpe = BPEApplier("src.cds", "src.vcb.bpe", 8)
+	#tran_core = TranslatorCore("c1207\\eva_20_1.384_1.088_26.74.h5", "c1207\\src.vcb", "c1207\\tgt.vcb", cnfg)
+	#bpe = BPEApplier("c1207\\src.cds", "c1207\\src.vcb.bpe", 50)
 	#debpe = BPERemover()
 	#trans = Translator(tran_core, spl, tok, detok, bpe, debpe, punc_norm, truecaser, detruecaser)
 	#rs = tran_core(tl)

@@ -7,6 +7,8 @@ from modules.base import *
 from transformer.Decoder import DecoderLayer as DecoderLayerBase
 from transformer.Decoder import Decoder as DecoderBase
 
+from cnfg.ihyp import *
+
 class DecoderLayer(nn.Module):
 
 	# isize: input size
@@ -79,7 +81,7 @@ class Decoder(DecoderBase):
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=512, ahsize=None, norm_output=False, bindemb=False, forbidden_index=None, num_sub=1):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=False, bindemb=False, forbidden_index=None, num_sub=1):
 
 		_ahsize = isize if ahsize is None else ahsize
 
