@@ -2,7 +2,7 @@
 
 export srcd=wmt14
 export srctf=test.tc.en.w14ed32
-export modelf="expm/w14ed32/checkpoint.t7"
+export modelf="expm/w14ed32/std/base/checkpoint.h5"
 export rsd=w14trs
 export rsf=$rsd/trans.txt
 export share_vcb=false

@@ -10,18 +10,20 @@ import torch
 
 from utils.h5serial import h5save, h5load
 
-rsm = h5load(sys.argv[2])
+from cnfg.ihyp import *
 
-nmodel = 1
+def handle(srcfl, rsf):
 
-for modelf in sys.argv[3:]:
-	for basep, mpload in zip(rsm, h5load(modelf)):
-		basep.add_(mpload)
-	nmodel += 1
+	rsm = h5load(srcfl[0])
+	nmodel = 1
+	for modelf in srcfl[1:]:
+		for basep, mpload in zip(rsm, h5load(modelf)):
+			basep.add_(mpload)
+		nmodel += 1
+	nmodel = float(nmodel)
+	for basep in rsm:
+		basep.div_(nmodel)
+	h5save(rsm, rsf, h5args=h5zipargs)
 
-nmodel = float(nmodel)
-
-for basep in rsm:
-	basep.div_(nmodel)
-
-h5save(rsm, sys.argv[1])
+if __name__ == "__main__":
+	handle(sys.argv[2:], sys.argv[1])

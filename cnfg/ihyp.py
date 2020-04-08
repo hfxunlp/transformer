@@ -46,5 +46,6 @@ disable_std_pemb_encoder, disable_std_pemb_decoder = parse_double_value_tuple(di
 
 h5datawargs = {} if hdf5_data_compression is None else {"compression": hdf5_data_compression, "compression_opts": hdf5_data_compression_level, "shuffle":True}
 h5modelwargs = {} if hdf5_model_compression is None else {"compression": hdf5_model_compression, "compression_opts": hdf5_model_compression_level, "shuffle":True}
+h5zipargs = {"compression": "gzip", "compression_opts": 9, "shuffle":True}
 
 list_key_func = str

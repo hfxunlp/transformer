@@ -8,11 +8,11 @@ from torch.autograd import Function
 
 from utils.base import reduce_model_list
 from modules.act import GeLU_GPT, GeLU_BERT, GeLU, Swish
+from modules.dropout import Dropout, TokenDropout
 
 from cnfg.ihyp import *
 
 Linear = nn.Linear
-Dropout = nn.Dropout
 
 class PositionwiseFF(nn.Module):
 
@@ -430,26 +430,6 @@ class Scorer(nn.Module):
 		rsize[-1] = 1
 
 		return out.view(rsize)
-
-class TokenDropout(nn.Module):
-
-	def __init__(self, p=0.5, keep_magnitude=True):
-
-		super(TokenDropout, self).__init__()
-		self.p = float(p)
-		self.keep_magnitude = (1.0 / (1.0 - self.p)) if keep_magnitude else False
-
-	def forward(self, inpute):
-
-		if self.training:
-			mask = inpute.new_full(inpute.size()[:-1], self.p, requires_grad=False).bernoulli().byte().unsqueeze(-1)
-			out = inpute.masked_fill(mask, 0.0)
-			if self.keep_magnitude:
-				out = out * self.keep_magnitude
-
-			return out
-		else:
-			return inpute
 
 class GradientReversalFunction(Function):
 

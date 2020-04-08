@@ -87,11 +87,52 @@ class DataParallelModel(DataParallel):
 		if len(params) > 0:
 			param_copies = tuple([t for tensors in comm.broadcast_coalesced(params, self.device_ids) for t in tensors])
 
+			# currently, pytorch broadcast binds parameters between self.nets[0] and self.module, so the following line ensures correctness but less efficient
+			#for module, param_copy in zip(self.nets, [param_copies[i:i + len(params)] for i in range(0, len(param_copies), len(params))]):
 			for module, param_copy in zip(self.nets[1:], [param_copies[i:i + len(params)] for i in range(len(params), len(param_copies), len(params))]):
 				for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
 					mp.data, mp.grad = para, None
 
 		self.ngradev = 0
+
+	def update_replicas_para(self, parallel=False):
+
+		params = [para.data for para in filter_para_grad(self.module.parameters())]
+
+		if len(params) > 0:
+			param_copies = tuple([t for tensors in comm.broadcast_coalesced(params, self.device_ids) for t in tensors])
+
+			#for module, param_copy in zip(self.nets, [param_copies[i:i + len(params)] for i in range(0, len(param_copies), len(params))]):
+			for module, param_copy in zip(self.nets[1:], [param_copies[i:i + len(params)] for i in range(len(params), len(param_copies), len(params))]):
+				for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
+					mp.data = para
+		self.ngradev = 0
+
+	def zero_grad(self):
+
+		self.module.zero_grad()
+		if self.nets is not None and self.ngradev > 1:
+			# currently, pytorch broadcast binds parameters between self.nets[0] and self.module, so the following line ensures correctness but less efficient
+			#for net in self.nets:
+			for net in self.nets[1:]:
+				net.zero_grad()
+		self.ngradev = 0
+
+	def zero_replicas_grad(self):
+
+		if self.nets is not None and self.ngradev > 1:
+			for net in self.nets[1:self.ngradev]:
+				for para in filter_para_grad(net.parameters()):
+					net.grad = None
+
+	def reset_grad(self):
+
+		for para in filter_para_grad(self.module.parameters()):
+			para.grad = None
+		if self.nets is not None and self.ngradev > 1:
+			for net in self.nets[1:self.ngradev]:
+				for para in filter_para_grad(net.parameters()):
+					net.grad = None
 
 class DataParallelCriterion(DataParallel):
 
