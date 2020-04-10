@@ -133,6 +133,7 @@ class DataParallelModel(DataParallel):
 			for net in self.nets[1:self.ngradev]:
 				for para in filter_para_grad(net.parameters()):
 					net.grad = None
+		self.ngradev = 0
 
 class DataParallelCriterion(DataParallel):
 

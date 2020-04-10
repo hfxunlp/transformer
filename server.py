@@ -5,7 +5,8 @@ import json
 
 import cnfg.base as cnfg
 # import Tokenizer/Detokenizer/SentenceSplitter from datautils.zh for Chinese
-from datautils.moses import SentenceSplitter, Tokenizer, Detokenizer, Normalizepunctuation, Truecaser, Detruecaser
+from datautils.pymoses import Tokenizer, Detokenizer, Normalizepunctuation, Truecaser, Detruecaser
+from datautils.moses import SentenceSplitter
 from datautils.bpe import BPEApplier, BPERemover
 from translator import TranslatorCore, Translator
 
@@ -18,7 +19,7 @@ srcvcb = "path/to/source/vocabulary"
 tgtvcb = "path/to/target/vocabulary"
 bpecds = "path/to/source/bpe/codes"
 bpevcb = "path/to/source/bpe/vocabulary"
-bpethr = 50# bpe threshold
+bpethr = 8# bpe threshold
 '''
 spl = SentenceSplitter(slang)
 tok = Tokenizer(slang)

@@ -244,7 +244,7 @@ Provide an encapsulation for the whole translation procedure with which you can 
 
 ### `server.py`
 
-An example depends on Flask to provide simple Web service and REST API about how to use the `translator`, configure [those variables](https://github.com/anoidgit/transformer/blob/master/server.py#L13-L21) before you use it.
+An example depends on Flask to provide simple Web service and REST API about how to use the `translator`, configure [those variables](https://github.com/anoidgit/transformer/blob/master/server.py#L13-L23) before you use it.
 
 ### `transformer/`
 
@@ -280,7 +280,7 @@ Chinese segmentation is different from tokenization, a tool is provided to suppo
 
 A tool to average several models to one which may bring some additional performance with no additional costs. Example usage:
 
-`python tools/average_model.py $averaged_model_file.t7 $model1.t7 $model2.t7 ...`
+`python tools/average_model.py $averaged_model_file.h5 $model1.h5 $model2.h5 ...`
 
 #### `sort.py`
 
@@ -292,11 +292,11 @@ Build vocabulary for the training set.
 
 #### `mkiodata.py`
 
-Convert text data to hdf5 format for the training script. Settings for the training data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/tools/mkiodata.py#L157).
+Convert text data to hdf5 format for the training script. Settings for the training data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/cnfg/hyp.py#L18-L22).
 
 #### `mktest.py`
 
-Convert translation requests to hdf5 format for the prediction script. Settings for the test data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/tools/mktest.py#L140).
+Convert translation requests to hdf5 format for the prediction script. Settings for the test data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/cnfg/hyp.py#L18-L22).
 
 #### `lsort/`
 

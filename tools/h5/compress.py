@@ -19,7 +19,7 @@ def handle_group(srcg, rsg, h5args=h5zipargs):
 def handle(srcf, rsf, h5args=h5zipargs):
 
 	if srcf == rsf:
-		h5save(h5load.load(srcf, restore_list=False), rsf, h5args=h5args)
+		h5save(h5load(srcf, restore_list=False), rsf, h5args=h5args)
 	else:
 		sfg, rfg = h5py.File(srcf, "r"), h5py.File(rsf, 'w')
 		handle_group(sfg, rfg, h5args=h5args)

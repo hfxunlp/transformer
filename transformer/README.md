@@ -2,7 +2,7 @@
 
 ## `NMT.py`
 
-The transformer model encapsulates encoder and decoder. Switch [the comment line](https://github.com/anoidgit/transformer/blob/master/transformer/NMT.py#L9-L11) to make a choice between the standard decoder and the average decoder.
+The transformer model encapsulates encoder and decoder. Set [these lines](https://github.com/anoidgit/transformer/blob/master/transformer/NMT.py#L8-L13) to make a choice between the standard encoder / decoder and the others.
 
 ## `Encoder.py`
 
@@ -42,7 +42,7 @@ Hierarchical aggregation proposed in [Exploiting Deep Representations for Neural
 
 ## `TA/`
 
-Implementation of transparent attention proposed in [Training Deeper Neural Machine Translation Models with Transparent Attention](https://aclweb.org/anthology/D18-1338).
+Implementation of transparent attention proposed in [Training Deeper Neural Machine Translation Models with Transparent Attention](https://aclweb.org/anthology/D18-1338/).
 
 ## `SC/`
 
