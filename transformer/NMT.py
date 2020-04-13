@@ -3,6 +3,7 @@
 import torch
 from torch import nn
 
+from utils.relpos import share_rel_pos_cache
 from utils.fmt.base import parse_double_value_tuple
 
 # import Encoder and Decoder from transformer.AGG.InceptEncoder and transformer.AGG.InceptDecoder/transformer.AGG.InceptAvgDecoder to learn complex representation with incepted transformer, transformer.TA.Encoder for Transparent Encoder.
@@ -39,6 +40,9 @@ class NMT(nn.Module):
 
 		self.dec = Decoder(isize, tnwd, dec_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
 		#self.dec = Decoder(isize, tnwd, dec_layer, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)# for RNMT
+
+		if use_k_relative_position > 0:
+			share_rel_pos_cache(self)
 
 	# inpute: source sentences from encoder (bsize, seql)
 	# inputo: decoded translation (bsize, nquery)

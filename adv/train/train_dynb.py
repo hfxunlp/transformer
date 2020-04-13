@@ -10,6 +10,7 @@ from parallel.base import DataParallelCriterion
 from parallel.parallelMT import DataParallelMT
 
 from utils.base import *
+from utils.init import init_model_params
 from utils.dynbatch import GradientMonitor
 from utils.h5serial import h5save, h5load
 from utils.fmt.base import tostr, save_states, load_states

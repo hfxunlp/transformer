@@ -7,9 +7,10 @@ import torch
 from torch import optim
 
 from parallel.base import DataParallelCriterion
-from parallel.parallelMTFP import DataParallelMT
+from parallel.parallelMT import DataParallelMT
 
 from utils.base import *
+from utils.init import init_model_params
 from utils.h5serial import h5save, h5load
 from utils.fmt.base import tostr, save_states, load_states
 from utils.fmt.base4torch import parse_cuda, load_emb

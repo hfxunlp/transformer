@@ -10,17 +10,17 @@ Dropout = nn.Dropout
 
 class TokenDropout(nn.Module):
 
-	def __init__(self, p=0.5, keep_magnitude=True):
+	def __init__(self, p=0.5, inplace=False, keep_magnitude=True):
 
 		super(TokenDropout, self).__init__()
-		self.p = float(p)
+		self.p, self.inplace = float(p), inplace
 		self.keep_magnitude = (1.0 / (1.0 - self.p)) if keep_magnitude else False
 
 	def forward(self, inpute):
 
 		if self.training:
 			mask = inpute.new_full(inpute.size()[:-1], self.p, requires_grad=False).bernoulli().to(mask_tensor_type).unsqueeze(-1)
-			out = inpute.masked_fill(mask, 0.0)
+			out = inpute.masked_fill_(mask, 0.0) if self.inplace else inpute.masked_fill(mask, 0.0)
 			if self.keep_magnitude:
 				out = out * self.keep_magnitude
 
@@ -47,14 +47,13 @@ def sample(lin):
 
 class NGramDropout(nn.Module):
 
-	def __init__(self, p=0.5, seqdim=1, sample_p=[1.0 / tmpu for tmpu in range(1, 3 + 1)], keep_magnitude=True):
+	def __init__(self, p=0.5, inplace=False, seqdim=1, sample_p=[1.0 / tmpu for tmpu in range(1, 3 + 1)], keep_magnitude=True):
 
 		super(NGramDropout, self).__init__()
-		self.p = float(p)
+		self.p, self.inplace, self.seqdim = float(p), inplace, seqdim
+		self.keep_magnitude = (1.0 / (1.0 - self.p)) if keep_magnitude else False
 		self.sample_p = norm([float(pu) for pu in sample_p])
 		self.max_n = len(sample_p)
-		self.seqdim = seqdim
-		self.keep_magnitude = (1.0 / (1.0 - self.p)) if keep_magnitude else False
 
 	def forward(self, inpute):
 
@@ -71,7 +70,7 @@ class NGramDropout(nn.Module):
 				mask = mask.unsqueeze(-1)
 			else:
 				mask = inpute.new_full(_msize, self.p, requires_grad=False).bernoulli().to(mask_tensor_type).unsqueeze(-1)
-			out = inpute.masked_fill(mask, 0.0)
+			out = inpute.masked_fill_(mask, 0.0) if self.inplace else inpute.masked_fill(mask, 0.0)
 			if self.keep_magnitude:
 				out = out * self.keep_magnitude
 

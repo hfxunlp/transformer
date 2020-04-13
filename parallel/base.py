@@ -24,7 +24,7 @@ from utils.fmt.base import clean_list
 class DataParallelModel(DataParallel):
 
 	# host replicates should improve a little bit performance if there are additional calls to update_replicas and collect_gradients in the training scripts.
-	def __init__(self, module, device_ids=None, output_device=None, dim=0, host_replicate=False, gather_output = True):
+	def __init__(self, module, device_ids=None, output_device=None, dim=0, host_replicate=False, gather_output=True):
 
 		super(DataParallelModel, self).__init__(module, device_ids, output_device, dim)
 
@@ -73,8 +73,8 @@ class DataParallelModel(DataParallel):
 
 	def collect_gradients(self):
 
-		if self.ngradev > 0:
-			grads = comm.reduce_add_coalesced([[p.grad for p in filter_para_grad(net.parameters())] for net in self.nets[:self.ngradev]], self.output_device) if self.ngradev > 1 else [p.grad for p in filter_para_grad(self.nets[0].parameters())]
+		if self.ngradev > 1:
+			grads = comm.reduce_add_coalesced([[p.grad for p in filter_para_grad(net.parameters())] for net in self.nets[:self.ngradev]], self.output_device)# if self.ngradev > 1 else [p.grad for p in filter_para_grad(self.nets[0].parameters())]
 			for mp, grad in zip(filter_para_grad(self.module.parameters()), grads):
 				mp.grad = grad
 

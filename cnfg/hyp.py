@@ -2,6 +2,8 @@
 
 ease_optimization = True
 
+lipschitz_initialization = True
+
 # choices: None, "GeLU", "Swish", "Sigmoid"
 advance_activation_function = None
 

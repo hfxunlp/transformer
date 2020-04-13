@@ -35,6 +35,7 @@ inf_default = inf
 ieps_default = 1e-9
 ieps_ln_default = 1e-6
 ieps_adam_default = 1e-9
+ieps_noise_default = ieps_ln_default
 
 ieps_ln_default = parse_none(ieps_ln_default, ieps_default)
 ieps_adam_default = parse_none(ieps_adam_default, ieps_default)

@@ -19,9 +19,9 @@ class GausNoiser(nn.Module):
 
 		if self.training:
 			if mask is None:
-				base_p = inpute.data.abs().mean() * self.power
+				base_p = inpute.detach().abs().mean() * self.power
 			else:
-				base_p = inpute.data.masked_fill(mask, 0.0).norm(p=1) * (self.power / float((mask.numel() - mask.sum().item()) * inpute.size(-1)))
+				base_p = inpute.detach().masked_fill(mask, 0.0).norm(p=1) * (self.power / float((mask.numel() - mask.sum().item()) * inpute.size(-1)))
 
 			return torch.randn(inpute.size(), dtype=inpute.dtype, device=inpute.device) * base_p + inpute
 
@@ -38,9 +38,9 @@ class UniNoiser(nn.Module):
 
 		if self.training:
 			if mask is None:
-				base_p = inpute.data.abs().mean().item() * self.power
+				base_p = inpute.detach().abs().mean().item() * self.power
 			else:
-				base_p = inpute.data.masked_fill(mask, 0.0).norm(p=1).item() / float((mask.numel() - mask.sum().item()) * inpute.size(-1)) * self.power
+				base_p = inpute.detach().masked_fill(mask, 0.0).norm(p=1).item() / float((mask.numel() - mask.sum().item()) * inpute.size(-1)) * self.power
 
 			return inpute.new_empty(inpute.size(), requires_grad=False).uniform_(-base_p, base_p) + inpute
 
@@ -48,7 +48,7 @@ class UniNoiser(nn.Module):
 
 class GausNoiserVec(nn.Module):
 
-	def __init__(self, power, dim=-1, eps=1e-06):
+	def __init__(self, power, dim=-1, eps=ieps_noise_default):
 
 		super(GausNoiserVec, self).__init__()
 		self.power = power
@@ -59,7 +59,7 @@ class GausNoiserVec(nn.Module):
 
 		if self.training:
 			_noise = torch.randn(inpute.size(), dtype=inpute.dtype, device=inpute.device)
-			base_p = inpute.data.norm(p=2, dim=self.dim, keepdim=True) / (_noise.norm(p=2, dim=self.dim, keepdim=True) + self.eps) * self.power
+			base_p = inpute.detach().norm(p=2, dim=self.dim, keepdim=True) / (_noise.norm(p=2, dim=self.dim, keepdim=True) + self.eps) * self.power
 
 			return _noise * base_p + inpute
 
@@ -67,7 +67,7 @@ class GausNoiserVec(nn.Module):
 
 class UniNoiserVec(nn.Module):
 
-	def __init__(self, power, dim=-1, eps=1e-06):
+	def __init__(self, power, dim=-1, eps=ieps_noise_default):
 
 		super(UniNoiserVec, self).__init__()
 		self.power = power
@@ -78,7 +78,7 @@ class UniNoiserVec(nn.Module):
 
 		if self.training:
 			_noise = inpute.new_empty(inpute.size(), requires_grad=False).uniform_(-1.0, 1.0)
-			base_p = inpute.data.norm(p=2, dim=self.dim, keepdim=True) / (_noise.norm(p=2, dim=self.dim, keepdim=True) + self.eps) * self.power
+			base_p = inpute.detach().norm(p=2, dim=self.dim, keepdim=True) / (_noise.norm(p=2, dim=self.dim, keepdim=True) + self.eps) * self.power
 
 			return _noise * base_p + inpute
 

@@ -6,23 +6,11 @@ from modules.base import *
 from transformer.Encoder import EncoderLayer as EncoderLayerBase
 from transformer.Encoder import Encoder as EncoderBase
 
-# vocabulary:
-#	<pad>:0
-#	<unk>:1
-#	<eos>:2
-#	<sos>:3
-#	...
-# for the classier of the decoder, <sos> is omitted
+from utils.base import align_modules_by_type
 
 from cnfg.ihyp import *
 
 class EncoderLayer(nn.Module):
-
-	# isize: input size
-	# fhsize: hidden size of PositionwiseFeedForward
-	# attn_drop: dropout for MultiHeadAttention
-	# num_head: number of heads in MultiHeadAttention
-	# ahsize: hidden size of MultiHeadAttention
 
 	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, num_sub=1, comb_input=True):
 
@@ -38,8 +26,6 @@ class EncoderLayer(nn.Module):
 
 		self.comb_input = comb_input
 
-	# inputs: input of this layer (bsize, seql, isize)
-
 	def forward(self, inputs, mask=None):
 
 		out = inputs
@@ -51,15 +37,6 @@ class EncoderLayer(nn.Module):
 		return self.combiner(*outs)
 
 class Encoder(EncoderBase):
-
-	# isize: size of word embedding
-	# nwd: number of words
-	# num_layer: number of encoder layers
-	# fhsize: number of hidden units for PositionwiseFeedForward
-	# attn_drop: dropout for MultiHeadAttention
-	# num_head: number of heads in MultiHeadAttention
-	# xseql: maxmimum length of sequence
-	# ahsize: number of hidden units for MultiHeadAttention
 
 	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=False, num_sub=1):
 
@@ -79,13 +56,7 @@ class Encoder(EncoderBase):
 
 		self.pemb = base_encoder.pemb
 
-		_nets = base_encoder.nets
-
-		_lind = 0
-		for net in self.nets:
-			_rind = _lind + len(net.nets)
-			net.nets = nn.ModuleList(_nets[_lind:_rind])
-			_lind = _rind
+		self.nets = align_modules_by_type(base_encoder.nets, EncoderLayerBase, self.nets)# base_encoder.nets if isinstance(base_encoder, Encoder) else
 
 		self.out_normer = None if self.out_normer is None else base_encoder.out_normer
 		self.nets[-1].combiner.out_normer = base_encoder.out_normer

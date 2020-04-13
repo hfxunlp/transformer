@@ -1,12 +1,9 @@
 #encoding: utf-8
 
 import torch
-from torch.nn.init import xavier_uniform_, kaiming_uniform_
-from torch.nn import Embedding, Linear, LayerNorm, ModuleDict
+from torch.nn import ModuleDict
 
 from threading import Thread
-
-from math import sqrt
 
 from random import sample
 from random import seed as rpyseed
@@ -191,45 +188,6 @@ def get_logger(fname):
 
 	return logger
 
-def init_model_params_glorot(modin, hyp=None):
-
-	_scale = sqrt(1.0 / 3.0) if hyp is None else hyp
-
-	for p in modin.parameters():
-		if p.requires_grad and (p.dim() > 1):
-			xavier_uniform_(p, gain=_scale)
-
-	return modin
-
-def init_model_params_kaiming(modin, hyp=None):
-
-	_scale = sqrt(5.0) if hyp is None else hyp
-
-	for p in modin.parameters():
-		if p.requires_grad and (p.dim() > 1):
-			kaiming_uniform_(p, a=_scale)
-
-	return modin
-
-def init_model_params(modin, scale_glorot=None, scale_kaiming=None):
-
-	_tmpm = init_model_params_kaiming(modin, scale_kaiming)
-
-	with torch.no_grad():
-		for _m in _tmpm.modules():
-			if isinstance(_m, Embedding):
-				init_model_params_glorot(_m, scale_glorot)
-				if _m.padding_idx is not None:
-					_m.weight[_m.padding_idx].zero_()
-			elif isinstance(_m, Linear):
-				if _m.bias is not None:
-					_m.bias.zero_()
-			elif isinstance(_m, LayerNorm):
-				_m.weight.fill_(1.0)
-				_m.bias.zero_()
-
-	return _tmpm
-
 def set_random_seed(seed, set_cuda=False):
 
 	_rseed = torch.initial_seed() if seed is None else seed
@@ -296,20 +254,20 @@ def ModuleList2Dict(modin):
 
 	return ModuleDict(zip([str(i) for i in range(len(modin))], modin))
 
+def add_module(m, strin, m_add):
+
+	if strin.find(".") < 0:
+		m.add_module(strin, m_add)
+	else:
+		_m, _name_list = m, strin.split(".")
+		# update _modules with pytorch: https://pytorch.org/docs/stable/_modules/torch/nn/modules/module.html#Module.add_module
+		for _tmp in _name_list[:-1]:
+			_m = _m._modules[_tmp]
+		_m._modules[_name_list[-1]] = m_add
+
+	return m
+
 def reduce_model_core(modin, redm, attr_func=None):
-
-	def add_module(m, strin, m_add):
-
-		if strin.find(".") < 0:
-			m.add_module(strin, m_add)
-		else:
-			_m, _name_list = m, strin.split(".")
-			# update _modules with pytorch: https://pytorch.org/docs/stable/_modules/torch/nn/modules/module.html#Module.add_module
-			for _tmp in _name_list[:-1]:
-				_m = _m._modules[_tmp]
-			_m._modules[_name_list[-1]] = m_add
-
-		return m
 
 	if attr_func is None:
 		_m_sel = None
@@ -342,6 +300,22 @@ def reduce_model_list(modin, redml, attr_funcl=None):
 			rsm = reduce_model_core(rsm, redm, attr_func)
 
 	return rsm
+
+def align_modules_by_type(srcml, typ, tgtm):
+
+	srcmi = iter(srcml)
+	for _name, _module in tgtm.named_modules():
+		if isinstance(_module, typ):
+			try:
+				_obtm = next(srcmi)
+			except Exception:
+				_obtm = None
+			if _obtm is None:
+				break
+			else:
+				add_module(tgtm, _name, _obtm)
+
+	return tgtm
 
 def report_parameters(modin):
 

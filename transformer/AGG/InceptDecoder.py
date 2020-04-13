@@ -5,17 +5,11 @@ from torch import nn
 from modules.base import *
 
 from transformer.Decoder import DecoderLayer as DecoderLayerBase
-from transformer.Decoder import Decoder as DecoderBase
+from transformer.AGG.HierDecoder import Decoder as DecoderBase
 
 from cnfg.ihyp import *
 
 class DecoderLayer(nn.Module):
-
-	# isize: input size
-	# fhsize: hidden size of PositionwiseFeedForward
-	# attn_drop: dropout for MultiHeadAttention
-	# num_head: number of heads in MultiHeadAttention
-	# ahsize: hidden size of MultiHeadAttention
 
 	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, num_sub=1):
 
@@ -28,13 +22,6 @@ class DecoderLayer(nn.Module):
 		self.nets = nn.ModuleList([DecoderLayerBase(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_sub)])
 
 		self.combiner = ResidueCombiner(isize, num_sub, _fhsize)
-
-	# inpute: encoded representation from encoder (bsize, seql, isize)
-	# inputo: embedding of decoded translation (bsize, nquery, isize)
-	# src_pad_mask: mask for given encoding source sentence (bsize, nquery, seql), see Encoder, expanded after generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
-	# tgt_pad_mask: mask to hide the future input
-	# query_unit: single query to decode, used to support decoding for given step
 
 	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, concat_query=False):
 
@@ -64,17 +51,6 @@ class DecoderLayer(nn.Module):
 
 class Decoder(DecoderBase):
 
-	# isize: size of word embedding
-	# nwd: number of words
-	# num_layer: number of encoder layers
-	# fhsize: number of hidden units for PositionwiseFeedForward
-	# attn_drop: dropout for MultiHeadAttention
-	# emb_w: weight for embedding. Use only when the encoder and decoder share a same dictionary
-	# num_head: number of heads in MultiHeadAttention
-	# xseql: maxmimum length of sequence
-	# ahsize: number of hidden units for MultiHeadAttention
-	# bindemb: bind embedding and classifier weight
-
 	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=False, bindemb=False, forbidden_index=None, num_sub=1):
 
 		_ahsize = isize if ahsize is None else ahsize
@@ -84,26 +60,3 @@ class Decoder(DecoderBase):
 		super(Decoder, self).__init__(isize, nwd, num_layer, _fhsize, dropout, attn_drop, emb_w, num_head, xseql, _ahsize, norm_output, bindemb, forbidden_index)
 
 		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize, num_sub) for i in range(num_layer)])
-
-	def load_base(self, base_decoder):
-
-		self.drop = base_decoder.drop
-
-		self.wemb = base_decoder.wemb
-
-		self.pemb = base_decoder.pemb
-
-		_nets = base_decoder.nets
-
-		_lind = 0
-		for net in self.nets:
-			_rind = _lind + len(net.nets)
-			net.nets = nn.ModuleList(_nets[_lind:_rind])
-			_lind = _rind
-
-		self.classifier = base_decoder.classifier
-
-		self.lsm = base_decoder.lsm
-
-		self.out_normer = None if self.out_normer is None else base_decoder.out_normer
-		self.nets[-1].combiner.out_normer = base_decoder.out_normer

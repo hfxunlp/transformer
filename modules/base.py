@@ -48,7 +48,7 @@ class PositionalEmb(nn.Module):
 	# pos_offset: initial offset for position
 	# dim_offset: initial offset for dimension
 
-	def __init__(self, num_dim, num_pos=256, pos_offset=0, dim_offset=0, alpha=1.0):
+	def __init__(self, num_dim, num_pos=cache_len_default, pos_offset=0, dim_offset=0, alpha=1.0):
 
 		super(PositionalEmb, self).__init__()
 
@@ -206,7 +206,7 @@ class AverageAttn(nn.Module):
 	# dropout: dropout rate for Feed-forward NN
 	# num_pos: maximum length of sentence cached, extended length will be generated while needed and droped immediately after that
 
-	def __init__(self, isize, hsize=None, dropout=0.0, num_pos=512, use_GeLU=use_adv_act_default):
+	def __init__(self, isize, hsize=None, dropout=0.0, num_pos=cache_len_default, use_GeLU=use_adv_act_default):
 
 		super(AverageAttn, self).__init__()
 
@@ -659,7 +659,7 @@ class CoordinateEmb(nn.Module):
 	# pos_offset: initial offset for position
 	# dim_offset: initial offset for dimension
 
-	def __init__(self, num_dim, num_pos=512, num_steps=8, pos_offset=0, dim_offset=0, alpha=1.0):
+	def __init__(self, num_dim, num_pos=cache_len_default, num_steps=8, pos_offset=0, dim_offset=0, alpha=1.0):
 
 		super(CoordinateEmb, self).__init__()
 

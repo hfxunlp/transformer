@@ -2,6 +2,7 @@
 
 from torch import nn
 
+from utils.relpos import share_rel_pos_cache
 from utils.fmt.base import parse_double_value_tuple
 
 from transformer.SC.Encoder import Encoder
@@ -24,6 +25,9 @@ class NMT(nn.Module):
 		emb_w = self.enc.wemb.weight if global_emb else None
 
 		self.dec = Decoder(isize, tnwd, dec_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
+
+		if use_k_relative_position > 0:
+			share_rel_pos_cache(self)
 
 	def forward(self, inpute, inputo, mask=None):
 
