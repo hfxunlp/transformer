@@ -85,18 +85,19 @@ class GradientMonitor:
 	# num_his_gm: cache num_his_gm gradients into a history, and return this number of angle changes.
 	# returns: (update_r, angle_r), update_r: to performing an optimization step, angle_r: the angle change in current step.
 
-	def __init__(self, num_group, select_func, angle_alpha=1.1, num_tol_amin=3, num_his_recoder=50, num_his_gm=1):
+	def __init__(self, num_group, select_func, module=None, angle_alpha=1.1, num_tol_amin=3, num_his_recoder=50, num_his_gm=1):
 
 		self.scale = 180.0 / pi
 		self.num_group = num_group
 		self.recorder = EffRecoder(num_group, num_his=num_his_recoder, init_value=1.0)#init_value=180.0 if use sample_gumble_norm in self.reset
 		self.select_func = select_func
+		self.module = module
 		self.alpha, self.num_tol_amin, self.num_his = angle_alpha, num_tol_amin, num_his_gm
 		self.reset()
 
-	def update(self, mod):
+	def update(self, mod=None):
 
-		_cur_gg = backup_para_grad(self.select_func(mod, self.sel_ind))
+		_cur_gg = backup_para_grad(self.select_func(self.module if mod is None else mod, self.sel_ind))
 		angle_r = None
 		if self.num_his > 1:
 			if self.prev_grad is None:

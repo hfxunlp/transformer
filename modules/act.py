@@ -54,8 +54,9 @@ class Swish(nn.Module):
 
 	def fix_init(self):
 
-		if self.reset_beta is not None:
-			self.beta.fill_(self.reset_beta)
+		with torch.no_grad():
+			if self.reset_beta is not None:
+				self.beta.fill_(self.reset_beta)
 
 if override_GeLU_Swish:
 	GeLU = Swish

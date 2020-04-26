@@ -38,7 +38,7 @@ class EncoderLayer(nn.Module):
 
 		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residual)
 
-		self.layer_normer = nn.LayerNorm(isize, eps=ieps_ln_default)
+		self.layer_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
@@ -91,7 +91,7 @@ class Encoder(nn.Module):
 		else:
 			self.nets = nn.ModuleList([EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
 
-		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default) if norm_output else None
+		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) if norm_output else None
 
 	# inputs: (bsize, seql)
 	# mask: (bsize, 1, seql), generated with:

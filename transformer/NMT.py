@@ -41,7 +41,7 @@ class NMT(nn.Module):
 		self.dec = Decoder(isize, tnwd, dec_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
 		#self.dec = Decoder(isize, tnwd, dec_layer, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)# for RNMT
 
-		if use_k_relative_position > 0:
+		if rel_pos_enabled:
 			share_rel_pos_cache(self)
 
 	# inpute: source sentences from encoder (bsize, seql)

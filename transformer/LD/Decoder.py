@@ -2,8 +2,10 @@
 
 import torch
 from torch import nn
-from modules.base import *
-from modules.paradoc import GateResidual
+
+from modules.base import CrossAttn, ResidueCombiner
+from modules.TA import PositionwiseFF
+
 from utils.base import repeat_bsize_for_beam_tensor
 from math import sqrt
 
@@ -14,58 +16,57 @@ from cnfg.ihyp import *
 
 class DecoderLayer(DecoderLayerBase):
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, ncross=2):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None):
 
 		_ahsize = isize if ahsize is None else ahsize
 
-		super(DecoderLayer, self).__init__(isize, fhsize, dropout, attn_drop, num_head, _ahsize)
+		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.cattns = nn.ModuleList([CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop) for i in range(ncross)])
-		self.cattn_ln = nn.ModuleList([nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) for i in range(ncross)])
-		self.grs = nn.ModuleList([GateResidual(isize) for i in range(ncross)])
+		super(DecoderLayer, self).__init__(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
 
-	def forward(self, inpute, inputo, inputc, src_pad_mask=None, tgt_pad_mask=None, context_mask=None, query_unit=None):
+		self.cattn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
+
+		self.ff = PositionwiseFF(isize, _fhsize, dropout)
+		self.scff = ResidueCombiner(isize, 2, _fhsize, dropout)
+
+	def forward(self, inpute, inputh, inputo, src_pad_mask=None, chk_pad_mask=None, tgt_pad_mask=None, query_unit=None, concat_query=False):
 
 		if query_unit is None:
-			_inputo = self.layer_normer1(inputo)
 
 			states_return = None
 
-			context = self.self_attn(_inputo, mask=tgt_pad_mask)
+			context = self.self_attn(inputo, mask=tgt_pad_mask)
 
 			if self.drop is not None:
 				context = self.drop(context)
 
-			context = context + (_inputo if self.norm_residual else inputo)
+			context = context + inputo
 
 		else:
-			_query_unit = self.layer_normer1(query_unit)
 
-			_inputo = _query_unit if inputo is None else torch.cat((inputo, _query_unit,), 1)
+			if concat_query:
 
-			states_return = _inputo
+				inputo = query_unit if inputo is None else torch.cat((inputo, query_unit,), 1)
 
-			context = self.self_attn(_query_unit, iK=_inputo)
+			states_return = inputo
+
+			context = self.self_attn(query_unit, iK=inputo)
 
 			if self.drop is not None:
 				context = self.drop(context)
 
-			context = context + (_query_unit if self.norm_residual else query_unit)
+			context = context + query_unit
 
-		_context = self.layer_normer2(context)
+		_context = self.layer_normer1(context)
+
+		_context = self.scff(_context, self.cattn(_context, inputh, mask=chk_pad_mask))
+
 		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
 
 		if self.drop is not None:
 			_context_new = self.drop(_context_new)
 
-		context = _context_new + (_context if self.norm_residual else context)
-
-		for _ln, _cattn, _gr, _inputc, _maskc in zip(self.cattn_ln, self.cattns, self.grs, inputc, [None for i in range(len(inputc))] if context_mask is None else context_mask):
-			_inputs = _ln(context)
-			_context = _cattn(_inputs, _inputc, mask=_maskc)
-			if self.drop is not None:
-				_context = self.drop(_context)
-			context = _gr(_context, (_inputs if self.norm_residual else context))
+		context = self.layer_normer2(_context_new + _context)
 
 		context = self.ff(context)
 
@@ -74,18 +75,9 @@ class DecoderLayer(DecoderLayerBase):
 		else:
 			return context, states_return
 
-	def load_base(self, base_decoder_layer):
-
-		self.self_attn = base_decoder_layer.self_attn
-		self.cross_attn = base_decoder_layer.cross_attn
-		self.ff = base_decoder_layer.ff
-		self.layer_normer1 = base_decoder_layer.layer_normer1
-		self.layer_normer2 = base_decoder_layer.layer_normer2
-		self.drop = base_decoder_layer.drop
-
 class Decoder(DecoderBase):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, nprev_context=2):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
 
 		_ahsize = isize if ahsize is None else ahsize
 
@@ -93,59 +85,35 @@ class Decoder(DecoderBase):
 
 		super(Decoder, self).__init__(isize, nwd, num_layer, _fhsize, dropout, attn_drop, emb_w, num_head, xseql, _ahsize, norm_output, bindemb, forbidden_index)
 
-		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize, nprev_context) for i in range(num_layer)])
+		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
 
-	def forward(self, inpute, inputo, inputc, src_pad_mask=None, context_mask=None):
+	def forward(self, inpute, inputh, inputo, src_pad_mask=None, chk_pad_mask=None):
 
-		bsize, nsent, nquery = inputo.size()
-		_inputo = inputo.view(-1, nquery)
+		bsize, nquery = inputo.size()
 
-		out = self.wemb(_inputo)
-		isize = out.size(-1)
-		out = out * sqrt(isize)
+		out = self.wemb(inputo)
+
+		out = out * sqrt(out.size(-1))
 		if self.pemb is not None:
-			out = out + self.pemb(_inputo, expand=False)
+			out = out + self.pemb(inputo, expand=False)
 
 		if self.drop is not None:
 			out = self.drop(out)
 
-		_src_pad_mask = None if src_pad_mask is None else src_pad_mask.view(-1, 1, src_pad_mask.size(-1))
+		out = self.out_normer(out)
+
 		_mask = self._get_subsequent_mask(nquery)
 
-		for net in self.nets:
-			out = net(inpute, out, inputc, _src_pad_mask, _mask, context_mask)
+		for net, inputu, inputhu in zip(self.nets, inpute.unbind(dim=-1), inputh.unbind(dim=-1)):
+			out = net(inputu, inputhu, out, src_pad_mask, chk_pad_mask, _mask)
 
-		if self.out_normer is not None:
-			out = self.out_normer(out)
-
-		out = self.lsm(self.classifier(out)).view(bsize, nsent, nquery, -1)
+		out = self.lsm(self.classifier(out))
 
 		return out
 
-	def load_base(self, base_decoder):
+	def greedy_decode(self, inpute, inputh, src_pad_mask=None, chk_pad_mask=None, max_len=512, fill_pad=False):
 
-		self.drop = base_decoder.drop
-
-		self.wemb = base_decoder.wemb
-
-		self.pemb = base_decoder.pemb
-
-		for snet, bnet in zip(self.nets, base_decoder.nets):
-			snet.load_base(bnet)
-
-		self.classifier = base_decoder.classifier
-
-		self.lsm = base_decoder.lsm
-
-		self.out_normer = None if self.out_normer is None else base_decoder.out_normer
-
-	def decode(self, inpute, inputc, src_pad_mask=None, context_mask=None, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
-
-		return self.beam_decode(inpute, inputc, src_pad_mask, context_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad) if beam_size > 1 else self.greedy_decode(inpute, inputc, src_pad_mask, context_mask, max_len, fill_pad=fill_pad)
-
-	def greedy_decode(self, inpute, inputc, src_pad_mask=None, context_mask=None, max_len=512, fill_pad=False):
-
-		bsize, seql = inpute.size()[:2]
+		bsize, seql= inpute.size()[:2]
 
 		sos_emb = self.get_sos_emb(inpute)
 
@@ -158,14 +126,13 @@ class Decoder(DecoderBase):
 		if self.drop is not None:
 			out = self.drop(out)
 
+		out = self.out_normer(out)
+
 		states = {}
 
-		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, inputc, src_pad_mask, context_mask, None, out)
+		for _tmp, (net, inputu, inputhu) in enumerate(zip(self.nets, inpute.unbind(dim=-1), inputh.unbind(dim=-1))):
+			out, _state = net(inputu, inputhu, None, src_pad_mask, chk_pad_mask, None, out, True)
 			states[_tmp] = _state
-
-		if self.out_normer is not None:
-			out = self.out_normer(out)
 
 		out = self.lsm(self.classifier(out))
 
@@ -184,12 +151,11 @@ class Decoder(DecoderBase):
 			if self.drop is not None:
 				out = self.drop(out)
 
-			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], inputc, src_pad_mask, None, context_mask, out)
-				states[_tmp] = _state
+			out = self.out_normer(out)
 
-			if self.out_normer is not None:
-				out = self.out_normer(out)
+			for _tmp, (net, inputu, inputhu) in enumerate(zip(self.nets, inpute.unbind(dim=-1), inputh.unbind(dim=-1))):
+				out, _state = net(inputu, inputhu, states[_tmp], src_pad_mask, chk_pad_mask, None, out, True)
+				states[_tmp] = _state
 
 			out = self.lsm(self.classifier(out))
 			wds = out.argmax(dim=-1)
@@ -202,7 +168,7 @@ class Decoder(DecoderBase):
 
 		return torch.cat(trans, 1)
 
-	def beam_decode(self, inpute, inputc, src_pad_mask=None, context_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False, fill_pad=False):
+	def beam_decode(self, inpute, inputh, src_pad_mask=None, chk_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False, fill_pad=False):
 
 		bsize, seql = inpute.size()[:2]
 
@@ -225,14 +191,13 @@ class Decoder(DecoderBase):
 		if self.drop is not None:
 			out = self.drop(out)
 
+		out = self.out_normer(out)
+
 		states = {}
 
-		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, inputc, src_pad_mask, context_mask, None, out)
+		for _tmp, (net, inputu, inputhu) in enumerate(zip(self.nets, inpute.unbind(dim=-1), inputh.unbind(dim=-1))):
+			out, _state = net(inputu, inputhu, None, src_pad_mask, chk_pad_mask, None, out, True)
 			states[_tmp] = _state
-
-		if self.out_normer is not None:
-			out = self.out_normer(out)
 
 		out = self.lsm(self.classifier(out))
 
@@ -244,14 +209,11 @@ class Decoder(DecoderBase):
 
 		done_trans = wds.view(bsize, beam_size).eq(2)
 
-		inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
+		inpute = inpute.repeat(1, beam_size, 1, 1).view(real_bsize, seql, isize, -1)
+		inputh = repeat_bsize_for_beam_tensor(inputh, beam_size)
 
 		_src_pad_mask = None if src_pad_mask is None else src_pad_mask.repeat(1, beam_size, 1).view(real_bsize, 1, seql)
-		_cbsize, _cseql = inputc[0].size()[:2]
-		_creal_bsize = _cbsize * beam_size
-		_context_mask = [None if cu is None else cu.repeat(1, beam_size, 1).view(_creal_bsize, 1, _cseql) for cu in context_mask]
-
-		_inputc = [inputu.repeat(1, beam_size, 1).view(_creal_bsize, _cseql, isize) for inputu in inputc]
+		_chk_pad_mask = None if chk_pad_mask is None else repeat_bsize_for_beam_tensor(chk_pad_mask, beam_size)
 
 		for key, value in states.items():
 			states[key] = repeat_bsize_for_beam_tensor(value, beam_size)
@@ -265,12 +227,11 @@ class Decoder(DecoderBase):
 			if self.drop is not None:
 				out = self.drop(out)
 
-			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, states[_tmp], _inputc, _src_pad_mask, None, _context_mask, out)
-				states[_tmp] = _state
+			out = self.out_normer(out)
 
-			if self.out_normer is not None:
-				out = self.out_normer(out)
+			for _tmp, (net, inputu, inputhu) in enumerate(zip(self.nets, inpute.unbind(dim=-1), inputh.unbind(dim=-1))):
+				out, _state = net(inputu, inputhu, states[_tmp], _src_pad_mask, _chk_pad_mask, None, out, True)
+				states[_tmp] = _state
 
 			out = self.lsm(self.classifier(out)).view(bsize, beam_size, -1)
 
@@ -321,3 +282,7 @@ class Decoder(DecoderBase):
 		else:
 
 			return trans.view(bsize, beam_size, -1).select(1, 0)
+
+	def decode(self, inpute, inputh, src_pad_mask, chk_pad_mask, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
+
+		return self.beam_decode(inpute, inputh, src_pad_mask, chk_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad) if beam_size > 1 else self.greedy_decode(inpute, inputh, src_pad_mask, chk_pad_mask, max_len, fill_pad=fill_pad)

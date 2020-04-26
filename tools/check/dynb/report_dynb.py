@@ -45,7 +45,7 @@ def select_function(modin, select_index):
 
 	return _sel_m.parameters()
 
-grad_mon = GradientMonitor(num_layer * 2, select_function, angle_alpha=cnfg.dyn_tol_alpha, num_tol_amin=cnfg.dyn_tol_amin, num_his_recoder=cnfg.num_dynb_his, num_his_gm=max_his)
+grad_mon = GradientMonitor(num_layer * 2, select_function, module=None, angle_alpha=cnfg.dyn_tol_alpha, num_tol_amin=cnfg.dyn_tol_amin, num_his_recoder=cnfg.num_dynb_his, num_his_gm=max_his)
 
 def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, chkpof=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False, use_amp=False):
 
@@ -107,6 +107,8 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			_log_f_dynbatch.write(("%d %s\n" % (wd_add, " ".join(["%.2f" % (_cu,) for _cu in _cos_sim_l]))).encode("utf-8"))
 
 		if _perform_dyn_optm_step or (_done_tokens >= tokens_optm):
+			if not _perform_dyn_optm_step:
+				grad_mon.reset()
 			_do_optm_step = True if _cos_sim is None else (_cos_sim <= update_angle)
 			if _do_optm_step:
 				if log_dynb:

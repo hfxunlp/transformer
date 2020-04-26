@@ -5,10 +5,8 @@ from torch import nn
 from utils.relpos import share_rel_pos_cache
 from utils.fmt.base import parse_double_value_tuple
 
-from transformer.SC.Encoder import Encoder
-from transformer.SC.Decoder import Decoder
-
-from math import sqrt
+from transformer.LD.Encoder import Encoder
+from transformer.LD.Decoder import Decoder
 
 from cnfg.ihyp import *
 
@@ -20,7 +18,7 @@ class NMT(nn.Module):
 
 		enc_layer, dec_layer = parse_double_value_tuple(num_layer)
 
-		self.enc = Encoder(isize, snwd, enc_layer, fhsize, dropout, attn_drop, num_head, xseql, ahsize, norm_output, num_layer)
+		self.enc = Encoder(isize, snwd, enc_layer, fhsize, dropout, attn_drop, num_head, xseql, ahsize, norm_output, dec_layer)
 
 		emb_w = self.enc.wemb.weight if global_emb else None
 
@@ -32,8 +30,9 @@ class NMT(nn.Module):
 	def forward(self, inpute, inputo, mask=None):
 
 		_mask = inpute.eq(0).unsqueeze(1) if mask is None else mask
+		ence, ench, hmask = self.enc(inpute, _mask)
 
-		return self.dec(*self.enc(inpute, _mask), inputo, _mask)
+		return self.dec(ence, ench, inputo, _mask, hmask)
 
 	# inpute: source sentences from encoder (bsize, seql)
 	# beam_size: the beam size for beam search
@@ -45,4 +44,6 @@ class NMT(nn.Module):
 
 		_max_len = inpute.size(1) + max(64, inpute.size(1) // 4) if max_len is None else max_len
 
-		return self.dec.decode(*self.enc(inpute, mask), mask, beam_size, _max_len, length_penalty)
+		ence, ench, hmask = self.enc(inpute, mask)
+
+		return self.dec.decode(ence, ench, mask, hmask, beam_size, _max_len, length_penalty)

@@ -78,8 +78,10 @@ def init_model_params_lipschitz(modin, gain_glorot=sqrt(1.0/3.0), gain_kaiming=s
 				if _m.bias is not None:
 					_m.bias.zero_()
 			elif isinstance(_m, LayerNorm):
-				_m.weight.fill_(1.0)
-				_m.bias.zero_()
+				if _m.weight is not None:
+					_m.weight.fill_(1.0)
+				if _m.bias is not None:
+					_m.bias.zero_()
 
 	return _tmpm
 

@@ -32,8 +32,8 @@ class DecoderLayer(nn.Module):
 
 		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residual)
 
-		self.layer_normer1 = nn.LayerNorm(isize, eps=ieps_ln_default)
-		self.layer_normer2 = nn.LayerNorm(isize, eps=ieps_ln_default)
+		self.layer_normer1 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		self.layer_normer2 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
@@ -134,7 +134,7 @@ class Decoder(nn.Module):
 
 		self.lsm = nn.LogSoftmax(-1)
 
-		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default) if norm_output else None
+		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) if norm_output else None
 
 		self.fbl = None if forbidden_index is None else tuple(set(forbidden_index))
 

@@ -42,7 +42,7 @@ class Encoder(nn.Module):
 		self.net = EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
 		self.halter = nn.Sequential(Scorer(isize), nn.Sigmoid())
 
-		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default) if norm_output else None
+		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) if norm_output else None
 
 		self.act_loss = ACT_Loss()
 

@@ -8,6 +8,8 @@ from torch import nn
 from modules.base import *
 from modules.rnncells import *
 
+from utils.fmt.base import pad_id
+
 from cnfg.ihyp import *
 
 class FirstLayer(nn.Module):
@@ -131,7 +133,7 @@ class Decoder(nn.Module):
 
 		self.lsm = nn.LogSoftmax(-1)
 
-		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default) if norm_output else None
+		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) if norm_output else None
 
 		self.fbl = None if forbidden_index is None else tuple(set(forbidden_index))
 
@@ -440,15 +442,16 @@ class Decoder(nn.Module):
 
 		return self.wemb.weight[1].reshape(1, 1, -1).expand(bsize, 1, -1)
 
-	# will it be better if zero corresponding weights? but called by fix_load prevent doing so
-
 	def fix_init(self):
 
-		_tmp = list(self.classifier.modules())[-1]
-		if self.fbl is not None:
-			for ind in self.fbl:
-				_tmp.bias.data[ind] = -1e32
+		self.fix_load()
+		with torch.no_grad():
+			self.wemb.weight[pad_id].zero_()
+			self.classifier.weight[pad_id].zero_()
 
 	def fix_load(self):
 
-		self.fix_init()
+		if self.fbl is not None:
+			with torch.no_grad():
+				#list(self.classifier.modules())[-1].bias.index_fill_(0, torch.tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf_default)
+				self.classifier.bias.index_fill_(0, torch.tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf_default)

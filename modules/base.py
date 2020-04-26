@@ -27,7 +27,7 @@ class PositionwiseFF(nn.Module):
 
 		self.net = nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_bias))
 
-		self.normer = nn.LayerNorm(isize, eps=ieps_ln_default)
+		self.normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.norm_residual = norm_residual
 
@@ -138,7 +138,7 @@ class MultiHeadAttn(nn.Module):
 		if k_rel_pos > 0:
 			self.k_rel_pos = k_rel_pos
 			self.rel_pemb = nn.Embedding(k_rel_pos * 2 + 1, self.attn_dim)
-			_rpm = torch.arange(-xseql + 1, 1).unsqueeze(0)
+			_rpm = torch.arange(-xseql + 1, 1, dtype=torch.long).unsqueeze(0)
 			self.register_buffer("rel_pos", (_rpm - _rpm.t()).clamp(min=-k_rel_pos, max=k_rel_pos) + k_rel_pos)
 			self.xseql = xseql
 			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
@@ -275,7 +275,7 @@ class SelfAttn(nn.Module):
 		if k_rel_pos > 0:
 			self.k_rel_pos = k_rel_pos
 			self.rel_pemb = nn.Embedding(k_rel_pos * 2 + 1, self.attn_dim)
-			_rpm = torch.arange(-xseql + 1, 1).unsqueeze(0)
+			_rpm = torch.arange(-xseql + 1, 1, dtype=torch.long).unsqueeze(0)
 			self.register_buffer("rel_pos", (_rpm - _rpm.t()).clamp(min=-k_rel_pos, max=k_rel_pos) + k_rel_pos)
 			self.xseql = xseql
 			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
@@ -399,7 +399,7 @@ class ResidueCombiner(nn.Module):
 		# should dropout be in front of sigmoid or not?
 		self.net = nn.Sequential(Linear(isize * ncomb, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Dropout(dropout, inplace=inplace_after_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize * ncomb, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Linear(_hsize, isize, bias=enable_bias))
 
-		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default)
+		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 	def forward(self, *xl):
 
@@ -503,7 +503,7 @@ class SparsemaxFunction(Function):
 			def _make_ix_like(input, dim=0):
 
 				d = input.size(dim)
-				rho = torch.arange(1, d + 1, device=input.device, dtype=input.dtype)
+				rho = torch.arange(1, d + 1, dtype=input.dtype, device=input.device)
 				view = [1] * input.dim()
 				view[0] = -1
 
@@ -574,14 +574,14 @@ class SparseNormer(nn.Module):
 
 	# dim: dimension to normalize
 
-	def __init__(self, dim=-1, ieps=1e-32):
+	def __init__(self, dim=-1, eps=ieps_default):
 
 		super(SparseNormer, self).__init__()
 
 		self.dim = dim
 		self.bias = nn.Parameter(torch.zeros(1))
 		self.act = nn.ReLU(inplace=True)
-		self.ieps = ieps
+		self.eps = eps
 
 	def forward(self, x):
 
@@ -589,21 +589,21 @@ class SparseNormer(nn.Module):
 		_tmp = _tmp * _tmp
 
 		# fix zero-devision in case all elements in _tmp are 0.
-		return _tmp / (_tmp.sum(self.dim, keepdim=True) + self.ieps)
+		return _tmp / (_tmp.sum(self.dim, keepdim=True) + self.eps)
 
 class MHSparseNormer(nn.Module):
 
 	# nheads: number of heads
 	# dim: dimension to normalize
 
-	def __init__(self, nheads, dim=-1, ieps=1e-32):
+	def __init__(self, nheads, dim=-1, eps=ieps_default):
 
 		super(MHSparseNormer, self).__init__()
 
 		self.dim = dim
 		self.bias = nn.Parameter(torch.zeros(1, nheads, 1, 1))
 		self.act = nn.ReLU(inplace=True)
-		self.ieps = ieps
+		self.eps = eps
 
 	# input should be: (bsize, nheads, nquery, seql)
 	def forward(self, x):
@@ -612,11 +612,12 @@ class MHSparseNormer(nn.Module):
 		_tmp = _tmp * _tmp
 
 		# fix zero-devision in case all elements in _tmp are 0.
-		return _tmp / (_tmp.sum(self.dim, keepdim=True) + self.ieps)
+		return _tmp / (_tmp.sum(self.dim, keepdim=True) + self.eps)
 
 	def fix_init(self):
 
-		self.bias.data.zero_()
+		with torch.no_grad():
+			self.bias.data.zero_()
 
 class MHAttnSummer(nn.Module):
 
@@ -753,8 +754,9 @@ class Temperature(nn.Module):
 
 	def fix_init(self):
 
-		self.k.data.fill_(1.0)
-		self.bias.data.zero_()
+		with torch.no_grad():
+			self.k.data.fill_(1.0)
+			self.bias.data.zero_()
 
 def reduce_model(modin):
 

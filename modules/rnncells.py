@@ -24,7 +24,7 @@ class LSTMCell4RNMT(nn.Module):
 
 		# layer normalization is also applied for the computation of hidden for efficiency
 		self.trans = Linear(isize + osize, osize * 4)
-		self.normer = nn.LayerNorm((4, osize), eps=1e-06)
+		self.normer = nn.LayerNorm((4, osize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.act = GeLU() if use_GeLU else nn.Tanh()
 
@@ -57,7 +57,7 @@ class GRUCell4RNMT(nn.Module):
 		self.transi = Linear(isize, osize)
 		self.transh = Linear(osize, osize)
 
-		self.normer = nn.LayerNorm((2, osize), eps=1e-06)
+		self.normer = nn.LayerNorm((2, osize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.act = GeLU() if use_GeLU else nn.Tanh()
 

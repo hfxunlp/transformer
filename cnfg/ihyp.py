@@ -8,10 +8,9 @@ from math import inf
 
 from utils.fmt.base import parse_none, parse_double_value_tuple
 
-if ease_optimization:
-	enable_residual_bias_default = False
-else:
-	enable_residual_bias_default = True
+enable_residual_bias_default = not ease_optimization
+
+enable_ln_parameters = True
 
 use_adv_act_default = False
 override_GeLU_Swish = False
@@ -35,14 +34,14 @@ inf_default = inf
 ieps_default = 1e-9
 ieps_ln_default = 1e-6
 ieps_adam_default = 1e-9
-ieps_noise_default = ieps_ln_default
-
 ieps_ln_default = parse_none(ieps_ln_default, ieps_default)
 ieps_adam_default = parse_none(ieps_adam_default, ieps_default)
+ieps_noise_default = ieps_ln_default
 
 adam_betas_default = (0.9, 0.98,)
 
 use_k_relative_position_encoder, use_k_relative_position_decoder = parse_double_value_tuple(use_k_relative_position)
+rel_pos_enabled = (max(use_k_relative_position_encoder, use_k_relative_position_decoder) > 0)
 disable_std_pemb_encoder, disable_std_pemb_decoder = parse_double_value_tuple(disable_std_pemb)
 
 h5datawargs = {} if hdf5_data_compression is None else {"compression": hdf5_data_compression, "compression_opts": hdf5_data_compression_level, "shuffle":True}

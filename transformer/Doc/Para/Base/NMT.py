@@ -24,7 +24,7 @@ class NMT(nn.Module):
 
 		self.dec = Decoder(isize, tnwd, dec_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index, nprev_context)
 
-		if use_k_relative_position > 0:
+		if rel_pos_enabled:
 			share_rel_pos_cache(self)
 
 	def forward(self, inpute, inputo, inputc, mask=None, context_mask=None):

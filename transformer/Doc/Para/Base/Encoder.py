@@ -22,7 +22,7 @@ class CrossEncoderLayer(EncoderLayerBase):
 		super(CrossEncoderLayer, self).__init__(isize, fhsize, dropout, attn_drop, num_head, _ahsize)
 
 		self.cattns = nn.ModuleList([CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop) for i in range(ncross)])
-		self.cattn_ln = nn.ModuleList([nn.LayerNorm(isize, eps=ieps_ln_default) for i in range(ncross)])
+		self.cattn_ln = nn.ModuleList([nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) for i in range(ncross)])
 		self.grs = nn.ModuleList([GateResidual(isize) for i in range(ncross)])
 
 	def forward(self, inputs, inputc, mask=None, context_mask=None):
