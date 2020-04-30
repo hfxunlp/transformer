@@ -74,6 +74,7 @@ class DataParallelModel(DataParallel):
 	def collect_gradients(self):
 
 		if self.ngradev > 1:
+			# in case some parameters might not be used during the forward propagation on some GPUs: p.data.new_zeros(p.data.size()) if p.grad is None else p.grad instead of p.grad, but in most cases, this can warn you in case you miss the use of some parameters in the forward computation.
 			grads = comm.reduce_add_coalesced([[p.grad for p in filter_para_grad(net.parameters())] for net in self.nets[:self.ngradev]], self.output_device)# if self.ngradev > 1 else [p.grad for p in filter_para_grad(self.nets[0].parameters())]
 			for mp, grad in zip(filter_para_grad(self.module.parameters()), grads):
 				mp.grad = grad
@@ -123,7 +124,7 @@ class DataParallelModel(DataParallel):
 		if self.nets is not None and self.ngradev > 1:
 			for net in self.nets[1:self.ngradev]:
 				for para in filter_para_grad(net.parameters()):
-					net.grad = None
+					para.grad = None
 
 	def reset_grad(self):
 
@@ -132,7 +133,7 @@ class DataParallelModel(DataParallel):
 		if self.nets is not None and self.ngradev > 1:
 			for net in self.nets[1:self.ngradev]:
 				for para in filter_para_grad(net.parameters()):
-					net.grad = None
+					para.grad = None
 		self.ngradev = 0
 
 class DataParallelCriterion(DataParallel):

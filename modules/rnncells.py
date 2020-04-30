@@ -17,28 +17,36 @@ def prepare_initState(hx, cx, bsize):
 class LSTMCell4RNMT(nn.Module):
 
 	# isize: input size of Feed-forward NN
+	# dropout: dropout over hidden units, disabling it and applying dropout to outputs (_out) in most cases
 
-	def __init__(self, isize, osize, use_GeLU=use_adv_act_default):
+	def __init__(self, isize, osize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_residual_bias_default):
 
 		super(LSTMCell4RNMT, self).__init__()
 
-		# layer normalization is also applied for the computation of hidden for efficiency
-		self.trans = Linear(isize + osize, osize * 4)
-		self.normer = nn.LayerNorm((4, osize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		_osize = isize if osize is None else osize
+
+		# layer normalization is also applied for the computation of hidden for efficiency. bias might be disabled in case provided by LayerNorm
+		self.trans = Linear(isize + _osize, _osize * 4, bias=enable_bias)
+		self.normer = nn.LayerNorm((4, _osize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.act = GeLU() if use_GeLU else nn.Tanh()
+		self.drop = Dropout(dropout, inplace=inplace_after_GeLU) if dropout > 0.0 else None
 
-		self.osize = osize
+		self.osize = _osize
 
 	def forward(self, inpute, state):
 
 		_out, _cell = state
 
-		_comb = self.normer(self.trans(torch.cat((inpute, _out), -1)).view(-1, 4, self.osize))
+		osize = list(_out.size())
+		osize.insert(-1, 4)
 
-		_combg, hidden = _comb.narrow(-2, 0, 3).sigmoid(), self.act(_comb.select(-2, 3))
+		_comb = self.normer(self.trans(torch.cat((inpute, _out,), -1)).view(osize))
 
-		ig, fg, og = _combg.unbind(-2)
+		(ig, fg, og,), hidden = _comb.narrow(-2, 0, 3).sigmoid().unbind(-2), self.act(_comb.select(-2, 3))
+
+		if self.drop is not None:
+			hidden = self.drop(hidden)
 
 		_cell = fg * _cell + ig * hidden
 		_out = og * _cell
@@ -49,27 +57,37 @@ class GRUCell4RNMT(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, osize, use_GeLU=use_adv_act_default):
+	def __init__(self, isize, osize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_residual_bias_default):
 
 		super(GRUCell4RNMT, self).__init__()
 
-		self.trans = Linear(isize + osize, osize * 2)
-		self.transi = Linear(isize, osize)
-		self.transh = Linear(osize, osize)
+		_osize = isize if osize is None else osize
 
-		self.normer = nn.LayerNorm((2, osize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		self.trans = Linear(isize + _osize, _osize * 2, bias=enable_bias)
+		self.transi = Linear(isize, _osize)
+		self.transh = Linear(_osize, _osize)
+
+		self.normer = nn.LayerNorm((2, _osize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.act = GeLU() if use_GeLU else nn.Tanh()
+		self.drop = Dropout(dropout, inplace=inplace_after_GeLU) if dropout > 0.0 else None
 
-		self.osize = osize
+		self.osize = _osize
 
 	def forward(self, inpute, state):
 
-		_comb = self.normer(self.trans(torch.cat((inpute, state), -1)).view(-1, 2, self.osize)).sigmoid()
+		osize = list(state.size())
+		osize.insert(-1, 2)
+
+		_comb = self.normer(self.trans(torch.cat((inpute, state,), -1)).view(osize)).sigmoid()
 
 		ig, fg = _comb.unbind(-2)
 
 		hidden = self.act(self.transi(inpute) + ig * self.transh(state))
+
+		if self.drop is not None:
+			hidden = self.drop(hidden)
+
 		_out = (1.0 - fg) * hidden + fg * state
 
 		return _out

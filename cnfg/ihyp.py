@@ -22,7 +22,7 @@ if advance_activation_function is not None:
 		override_GeLU_Sigmoid = True
 	elif _adv_act == "swish":
 		override_GeLU_Swish = True
-inplace_after_GeLU = use_adv_act_default and not override_GeLU_Sigmoid
+inplace_after_GeLU = use_adv_act_default and (not override_GeLU_Sigmoid)
 
 norm_residual_default = not (computation_order.lower() == "v2")
 
