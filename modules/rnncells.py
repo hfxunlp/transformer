@@ -19,7 +19,7 @@ class LSTMCell4RNMT(nn.Module):
 	# isize: input size of Feed-forward NN
 	# dropout: dropout over hidden units, disabling it and applying dropout to outputs (_out) in most cases
 
-	def __init__(self, isize, osize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_residual_bias_default):
+	def __init__(self, isize, osize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
 
 		super(LSTMCell4RNMT, self).__init__()
 
@@ -57,7 +57,7 @@ class GRUCell4RNMT(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, osize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_residual_bias_default):
+	def __init__(self, isize, osize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
 
 		super(GRUCell4RNMT, self).__init__()
 

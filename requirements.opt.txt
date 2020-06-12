@@ -1,5 +1,5 @@
-Cython>=0.29.14
+Cython>=0.29.20
 subword-nmt>=0.3.7
-sacremoses>=0.0.38
-Flask>=1.1.1
+sacremoses>=0.0.43
+Flask>=1.1.2
 PyNLPIR>=0.6.0

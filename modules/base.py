@@ -19,7 +19,7 @@ class PositionwiseFF(nn.Module):
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, use_GeLU=use_adv_act_default, enable_bias=enable_residual_bias_default):
+	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, use_GeLU=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
 
 		super(PositionwiseFF, self).__init__()
 
@@ -115,7 +115,7 @@ class MultiHeadAttn(nn.Module):
 	# sparsenorm: using sparse normer or standard softmax
 	# bind_qk: query and key can share a same linear transformation for the Reformer: The Efficient Transformer(https://arxiv.org/abs/2001.04451) paper.
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=enable_residual_bias_default, k_rel_pos=0, sparsenorm=False, bind_qk=False, xseql=cache_len_default):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=0, sparsenorm=False, bind_qk=False, xseql=cache_len_default):
 
 		super(MultiHeadAttn, self).__init__()
 
@@ -123,10 +123,10 @@ class MultiHeadAttn(nn.Module):
 		self.hsize = self.attn_dim * num_head
 		self.num_head = num_head
 
-		self.query_adaptor = Linear(isize, self.hsize, bias=enable_bias)
+		self.query_adaptor = Linear(isize, self.hsize, bias=enable_proj_bias)
 		_k_isize = isize if k_isize is None else k_isize
-		self.key_adaptor = self.query_adaptor if bind_qk and isize == _k_isize else Linear(_k_isize, self.hsize, bias=enable_bias)
-		self.value_adaptor = Linear(_k_isize if v_isize is None else v_isize, self.hsize, bias=enable_bias)
+		self.key_adaptor = self.query_adaptor if bind_qk and isize == _k_isize else Linear(_k_isize, self.hsize, bias=enable_proj_bias)
+		self.value_adaptor = Linear(_k_isize if v_isize is None else v_isize, self.hsize, bias=enable_proj_bias)
 
 		self.outer = Linear(self.hsize, osize, bias=enable_bias)
 
@@ -255,7 +255,7 @@ class AverageAttn(nn.Module):
 # Accelerated MultiHeadAttn for self attention, use when Q == K == V
 class SelfAttn(nn.Module):
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=enable_residual_bias_default, k_rel_pos=use_k_relative_position, sparsenorm=False, xseql=cache_len_default):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=use_k_relative_position, sparsenorm=False, xseql=cache_len_default):
 
 		super(SelfAttn, self).__init__()
 
@@ -263,7 +263,7 @@ class SelfAttn(nn.Module):
 		self.hsize = self.attn_dim * num_head
 		self.num_head = num_head
 
-		self.adaptor = Linear(isize, self.hsize * 3, bias=enable_bias)
+		self.adaptor = Linear(isize, self.hsize * 3, bias=enable_proj_bias)
 
 		self.outer = Linear(self.hsize, osize, bias=enable_bias)
 
@@ -340,7 +340,7 @@ class SelfAttn(nn.Module):
 # Accelerated MultiHeadAttn for cross attention, use when K == V
 class CrossAttn(nn.Module):
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, enable_bias=enable_residual_bias_default, sparsenorm=False):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, sparsenorm=False):
 
 		super(CrossAttn, self).__init__()
 
@@ -348,9 +348,9 @@ class CrossAttn(nn.Module):
 		self.hsize = self.attn_dim * num_head
 		self.num_head = num_head
 
-		self.query_adaptor = Linear(isize, self.hsize, bias=enable_bias)
+		self.query_adaptor = Linear(isize, self.hsize, bias=enable_proj_bias)
 
-		self.kv_adaptor = Linear(isize if k_isize is None else k_isize, self.hsize * 2, bias=enable_bias)
+		self.kv_adaptor = Linear(isize if k_isize is None else k_isize, self.hsize * 2, bias=enable_proj_bias)
 
 		self.outer = Linear(self.hsize, osize, bias=enable_bias)
 
@@ -390,7 +390,7 @@ class ResidueCombiner(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_residual_bias_default):
+	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
 
 		super(ResidueCombiner, self).__init__()
 

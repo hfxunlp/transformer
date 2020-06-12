@@ -8,7 +8,7 @@ from math import inf
 
 from utils.fmt.base import parse_none, parse_double_value_tuple
 
-enable_residual_bias_default = not ease_optimization
+enable_prev_ln_bias_default = enable_proj_bias_default = not ease_optimization
 
 enable_ln_parameters = True
 

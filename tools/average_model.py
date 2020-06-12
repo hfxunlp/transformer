@@ -8,20 +8,17 @@ import sys
 
 import torch
 
-from utils.base import mask_tensor_type
+from utils.base import secure_type_map
 from utils.h5serial import h5save, h5load
 
 from cnfg.ihyp import *
 
 def handle(srcfl, rsf):
 
-	type_map = {torch.float16: torch.float64, torch.float32: torch.float64, torch.uint8: torch.int64, torch.int8: torch.int64, torch.int16: torch.int64, torch.int32: torch.int64}
-	type_map[mask_tensor_type] = torch.int64
-
 	rsm = h5load(srcfl[0])
 
 	src_type = [para.dtype for para in rsm]
-	map_type = [type_map[para.dtype] if para.dtype in type_map else None for para in rsm]
+	map_type = [secure_type_map[para.dtype] if para.dtype in secure_type_map else None for para in rsm]
 	sec_rsm = [para if typ is None else para.to(typ) for para, typ in zip(rsm, map_type)]
 
 	nmodel = 1

@@ -88,9 +88,9 @@ Noiser = UniNoiserVec
 
 class PositionwiseFF(PositionwiseFFBase):
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, use_GeLU=use_adv_act_default, power=None):
+	def __init__(self, isize, power=None, **kwargs):
 
-		super(PositionwiseFF, self).__init__(isize, hsize, dropout, norm_residual, use_GeLU)
+		super(PositionwiseFF, self).__init__(isize, **kwargs)
 
 		self.noiser = None if power is None else Noiser(power)
 

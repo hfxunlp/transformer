@@ -34,12 +34,12 @@ class NMT(nn.Module):
 
 		enc_layer, dec_layer = parse_double_value_tuple(num_layer)
 
-		self.enc = Encoder(isize, snwd, enc_layer, fhsize, dropout, attn_drop, num_head, xseql, ahsize, norm_output)
+		self.enc = Encoder(isize, snwd, enc_layer, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output)
 
 		emb_w = self.enc.wemb.weight if global_emb else None
 
-		self.dec = Decoder(isize, tnwd, dec_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)
-		#self.dec = Decoder(isize, tnwd, dec_layer, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindDecoderEmb, forbidden_index)# for RNMT
+		self.dec = Decoder(isize, tnwd, dec_layer, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output, bindemb=bindDecoderEmb, forbidden_index=forbidden_index)
+		#self.dec = Decoder(isize, tnwd, dec_layer, dropout=dropout, attn_drop=attn_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output, bindemb=bindDecoderEmb, forbidden_index=forbidden_index)# for RNMT
 
 		if rel_pos_enabled:
 			share_rel_pos_cache(self)
@@ -174,7 +174,7 @@ class NMT(nn.Module):
 			# wds: (bsize * beam_size, 1)
 			wds = _wds.view(bsizeb2).index_select(0, _tinds).view(real_bsize, 1)
 
-			_inds = (_inds / beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+			_inds = (_inds // beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 			out = torch.cat((out.index_select(0, _inds), wds), -1)
 
 			# done_trans: (bsize, beam_size)

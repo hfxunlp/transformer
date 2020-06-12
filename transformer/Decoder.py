@@ -27,10 +27,10 @@ class DecoderLayer(nn.Module):
 		_ahsize = isize if ahsize is None else ahsize
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop, k_rel_pos=k_rel_pos)
-		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop)
+		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos)
+		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop)
 
-		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residual)
+		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
 
 		self.layer_normer1 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 		self.layer_normer2 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
@@ -403,7 +403,7 @@ class Decoder(nn.Module):
 			# thus the fore path of the top-k candidate is pointed out
 			# _inds: indexes for the top-k candidate (bsize, beam_size)
 
-			_inds = (_inds / beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+			_inds = (_inds // beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 
 			# select the corresponding translation history for the top-k candidate and update translation records
 			# trans: (bsize * beam_size, nquery) => (bsize * beam_size, nquery + 1)
@@ -716,7 +716,8 @@ class Decoder(nn.Module):
 			# thus the fore path of the top-k candidate is pointed out
 			# _inds: indexes for the top-k candidate (bsize, beam_size)
 
-			_inds = (_inds / beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+			# using "_inds / beam_size" in case old pytorch does not support "//" operation
+			_inds = (_inds // beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 
 			# select the corresponding translation history for the top-k candidate and update translation records
 			# trans: (bsize * beam_size, nquery) => (bsize * beam_size, nquery + 1)

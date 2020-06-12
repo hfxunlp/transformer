@@ -138,7 +138,7 @@ class NMT(nn.Module):
 			# wds: (bsize * beam_size, 1)
 			wds = _wds.view(bsizeb2).index_select(0, _tinds).view(real_bsize, 1)
 
-			_inds = (_inds / beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+			_inds = (_inds // beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 			out = torch.cat((out.index_select(0, _inds), wds), -1)
 
 			# done_trans: (bsize, beam_size)

@@ -2,6 +2,7 @@
 
 import torch
 import torch.cuda.comm as comm
+from utils.comm import secure_broadcast_coalesced
 
 from torch.jit import ScriptModule
 from torch._C import ScriptMethod
@@ -119,12 +120,24 @@ class DataParallelModel(DataParallel):
 				net.zero_grad()
 		self.ngradev = 0
 
-	def zero_replicas_grad(self):
+	def collect_gradients_func(self, func):
+
+		if self.ngradev > 1:
+			grads = comm.reduce_add_coalesced([[p.grad for p in filter_para_grad(func(net).parameters())] for net in self.nets[:self.ngradev]], self.output_device)
+			for mp, grad in zip(filter_para_grad(func(self.module).parameters()), grads):
+				mp.grad = grad
+
+	def zero_replicas_grad(self, func=None):
 
 		if self.nets is not None and self.ngradev > 1:
-			for net in self.nets[1:self.ngradev]:
-				for para in filter_para_grad(net.parameters()):
-					para.grad = None
+			if func is None:
+				for net in self.nets[1:self.ngradev]:
+					for para in filter_para_grad(net.parameters()):
+						para.grad = None
+			else:
+				for net in self.nets[1:self.ngradev]:
+					for para in filter_para_grad(func(net).parameters()):
+						para.grad = None
 
 	def reset_grad(self):
 
@@ -152,12 +165,13 @@ class DataParallelCriterion(DataParallel):
 		# input should be already scatterd
 		# scattering the targets instead
 		if not self.device_ids:
-			return self.module(inputs, *targets, **kwargs)
+			return self.module(inputs[0], *targets, **kwargs)
 		targets, kwargs = self.scatter(targets, kwargs, self.device_ids)
 		targets = clean_list(targets)
 		ngpu = len(targets)
-		if (len(self.device_ids) == 1) or (ngpu == 1):
-			return self.module(inputs[0], *targets[0], **kwargs[0])
+		if ngpu == 1:
+			_fwd_m = self.module if self.nets is None else self.nets[0]
+			return _fwd_m(inputs[0], *targets[0], **kwargs[0])
 		devices = self.device_ids[:ngpu]
 		replicas = self.replicate(self.module, devices) if self.nets is None else self.nets[:ngpu]
 		outputs = criterion_parallel_apply(replicas, inputs, targets, devices, kwargs)
@@ -179,8 +193,19 @@ def replicate(network, devices, no_gradient=False):
 	param_copies = comm.broadcast_coalesced(params, devices)
 
 	buffers = list(network.buffers())
-	buffer_indices = {buf: idx for idx, buf in enumerate(buffers)}
-	buffer_copies = comm.broadcast_coalesced(buffers, devices)
+	buffers_rg = []
+	buffers_not_rg = []
+	for buf in buffers:
+		if buf.requires_grad and not detach:
+			buffers_rg.append(clear_gradient(buf) if no_gradient else buf)
+		else:
+			buffers_not_rg.append(buf)
+
+	buffer_indices_rg = {buf: idx for idx, buf in enumerate(buffers_rg)}
+	buffer_indices_not_rg = {buf: idx for idx, buf in enumerate(buffers_not_rg)}
+
+	buffer_copies_rg = secure_broadcast_coalesced(buffers_rg, devices)
+	buffer_copies_not_rg = secure_broadcast_coalesced(buffers_not_rg, devices)
 
 	modules = list(network.modules())
 	module_copies = [[] for device in devices]
@@ -193,7 +218,9 @@ def replicate(network, devices, no_gradient=False):
 			if isinstance(module, ScriptModule):
 				# we have to initialize ScriptModule properly so that
 				# it works with pybind11
-				replica = ScriptModule()
+				replica = module._replicate_for_data_parallel()
+				replica._former_parameters = OrderedDict()
+				'''replica = ScriptModule()
 
 				attribute_names = set(entry[0] for entry in module._c._get_attributes())
 
@@ -203,7 +230,7 @@ def replicate(network, devices, no_gradient=False):
 						replica.__dict__[key] = module.__dict__[key]
 				for name, the_type, value in module._c._get_attributes():
 					if not name in module._buffers.keys():
-						replica._c._register_attribute(name, the_type, value)
+						replica._c._register_attribute(name, the_type, value)'''
 			else:
 				replica = module.__new__(type(module))
 				replica.__dict__ = module.__dict__.copy()
@@ -217,33 +244,34 @@ def replicate(network, devices, no_gradient=False):
 		for key, child in module._modules.items():
 			if child is None:
 				for j in range(num_replicas):
-					replica = module_copies[j][i]
-					replica._modules[key] = None
+					module_copies[j][i]._modules[key] = None
 			else:
 				module_idx = module_indices[child]
 				for j in range(num_replicas):
-					replica = module_copies[j][i]
-					replica._modules[key] = module_copies[j][module_idx]
+					module_copies[j][i]._modules[key] = module_copies[j][module_idx]
 		for key, param in module._parameters.items():
 			if param is None:
 				for j in range(num_replicas):
-					replica = module_copies[j][i]
-					replica._parameters[key] = None
+					module_copies[j][i]._parameters[key] = None
 			else:
-				param_idx = param_indices[param]
+				param_idx, _p_require_grad = param_indices[param], param.requires_grad
 				for j in range(num_replicas):
-					replica = module_copies[j][i]
-					replica._parameters[key] = param_copies[j][param_idx].requires_grad_(param.requires_grad)
+					module_copies[j][i]._parameters[key] = param_copies[j][param_idx].requires_grad_(_p_require_grad)
 		for key, buf in module._buffers.items():
 			if buf is None:
 				for j in range(num_replicas):
 					replica = module_copies[j][i]
 					replica._buffers[key] = None
 			else:
-				buffer_idx = buffer_indices[buf]
+				_p_require_grad = buf.requires_grad
+				if _p_require_grad:
+					buffer_copies = buffer_copies_rg
+					buffer_idx = buffer_indices_rg[buf]
+				else:
+					buffer_copies = buffer_copies_not_rg
+					buffer_idx = buffer_indices_not_rg[buf]
 				for j in range(num_replicas):
-					replica = module_copies[j][i]
-					replica._buffers[key] = buffer_copies[j][buffer_idx]
+					module_copies[j][i]._buffers[key] = buffer_copies[j][buffer_idx].requires_grad_(_p_require_grad)
 
 	for j in range(num_replicas):
 		for i, module in enumerate(modules):

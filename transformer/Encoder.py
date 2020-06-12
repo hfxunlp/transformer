@@ -34,9 +34,9 @@ class EncoderLayer(nn.Module):
 		_ahsize = isize if ahsize is None else ahsize
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.attn = SelfAttn(isize, _ahsize, isize, num_head, dropout=attn_drop, k_rel_pos=k_rel_pos)
+		self.attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos)
 
-		self.ff = PositionwiseFF(isize, _fhsize, dropout, norm_residual)
+		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
 
 		self.layer_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
