@@ -5,14 +5,27 @@ from torch.nn import ModuleDict
 
 from threading import Thread
 
+from functools import wraps
+
 from random import sample
 from random import seed as rpyseed
+
+from math import ceil
 
 import logging
 
 from utils.h5serial import h5save, h5load
 
-mask_tensor_type = torch.uint8 if torch.__version__ < "1.2.0" else torch.bool
+secure_type_map = {torch.float16: torch.float64, torch.float32: torch.float64, torch.uint8: torch.int64, torch.int8: torch.int64, torch.int16: torch.int64, torch.int32: torch.int64}
+
+# handling torch.bool
+if torch.__version__ < "1.2.0":
+	mask_tensor_type = torch.uint8
+	nccl_type_map = None
+else:
+	mask_tensor_type = torch.bool
+	secure_type_map[mask_tensor_type] = torch.int64
+	nccl_type_map = {torch.bool:torch.uint8}
 
 def pad_tensors(tensor_list, dim=-1):
 
@@ -256,14 +269,15 @@ def ModuleList2Dict(modin):
 
 def add_module(m, strin, m_add):
 
-	if strin.find(".") < 0:
+	_name_list = strin.split(".")
+	if len(_name_list) == 1:
 		m.add_module(strin, m_add)
 	else:
-		_m, _name_list = m, strin.split(".")
+		_m = m
 		# update _modules with pytorch: https://pytorch.org/docs/stable/_modules/torch/nn/modules/module.html#Module.add_module
 		for _tmp in _name_list[:-1]:
 			_m = _m._modules[_tmp]
-		_m._modules[_name_list[-1]] = m_add
+		_m.add_module(_name_list[-1], m_add)
 
 	return m
 
@@ -322,5 +336,28 @@ def report_parameters(modin):
 	rs = 0
 	for _para in modin.parameters():
 		rs += _para.numel()
+
+	return rs
+
+def float2odd(fin):
+
+	_rs = ceil(fin)
+	if _rs % 2 == 1:
+		_rs -= 1
+
+	return _rs
+
+def wrap_float2odd(func):
+	@wraps(func)
+	def wrapper(*args, **kwargs):
+		return float2odd(func(*args, **kwargs))
+	return wrapper
+
+def iternext(iterin):
+
+	try:
+		rs = next(iterin)
+	except:
+		rs = None
 
 	return rs
