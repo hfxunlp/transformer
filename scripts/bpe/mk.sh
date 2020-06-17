@@ -1,21 +1,21 @@
 #!/bin/bash
 
 export cachedir=cache
-export srcd=w14ende
 
 export dataid=w14ed32
 
-export bpeops=32000
-export minfreq=8
-
+export srcd=w14ende
 export srctf=train.tc.en
 export tgttf=train.tc.de
 export srcvf=dev.tc.en
 export tgtvf=dev.tc.de
 
-export share_bpe=false
 export vratio=0.2
 export maxtokens=256
+
+export bpeops=32000
+export minfreq=8
+export share_bpe=false
 
 export tgtd=$cachedir/$dataid
 

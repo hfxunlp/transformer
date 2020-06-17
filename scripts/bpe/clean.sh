@@ -1,15 +1,20 @@
 #!/bin/bash
 
 export cachedir=cache
-export srcd=w14ende
 
 export dataid=w14ed32
 
-export bpeops=32000
-export minfreq=8
-
+export srcd=w14ende
 export srcvf=dev.tc.en
 export tgtvf=dev.tc.de
+
+export maxtokens=256
+
+export bpeops=32000
+export minfreq=8
+export share_bpe=false
+
+export tgtd=$cachedir/$dataid
 
 # options for cleaning the data processed by bpe,
 # advised values except numrules can be calculated by:
@@ -24,11 +29,6 @@ export seperatio=1.01
 export bibperatio=8.01
 export bioratio=8.01
 export numrules=1
-
-export maxtokens=256
-export share_bpe=false
-
-export tgtd=$cachedir/$dataid
 
 # cleaning bpe results and bpe again
 python tools/clean/chars.py $tgtd/src.train.bpe $tgtd/tgt.train.bpe $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp $charatio $bperatio $seperatio $bibperatio $bioratio $numrules

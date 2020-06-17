@@ -5,6 +5,7 @@ export srctf=test.en.w19edoc
 export modelf="expm/w19edoc/doc/base/checkpoint.h5"
 export rsd=w19edoctrs
 export rsf=$rsd/trans.txt
+
 export share_vcb=false
 
 export cachedir=cache
