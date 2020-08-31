@@ -1,6 +1,7 @@
 #encoding: utf-8
 
 import torch
+from torch.cuda.amp import autocast
 
 from parallel.base import DataParallelModel
 
@@ -54,15 +55,14 @@ def parallel_apply_decode(modules, inputs, devices, kwargs_tup=None):
 
 	lock = Lock()
 	results = {}
-	grad_enabled = torch.is_grad_enabled()
+	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
 
 	def _worker(i, module, input, kwargs, device=None):
 
-		with torch.set_grad_enabled(grad_enabled):
-			with torch.cuda.device(device):
-				if not isinstance(input, (list, tuple)):
-					input = (input,)
-				output = module.decode(*input, **kwargs)
+		if not isinstance(input, (list, tuple)):
+			input = (input,)
+		with torch.set_grad_enabled(grad_enabled), torch.cuda.device(device), autocast(enabled=autocast_enabled):
+			output = module.decode(*input, **kwargs)
 		with lock:
 			results[i] = output
 
@@ -86,15 +86,14 @@ def parallel_apply_train_decode(modules, inputs, devices, kwargs_tup=None):
 
 	lock = Lock()
 	results = {}
-	grad_enabled = torch.is_grad_enabled()
+	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
 
 	def _worker(i, module, input, kwargs, device=None):
 
-		with torch.set_grad_enabled(grad_enabled):
-			with torch.cuda.device(device):
-				if not isinstance(input, (list, tuple)):
-					input = (input,)
-				output = module.train_decode(*input, **kwargs)
+		if not isinstance(input, (list, tuple)):
+			input = (input,)
+		with torch.set_grad_enabled(grad_enabled), torch.cuda.device(device), autocast(enabled=autocast_enabled):
+			output = module.train_decode(*input, **kwargs)
 		with lock:
 			results[i] = output
 

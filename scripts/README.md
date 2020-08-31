@@ -64,12 +64,20 @@ export dataid=w14ende
 
 # number of GPU(s) plan to use for decoding.
 export ngpu=1
+
+# merge sub-words
+export debpe=true
 ```
 
 ## `bpe/`
 
 Scripts to perform sub-word segmentation.
 
+
 ## `doc/`
 
 Corresponding scripts for document-level data processing.
+
+## `ape/`
+
+Scripts for data processing of APE.

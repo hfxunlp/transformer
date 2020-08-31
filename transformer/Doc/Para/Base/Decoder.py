@@ -3,8 +3,9 @@
 import torch
 from torch import nn
 from modules.base import *
+from utils.sampler import SampleMax
 from modules.paradoc import GateResidual
-from utils.base import repeat_bsize_for_beam_tensor
+from utils.base import all_done, repeat_bsize_for_beam_tensor
 from math import sqrt
 
 from transformer.Decoder import DecoderLayer as DecoderLayerBase
@@ -143,9 +144,9 @@ class Decoder(DecoderBase):
 
 		return self.beam_decode(inpute, inputc, src_pad_mask, context_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad) if beam_size > 1 else self.greedy_decode(inpute, inputc, src_pad_mask, context_mask, max_len, fill_pad=fill_pad)
 
-	def greedy_decode(self, inpute, inputc, src_pad_mask=None, context_mask=None, max_len=512, fill_pad=False):
+	def greedy_decode(self, inpute, inputc, src_pad_mask=None, context_mask=None, max_len=512, fill_pad=False, sample=False):
 
-		bsize, seql = inpute.size()[:2]
+		bsize = inpute.size(0)
 
 		sos_emb = self.get_sos_emb(inpute)
 
@@ -167,9 +168,8 @@ class Decoder(DecoderBase):
 		if self.out_normer is not None:
 			out = self.out_normer(out)
 
-		out = self.lsm(self.classifier(out))
-
-		wds = out.argmax(dim=-1)
+		out = self.classifier(out)
+		wds = SampleMax(out.softmax(-1), dim=-1, keepdim=False) if sample else out.argmax(dim=-1)
 
 		trans = [wds]
 
@@ -191,13 +191,13 @@ class Decoder(DecoderBase):
 			if self.out_normer is not None:
 				out = self.out_normer(out)
 
-			out = self.lsm(self.classifier(out))
-			wds = out.argmax(dim=-1)
+			out = self.classifier(out)
+			wds = SampleMax(out.softmax(-1), dim=-1, keepdim=False) if sample else out.argmax(dim=-1)
 
 			trans.append(wds.masked_fill(done_trans, 0) if fill_pad else wds)
 
 			done_trans = done_trans | wds.eq(2)
-			if done_trans.int().sum().item() == bsize:
+			if all_done(done_trans, bsize):
 				break
 
 		return torch.cat(trans, 1)
@@ -300,10 +300,10 @@ class Decoder(DecoderBase):
 			_done = False
 			if length_penalty > 0.0:
 				lpv = lpv.index_select(0, _inds)
-			elif (not return_all) and done_trans.select(1, 0).int().sum().item() == bsize:
+			elif (not return_all) and all_done(done_trans.select(1, 0), bsize):
 				_done = True
 
-			if _done or (done_trans.int().sum().item() == real_bsize):
+			if _done or all_done(done_trans, real_bsize):
 				break
 
 			for key, value in states.items():

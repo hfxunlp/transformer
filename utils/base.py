@@ -18,14 +18,24 @@ from utils.h5serial import h5save, h5load
 
 secure_type_map = {torch.float16: torch.float64, torch.float32: torch.float64, torch.uint8: torch.int64, torch.int8: torch.int64, torch.int16: torch.int64, torch.int32: torch.int64}
 
+def all_done_bool(stat, *inputs, **kwargs):
+
+	return stat.all().item()
+
+def all_done_byte(stat, bsize, **kwargs):
+
+	return stat.int().sum().item() == bsize
+
 # handling torch.bool
-if torch.__version__ < "1.2.0":
-	mask_tensor_type = torch.uint8
-	nccl_type_map = None
-else:
+try:
 	mask_tensor_type = torch.bool
 	secure_type_map[mask_tensor_type] = torch.int64
 	nccl_type_map = {torch.bool:torch.uint8}
+	all_done = all_done_bool
+except Exception as e:
+	mask_tensor_type = torch.uint8
+	nccl_type_map = None
+	all_done = all_done_byte
 
 def pad_tensors(tensor_list, dim=-1):
 
@@ -208,8 +218,9 @@ def set_random_seed(seed, set_cuda=False):
 	torch.manual_seed(_rseed)
 	if set_cuda:
 		torch.cuda.manual_seed_all(_rseed)
-		# Make cudnn methods deterministic according to: https://github.com/OpenNMT/OpenNMT-py/blob/master/onmt/utils/misc.py#L80-L82
+		# Make cudnn methods deterministic according to: https://pytorch.org/docs/stable/notes/randomness.html#cudnn
 		torch.backends.cudnn.deterministic = True
+		torch.backends.cudnn.benchmark = False
 
 def repeat_bsize_for_beam_tensor(tin, beam_size):
 
@@ -361,3 +372,11 @@ def iternext(iterin):
 		rs = None
 
 	return rs
+
+def optm_step(optm, scaler=None):
+
+	if scaler is None:
+		optm.step()
+	else:
+		scaler.step(optm)
+		scaler.update()

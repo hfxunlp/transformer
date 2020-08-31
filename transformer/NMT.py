@@ -90,7 +90,7 @@ class NMT(nn.Module):
 
 		ence = self.enc(inpute, mask)
 
-		bsize, _ = inpute.size()
+		bsize = inpute.size(0)
 
 		# out: input to the decoder for the first step (bsize, 1)
 

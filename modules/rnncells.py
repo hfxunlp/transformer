@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 from modules.base import *
-from modules.act import GeLU
+from modules.act import Custom_Act
 
 from cnfg.ihyp import *
 
@@ -19,7 +19,7 @@ class LSTMCell4RNMT(nn.Module):
 	# isize: input size of Feed-forward NN
 	# dropout: dropout over hidden units, disabling it and applying dropout to outputs (_out) in most cases
 
-	def __init__(self, isize, osize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
+	def __init__(self, isize, osize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
 
 		super(LSTMCell4RNMT, self).__init__()
 
@@ -29,8 +29,8 @@ class LSTMCell4RNMT(nn.Module):
 		self.trans = Linear(isize + _osize, _osize * 4, bias=enable_bias)
 		self.normer = nn.LayerNorm((4, _osize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
-		self.act = GeLU() if use_GeLU else nn.Tanh()
-		self.drop = Dropout(dropout, inplace=inplace_after_GeLU) if dropout > 0.0 else None
+		self.act = Custom_Act() if custom_act else nn.Tanh()
+		self.drop = Dropout(dropout, inplace=inplace_after_Custom_Act) if dropout > 0.0 else None
 
 		self.osize = _osize
 
@@ -57,7 +57,7 @@ class GRUCell4RNMT(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, osize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
+	def __init__(self, isize, osize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
 
 		super(GRUCell4RNMT, self).__init__()
 
@@ -69,8 +69,8 @@ class GRUCell4RNMT(nn.Module):
 
 		self.normer = nn.LayerNorm((2, _osize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
-		self.act = GeLU() if use_GeLU else nn.Tanh()
-		self.drop = Dropout(dropout, inplace=inplace_after_GeLU) if dropout > 0.0 else None
+		self.act = Custom_Act() if custom_act else nn.Tanh()
+		self.drop = Dropout(dropout, inplace=inplace_after_Custom_Act) if dropout > 0.0 else None
 
 		self.osize = _osize
 

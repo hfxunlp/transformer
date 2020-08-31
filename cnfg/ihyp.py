@@ -12,17 +12,19 @@ enable_prev_ln_bias_default = enable_proj_bias_default = not ease_optimization
 
 enable_ln_parameters = True
 
-use_adv_act_default = False
-override_GeLU_Swish = False
-override_GeLU_Sigmoid = False
+use_adv_act_default = custom_act_Sigmoid = custom_act_Swish = custom_act_Mish = use_norm_Swish = False
 if advance_activation_function is not None:
 	use_adv_act_default = True
 	_adv_act = advance_activation_function.lower()
+	use_norm_Swish = (_adv_act == "normswish")
 	if _adv_act == "sigmoid":
-		override_GeLU_Sigmoid = True
+		custom_act_Sigmoid = True
 	elif _adv_act == "swish":
-		override_GeLU_Swish = True
-inplace_after_GeLU = use_adv_act_default and (not override_GeLU_Sigmoid)
+		custom_act_Swish = True
+	elif _adv_act == "mish":
+		custom_act_Mish = True
+
+inplace_after_Custom_Act = use_adv_act_default and (not custom_act_Sigmoid)
 
 norm_residual_default = not (computation_order.lower() == "v2")
 

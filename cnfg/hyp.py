@@ -4,7 +4,7 @@ ease_optimization = True
 
 lipschitz_initialization = True
 
-# choices: None, "GeLU", "Swish", "Sigmoid"
+# choices: None, "GeLU", "Swish", "Sigmoid", "Mish", "NormSwish"
 advance_activation_function = None
 
 # choices: "v1", "v2"

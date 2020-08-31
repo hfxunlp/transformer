@@ -4,19 +4,19 @@ import torch
 from torch import nn
 
 from modules.base import Scorer, Linear, Dropout
-from modules.act import GeLU
+from modules.act import Custom_Act
 
 from cnfg.ihyp import *
 
 class ATTNCombiner(nn.Module):
 
-	def __init__(self, isize, hsize=None, dropout=0.0, use_GeLU=use_adv_act_default):
+	def __init__(self, isize, hsize=None, dropout=0.0, custom_act=use_adv_act_default):
 
 		super(ATTNCombiner, self).__init__()
 
 		_hsize = isize * 4 if hsize is None else hsize
 
-		self.net = nn.Sequential(Linear(isize * 2, _hsize), Dropout(dropout, inplace=True), GeLU() if use_GeLU else nn.Sigmoid(), Scorer(_hsize), nn.Sigmoid()) if dropout > 0.0 else nn.Sequential(Linear(isize * 2, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Scorer(_hsize), nn.Sigmoid())
+		self.net = nn.Sequential(Linear(isize * 2, _hsize), Dropout(dropout, inplace=True), Custom_Act() if custom_act else nn.Sigmoid(), Scorer(_hsize), nn.Sigmoid()) if dropout > 0.0 else nn.Sequential(Linear(isize * 2, _hsize), Custom_Act() if custom_act else nn.Sigmoid(), Scorer(_hsize), nn.Sigmoid())
 
 	def forward(self, input1, input2, mask=None):
 
@@ -37,13 +37,13 @@ class ATTNCombiner(nn.Module):
 
 class DATTNCombiner(nn.Module):
 
-	def __init__(self, isize, hsize=None, dropout=0.0, use_GeLU=use_adv_act_default):
+	def __init__(self, isize, hsize=None, dropout=0.0, custom_act=use_adv_act_default):
 
 		super(DATTNCombiner, self).__init__()
 
 		_hsize = isize * 4 if hsize is None else hsize
 
-		self.net = nn.Sequential(Linear(isize * 2, _hsize), Dropout(dropout, inplace=True), GeLU() if use_GeLU else nn.Sigmoid(), Scorer(_hsize, bias=False)) if dropout > 0.0 else nn.Sequential(Linear(isize * 2, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Scorer(_hsize, bias=False))
+		self.net = nn.Sequential(Linear(isize * 2, _hsize), Dropout(dropout, inplace=True), Custom_Act() if custom_act else nn.Sigmoid(), Scorer(_hsize, bias=False)) if dropout > 0.0 else nn.Sequential(Linear(isize * 2, _hsize), Custom_Act() if custom_act else nn.Sigmoid(), Scorer(_hsize, bias=False))
 
 	# input1: (bsize, 1, isize)
 	# input2: (bsize, seql, isize)

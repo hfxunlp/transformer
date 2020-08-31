@@ -2,7 +2,8 @@
 
 import torch
 from torch import nn
-from utils.base import repeat_bsize_for_beam_tensor
+from utils.sampler import SampleMax
+from utils.base import all_done, repeat_bsize_for_beam_tensor
 from math import sqrt
 
 class Decoder(nn.Module):
@@ -68,7 +69,7 @@ class Decoder(nn.Module):
 	#	src_pad_mask = input.eq(0).unsqueeze(1)
 	# max_len: maximum length to generate
 
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False):
+	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False):
 
 		bsize, seql, isize = inpute[0].size()
 
@@ -102,11 +103,8 @@ class Decoder(nn.Module):
 
 			outs.append(model.classifier(out).softmax(dim=-1))
 
-		out = torch.stack(outs).mean(0).log()
-
-		# wds: (bsize, 1)
-
-		wds = out.argmax(dim=-1)
+		out = torch.stack(outs).mean(0)
+		wds = SampleMax(out, dim=-1, keepdim=False) if sample else out.argmax(dim=-1)
 
 		trans = [wds]
 
@@ -137,14 +135,13 @@ class Decoder(nn.Module):
 				# outs: [(bsize, 1, nwd)...]
 				outs.append(model.classifier(out).softmax(dim=-1))
 
-			out = torch.stack(outs).mean(0).log()
-
-			wds = out.argmax(dim=-1)
+			out = torch.stack(outs).mean(0)
+			wds = SampleMax(out, dim=-1, keepdim=False) if sample else out.argmax(dim=-1)
 
 			trans.append(wds.masked_fill(done_trans, 0) if fill_pad else wds)
 
 			done_trans = done_trans | wds.eq(2)
-			if done_trans.int().sum().item() == bsize:
+			if all_done(done_trans, bsize):
 				break
 
 		return torch.cat(trans, 1)
@@ -302,12 +299,12 @@ class Decoder(nn.Module):
 			_done = False
 			if length_penalty > 0.0:
 				lpv = lpv.index_select(0, _inds)
-			elif (not return_all) and done_trans.select(1, 0).int().sum().item() == bsize:
+			elif (not return_all) and all_done(done_trans.select(1, 0), bsize):
 				_done = True
 
 			# check beam states(done or not)
 
-			if _done or (done_trans.int().sum().item() == real_bsize):
+			if _done or all_done(done_trans, real_bsize):
 				break
 
 			# update the corresponding hidden states

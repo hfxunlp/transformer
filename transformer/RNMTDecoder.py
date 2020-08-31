@@ -6,6 +6,7 @@ import torch
 from torch import nn
 
 from modules.base import *
+from utils.sampler import SampleMax
 from modules.rnncells import *
 
 from utils.fmt.base import pad_id
@@ -26,6 +27,8 @@ class FirstLayer(nn.Module):
 		self.init_hx = nn.Parameter(torch.zeros(1, osize))
 		self.init_cx = nn.Parameter(torch.zeros(1, osize))
 
+		self.drop = Dropout(dropout, inplace=False) if dropout > 0.0 else None
+
 	# inputo: embedding of decoded translation (bsize, nquery, isize)
 	# query_unit: single query to decode, used to support decoding for given step
 
@@ -35,15 +38,22 @@ class FirstLayer(nn.Module):
 			hx, cx = prepare_initState(self.init_hx, self.init_cx, inputo.size(0))
 			outs = []
 
-			for i in range(inputo.size(1)):
-				hx, cx = self.net(inputo.select(1, i), (hx, cx))
+			for _du in inputo.unbind(1):
+				hx, cx = self.net(_du, (hx, cx))
 				outs.append(hx)
 
-			return torch.stack(outs, 1)
+			outs = torch.stack(outs, 1)
+
+			if self.drop is not None:
+				outs = self.drop(outs)
+
+			return outs
 		else:
 			hx, cx = self.net(inputo, prepare_initState(self.init_hx, self.init_cx, inputo.size(0)) if first_step else state)
 
-			return hx, (hx, cx)
+			out = hx if self.drop is None else self.drop(hx)
+
+			return out, (hx, cx)
 
 class DecoderLayer(nn.Module):
 
@@ -74,8 +84,8 @@ class DecoderLayer(nn.Module):
 
 			_inputo = torch.cat((inputo, attn), -1)
 
-			for i in range(_inputo.size(1)):
-				hx, cx = self.net(_inputo.select(1, i), (hx, cx))
+			for _du in _inputo.unbind(1):
+				hx, cx = self.net(_du, (hx, cx))
 				outs.append(hx)
 
 			outs = torch.stack(outs, 1)
@@ -185,9 +195,9 @@ class Decoder(nn.Module):
 	#	src_pad_mask = input.eq(0).unsqueeze(1)
 	# max_len: maximum length to generate
 
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False):
+	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False):
 
-		bsize, seql = inpute.size()[:2]
+		bsize = inpute.size(0)
 
 		out = self.get_sos_emb(inpute)
 
@@ -213,12 +223,9 @@ class Decoder(nn.Module):
 			out = self.out_normer(out)
 
 		# out: (bsize, nwd)
-
-		out = self.lsm(self.classifier(torch.cat((out, attn), -1)))
-
+		out = self.classifier(torch.cat((out, attn), -1))
 		# wds: (bsize)
-
-		wds = out.argmax(dim=-1)
+		wds = SampleMax(out.softmax(-1), dim=-1, keepdim=False) if sample else out.argmax(dim=-1)
 
 		trans = [wds]
 
@@ -244,14 +251,13 @@ class Decoder(nn.Module):
 			if self.out_normer is not None:
 				out = self.out_normer(out)
 
-			# out: (bsize, nwd)
-			out = self.lsm(self.classifier(torch.cat((out, attn), -1)))
-			wds = out.argmax(dim=-1)
+			out = self.classifier(torch.cat((out, attn), -1))
+			wds = SampleMax(out.softmax(-1), dim=-1, keepdim=False) if sample else out.argmax(dim=-1)
 
 			trans.append(wds.masked_fill(done_trans, 0) if fill_pad else wds)
 
 			done_trans = done_trans | wds.eq(2)
-			if done_trans.int().sum().item() == bsize:
+			if all_done(done_trans, bsize):
 				break
 
 		return torch.stack(trans, 1)
@@ -404,12 +410,12 @@ class Decoder(nn.Module):
 			_done = False
 			if length_penalty > 0.0:
 				lpv = lpv.index_select(0, _inds)
-			elif (not return_all) and done_trans.select(1, 0).int().sum().item() == bsize:
+			elif (not return_all) and all_done(done_trans.select(1, 0), bsize):
 				_done = True
 
 			# check beam states(done or not)
 
-			if _done or (done_trans.int().sum().item() == real_bsize):
+			if _done or all_done(done_trans, real_bsize):
 				break
 
 			# update the corresponding hidden states

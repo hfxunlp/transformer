@@ -19,12 +19,8 @@ def parse_cuda(use_cuda_arg, gpuid):
 			cuda_devices = None
 			multi_gpu = False
 		torch.cuda.set_device(cuda_device.index)
-		#torch.backends.cudnn.benchmark = True
 	else:
-		use_cuda = False
-		cuda_device = False
-		cuda_devices = None
-		multi_gpu = False
+		use_cuda, cuda_device, cuda_devices, multi_gpu = False, False, None, False
 
 	return use_cuda, cuda_device, cuda_devices, multi_gpu
 
@@ -46,12 +42,8 @@ def parse_cuda_decode(use_cuda_arg, gpuid, multi_gpu_decoding):
 			cuda_devices = None
 			multi_gpu = False
 		torch.cuda.set_device(cuda_device.index)
-		#torch.backends.cudnn.benchmark = True
 	else:
-		use_cuda = False
-		cuda_device = False
-		cuda_devices = None
-		multi_gpu = False
+		use_cuda, cuda_device, cuda_devices, multi_gpu = False, False, None, False
 
 	return use_cuda, cuda_device, cuda_devices, multi_gpu
 

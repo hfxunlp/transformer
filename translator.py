@@ -1,6 +1,7 @@
 #encoding: utf-8
 
 import torch
+from torch.cuda.amp import autocast
 
 from transformer.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble
@@ -87,6 +88,7 @@ class TranslatorCore:
 			model.to(self.cuda_device)
 			if self.multi_gpu:
 				model = DataParallelMT(model, device_ids=cuda_devices, output_device=self.cuda_device.index, host_replicate=True, gather_output=False)
+		self.use_amp = cnfg.use_amp and self.use_cuda
 
 		self.beam_size = cnfg.beam_size
 
@@ -99,7 +101,8 @@ class TranslatorCore:
 			for seq_batch in data_loader(sentences_iter, self.vcbi, self.minbsize, self.bsize, self.maxpad, self.maxpart, self.maxtoken):
 				if self.use_cuda:
 					seq_batch = seq_batch.to(self.cuda_device)
-				output = self.net.decode(seq_batch, self.beam_size, None, self.length_penalty)
+				with autocast(enabled=self.use_amp):
+					output = self.net.decode(seq_batch, self.beam_size, None, self.length_penalty)
 				if self.multi_gpu:
 					tmp = []
 					for ou in output:

@@ -51,8 +51,8 @@ report_eva = False
 # run on GPU or not, and GPU device(s) to use. Data Parallel depended multi-gpu support can be enabled with values like: 'cuda:0, 1, 3'.
 use_cuda = True
 gpuid = 'cuda:0'
-# [EXP] enable mixed precision (FP16) with "O1"
-amp_opt = None
+# use mixed precision (FP16)
+use_amp = False
 
 # bind the embedding matrix with the classifer weight in decoder
 bindDecoderEmb = True
@@ -168,5 +168,50 @@ hdf5_model_compression_level = 0
 
 # For BPE (using full vocabulary), the special <unk> token will never appear and thus can be removed from the vocabulary. Otherwise, it should be set to True.
 use_unk = True
+```
+
+## `ihyp.py`
+
+To interpret configurations in hyp.py.
+
+## `dynb.py`
+
+Additional configurations for dynamic batch sizes.
+
+```
+# If the angle change is greater than or equal to the minimum value in the history * dyn_tol_alpha, perform an optimization step.
+dyn_tol_alpha = 1.1
+# If fails to obtain a smaller angle change after this number of steps, perform an optimization step.
+dyn_tol_amin = 3
+
+# override the maximum tokens per batch configuration in `cnfg/base.py`. If there are no less than this number of tokens in a batch, an optimization step will be performed.
+tokens_optm = tokens_optm * 10
+
+# perform optimization step only in case the angle change is smaller than update_angle.
+update_angle = 90.0 / dyn_tol_alpha
+
+# number of records of the angle change reduction.
+num_dynb_his = 50
+
+# hyper parameter for parameter sampling. Ignored in case using softmax over normalized angle change reduction (default). Uncomment corresponding lines in `utils/dynbatch.py` to enable.
+select_alpha = 3.0
+```
+
+## `docpara.py`
+
+Additional configurations for context-aware models.
+
+```
+# number of previous context sentences utilized
+num_prev_sent = 2
+
+# freeze the loaded sentence-level model
+freeze_load_model = True
+# unfreeze the bias and the weight matrix of the classifier of the sentence-level model
+unfreeze_bias = True
+unfreeze_weight = False
+
+# number of layers for context encoding
+num_layer_context = 1
 ```
 

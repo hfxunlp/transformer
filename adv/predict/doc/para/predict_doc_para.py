@@ -3,6 +3,7 @@
 import sys
 
 import torch
+from torch.cuda.amp import autocast
 
 from tqdm import tqdm
 
@@ -50,10 +51,8 @@ else:
 
 mymodel.eval()
 
-use_cuda = cnfg.use_cuda
-gpuid = cnfg.gpuid
-
 use_cuda, cuda_device, cuda_devices, multi_gpu = parse_cuda_decode(cnfg.use_cuda, cnfg.gpuid, cnfg.multi_gpu_decoding)
+use_amp = cnfg.use_amp and use_cuda
 
 # Important to make cudnn methods deterministic
 set_random_seed(cnfg.seed, use_cuda)
@@ -81,7 +80,8 @@ with open(sys.argv[1], "wb") as f:
 				seq_batch = seq_batch.to(cuda_device)
 			bsize, _nsent, seql = seq_batch.size()
 			_nsent_use = _nsent - 1
-			output = mymodel.decode(seq_batch.narrow(1, 1, _nsent_use).contiguous(), seq_batch.narrow(1, 0, _nsent_use).contiguous(), beam_size, None, length_penalty).view(bsize, _nsent_use, -1)
+			with autocast(enabled=use_amp):
+				output = mymodel.decode(seq_batch.narrow(1, 1, _nsent_use).contiguous(), seq_batch.narrow(1, 0, _nsent_use).contiguous(), beam_size, None, length_penalty).view(bsize, _nsent_use, -1)
 			if multi_gpu:
 				tmp = []
 				for ou in output:

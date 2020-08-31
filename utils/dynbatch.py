@@ -56,7 +56,7 @@ def cos_acc_pg(old_pg, new_pg):
 
 	return sim
 
-class EffRecoder:
+class EffRecorder:
 
 	def __init__(self, num_choice, num_his=50, init_value=180.0):
 
@@ -81,15 +81,15 @@ class GradientMonitor:
 	# select_func: a function takes (model, index) as input arguments, which returns the index parameter group of model.
 	# angle_alpha: the alpha value, if the angle change is greater than or equal to the multiplication of the minimum value in the history and the alpha, this class will return True to require performing an optimization step.
 	# num_tol_amin: number of tolerant steps after the minimum angle change, if fails to obtain a smaller angle change after this number of steps, will return True to ask performing an optimization step.
-	# num_his_recoder: number of records of the angle change reduction.
+	# num_his_record: number of records of the angle change reduction.
 	# num_his_gm: cache num_his_gm gradients into a history, and return this number of angle changes.
 	# returns: (update_r, angle_r), update_r: to performing an optimization step, angle_r: the angle change in current step.
 
-	def __init__(self, num_group, select_func, module=None, angle_alpha=1.1, num_tol_amin=3, num_his_recoder=50, num_his_gm=1):
+	def __init__(self, num_group, select_func, module=None, angle_alpha=1.1, num_tol_amin=3, num_his_record=50, num_his_gm=1):
 
 		self.scale = 180.0 / pi
 		self.num_group = num_group
-		self.recorder = EffRecoder(num_group, num_his=num_his_recoder, init_value=1.0)#init_value=180.0 if use sample_gumble_norm in self.reset
+		self.recorder = EffRecorder(num_group, num_his=num_his_record, init_value=1.0)#init_value=180.0 if use sample_gumble_norm in self.reset
 		self.select_func = select_func
 		self.module = module
 		self.alpha, self.num_tol_amin, self.num_his = angle_alpha, num_tol_amin, num_his_gm

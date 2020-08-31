@@ -7,6 +7,7 @@ norm_token = True
 import sys
 
 import torch
+from torch.cuda.amp import autocast
 
 from tqdm import tqdm
 
@@ -23,6 +24,7 @@ from parallel.base import DataParallelCriterion
 from loss.base import LabelSmoothingLoss
 
 from utils.base import *
+from utils.fmt.base import pad_id
 from utils.fmt.base4torch import parse_cuda
 
 def load_fixing(module):
@@ -57,9 +59,10 @@ else:
 
 mymodel.eval()
 
-lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=0, reduction='none', forbidden_index=cnfg.forbidden_indexes)
+lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction='none', forbidden_index=cnfg.forbidden_indexes)
 
 use_cuda, cuda_device, cuda_devices, multi_gpu = parse_cuda(cnfg.use_cuda, cnfg.gpuid)
+use_amp = cnfg.use_amp and use_cuda
 
 # Important to make cudnn methods deterministic
 set_random_seed(cnfg.seed, use_cuda)
@@ -91,10 +94,11 @@ with open(sys.argv[1], "wb") as f:
 			seq_o = seq_o.narrow(1, 1, _nsent_use)
 			oi = seq_o.narrow(-1, 0, lo).contiguous()
 			ot = seq_o.narrow(-1, 1, lo).contiguous()
-			output = mymodel(seq_batch.narrow(1, 1, _nsent_use).contiguous(), oi, seq_batch.narrow(1, 0, _nsent_use).contiguous()).view(bsize, _nsent_use, lo, -1)
-			loss = lossf(output, ot).sum(-1).view(bsize, -1).sum(-1)
+			with autocast(enabled=use_amp):
+				output = mymodel(seq_batch.narrow(1, 1, _nsent_use).contiguous(), oi, seq_batch.narrow(1, 0, _nsent_use).contiguous()).view(bsize, _nsent_use, lo, -1)
+				loss = lossf(output, ot).sum(-1).view(bsize, -1).sum(-1)
 			if norm_token:
-				lenv = ot.ne(0).int().view(bsize, -1).sum(-1).to(loss)
+				lenv = ot.ne(pad_id).int().view(bsize, -1).sum(-1).to(loss)
 				loss = loss / lenv
 			f.write("\n".join([str(rsu) for rsu in loss.tolist()]).encode("utf-8"))
 			loss = output = ot = seq_batch = seq_o = None

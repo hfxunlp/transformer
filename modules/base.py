@@ -7,8 +7,10 @@ from torch.nn import functional as nnFunc
 from torch.autograd import Function
 
 from utils.base import reduce_model_list
-from modules.act import GeLU_GPT, GeLU_BERT, GeLU, Swish
-from modules.dropout import Dropout, TokenDropout
+from modules.act import Custom_Act
+from modules.act import reduce_model as reduce_model_act
+from modules.dropout import Dropout, TokenDropout, InfDropout
+from modules.dropout import reduce_model as reduce_model_drop
 
 from cnfg.ihyp import *
 
@@ -19,13 +21,13 @@ class PositionwiseFF(nn.Module):
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, use_GeLU=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
+	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
 
 		super(PositionwiseFF, self).__init__()
 
 		_hsize = isize * 4 if hsize is None else hsize
 
-		self.net = nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_bias))
+		self.net = nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_Custom_Act), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_bias))
 
 		self.normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
@@ -206,16 +208,16 @@ class AverageAttn(nn.Module):
 	# dropout: dropout rate for Feed-forward NN
 	# num_pos: maximum length of sentence cached, extended length will be generated while needed and droped immediately after that
 
-	def __init__(self, isize, hsize=None, dropout=0.0, num_pos=cache_len_default, use_GeLU=use_adv_act_default):
+	def __init__(self, isize, hsize=None, dropout=0.0, num_pos=cache_len_default, custom_act=use_adv_act_default):
 
 		super(AverageAttn, self).__init__()
 
 		_hsize = isize if hsize is None else hsize
 
 		self.num_pos = num_pos
-		self.register_buffer('w', torch.Tensor(num_pos, num_pos))
+		self.register_buffer('w', torch.Tensor(num_pos, 1))
 
-		self.ffn = nn.Sequential(Linear(isize, _hsize), Dropout(dropout, inplace=True), GeLU() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), GeLU() if use_GeLU else nn.ReLU(inplace=True), Linear(_hsize, isize))
+		self.ffn = nn.Sequential(Linear(isize, _hsize), Dropout(dropout, inplace=True), Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize))
 
 		self.gw = Linear(isize * 2, isize * 2)
 
@@ -230,13 +232,10 @@ class AverageAttn(nn.Module):
 		if decoding:
 			avg = iV
 		else:
-			bsize, seql = iV.size()[:2]
-
-			# attn: (seql, seql)
-			attn = self.get_ext(seql) if seql > self.num_pos else self.w.narrow(0, 0, seql).narrow(1, 0, seql)
+			seql = iV.size(1)
 
 			# avg: (bsize, seql, vsize)
-			avg = attn.unsqueeze(0).expand(bsize, seql, seql).matmul(iV)
+			avg = iv.cumsum(dim=1) * (self.get_ext(seql) if seql > self.num_pos else self.w.narrow(0, 0, seql))
 
 		avg = self.ffn(avg)
 
@@ -250,7 +249,7 @@ class AverageAttn(nn.Module):
 
 	def get_ext(self, npos):
 
-		return (1.0 / torch.arange(1, npos + 1, dtype=self.w.dtype, device=self.w.device)).unsqueeze(1).expand(-1, npos).tril(0.0)
+		return (torch.arange(1, npos + 1, dtype=self.w.dtype, device=self.w.device).reciprocal_()).unsqueeze(-1)
 
 # Accelerated MultiHeadAttn for self attention, use when Q == K == V
 class SelfAttn(nn.Module):
@@ -390,14 +389,14 @@ class ResidueCombiner(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, use_GeLU=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
+	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
 
 		super(ResidueCombiner, self).__init__()
 
 		_hsize = isize * 2 * ncomb if hsize is None else hsize
 
 		# should dropout be in front of sigmoid or not?
-		self.net = nn.Sequential(Linear(isize * ncomb, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Dropout(dropout, inplace=inplace_after_GeLU), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize * ncomb, _hsize), GeLU() if use_GeLU else nn.Sigmoid(), Linear(_hsize, isize, bias=enable_bias))
+		self.net = nn.Sequential(Linear(isize * ncomb, _hsize), Custom_Act() if custom_act else nn.Sigmoid(), Dropout(dropout, inplace=inplace_after_Custom_Act), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize * ncomb, _hsize), Custom_Act() if custom_act else nn.Sigmoid(), Linear(_hsize, isize, bias=enable_bias))
 
 		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
@@ -491,68 +490,6 @@ class ACT_Loss(nn.Module):
 	def forward(self, weight, weight_loss, remain_value):
 
 		return ACTLossFunction.apply(weight, weight_loss, remain_value)
-
-# SparseMax (https://arxiv.org/pdf/1602.02068) borrowed form OpenNMT-py( https://github.com/OpenNMT/OpenNMT-py/blob/master/onmt/modules/sparse_activations.py)
-class SparsemaxFunction(Function):
-
-	@staticmethod
-	def forward(ctx, input, dim=0):
-
-		def _threshold_and_support(input, dim=0):
-
-			def _make_ix_like(input, dim=0):
-
-				d = input.size(dim)
-				rho = torch.arange(1, d + 1, dtype=input.dtype, device=input.device)
-				view = [1] * input.dim()
-				view[0] = -1
-
-				return rho.view(view).transpose(0, dim)
-
-			input_srt, _ = input.sort(descending=True, dim=dim)
-			input_cumsum = input_srt.cumsum(dim) - 1
-			rhos = _make_ix_like(input, dim)
-			support = rhos * input_srt > input_cumsum
-
-			support_size = support.sum(dim=dim).unsqueeze(dim)
-			tau = input_cumsum.gather(dim, support_size - 1)
-			tau /= support_size.to(input.dtype)
-
-			return tau, support_size
-
-		ctx.dim = dim
-		max_val, _ = input.max(dim=dim, keepdim=True)
-		input -= max_val
-		tau, supp_size = _threshold_and_support(input, dim=dim)
-		output = (input - tau).clamp(min=0)
-		ctx.save_for_backward(supp_size, output)
-
-		return output
-
-	@staticmethod
-	def backward(ctx, grad_output):
-
-		supp_size, output = ctx.saved_tensors
-		dim = ctx.dim
-		grad_input = grad_output.clone()
-		grad_input[output == 0] = 0
-
-		v_hat = grad_input.sum(dim=dim) / supp_size.to(output.dtype).squeeze()
-		v_hat = v_hat.unsqueeze(dim)
-		grad_input = torch.where(output != 0, grad_input - v_hat, grad_input)
-
-		return grad_input, None
-
-class Sparsemax(nn.Module):
-
-	def __init__(self, dim=-1):
-
-		super(Sparsemax, self).__init__()
-		self.dim = dim
-
-	def forward(self, input):
-
-		return SparsemaxFunction.apply(input, self.dim)
 
 class ApproximateEmb(nn.Module):
 
@@ -760,5 +697,6 @@ class Temperature(nn.Module):
 
 def reduce_model(modin):
 
-	rsm = reduce_model_list(modin, [Dropout, nn.ReLU, nn.Softmax, PositionalEmb, TokenDropout, Sparsemax, CoordinateEmb, Swish], [lambda m: (m.p, m.inplace,), lambda m: (m.inplace,), lambda m: (m.dim,), lambda m: (m.num_pos, m.num_dim, m.poff, m.doff, m.alpha,), lambda m: (m.p, m.keep_magnitude,), lambda m: (m.dim,), lambda m: (m.num_pos, m.num_dim, m.poff, m.doff, m.alpha, m.num_steps,), lambda m: (m.reset_beta, m.beta,)])
-	return reduce_model_list(rsm, [GeLU_GPT, GeLU_BERT, nn.Tanh, nn.Sigmoid])
+	rsm = reduce_model_list(modin, [PositionalEmb, CoordinateEmb], [lambda m: (m.num_pos, m.num_dim, m.poff, m.doff, m.alpha,), lambda m: (m.num_pos, m.num_dim, m.poff, m.doff, m.alpha, m.num_steps,),])
+
+	return reduce_model_drop(reduce_model_act(rsm))

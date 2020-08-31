@@ -191,7 +191,7 @@ def get_bsize(maxlen, maxtoken, maxbsize):
 
 	return min(rs, maxbsize)
 
-def no_unk_mapper(vcb, ltm, prompt=True):
+def no_unk_mapper(vcb, ltm, prompt=False):
 
 	if prompt:
 		rs = []

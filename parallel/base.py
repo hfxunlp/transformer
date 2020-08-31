@@ -2,6 +2,7 @@
 
 import torch
 import torch.cuda.comm as comm
+from torch.cuda.amp import autocast
 from utils.comm import secure_broadcast_coalesced
 
 from torch.jit import ScriptModule
@@ -291,16 +292,15 @@ def parallel_apply(modules, inputs, devices, kwargs_tup=None):
 
 	lock = Lock()
 	results = {}
-	grad_enabled = torch.is_grad_enabled()
+	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
 
 	def _worker(i, module, input, kwargs, device=None):
 
-		with torch.set_grad_enabled(grad_enabled):
-			with torch.cuda.device(device):
-				# this also avoids accidental slicing of `input` if it is a Tensor
-				if not isinstance(input, (list, tuple)):
-					input = (input,)
-				output = module(*input, **kwargs)
+		# this also avoids accidental slicing of `input` if it is a Tensor
+		if not isinstance(input, (list, tuple)):
+			input = (input,)
+		with torch.set_grad_enabled(grad_enabled), torch.cuda.device(device), autocast(enabled=autocast_enabled):
+			output = module(*input, **kwargs)
 		with lock:
 			results[i] = output
 
@@ -324,17 +324,16 @@ def criterion_parallel_apply(modules, inputs, targets, devices, kwargs_tup=None)
 
 	lock = Lock()
 	results = {}
-	grad_enabled = torch.is_grad_enabled()
+	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
 
 	def _worker(i, module, input, target, kwargs, device):
 
-		with torch.set_grad_enabled(grad_enabled):
-			with torch.cuda.device(device):
-				if not isinstance(input, (list, tuple)):
-					input = (input,)
-				if not isinstance(target, (list, tuple)):
-					target = (target,)
-				output = module(*(input + target), **kwargs)
+		if not isinstance(input, (list, tuple)):
+			input = (input,)
+		if not isinstance(target, (list, tuple)):
+			target = (target,)
+		with torch.set_grad_enabled(grad_enabled), torch.cuda.device(device), autocast(enabled=autocast_enabled):
+			output = module(*(input + target), **kwargs)
 		with lock:
 			results[i] = output
 

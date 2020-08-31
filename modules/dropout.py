@@ -31,7 +31,7 @@ class TokenDropout(nn.Module):
 def norm(lin):
 
 	_t = sum(lin)
-	return [lu / _t for lu in lin]
+	return tuple([lu / _t for lu in lin])
 
 def sample(lin):
 
@@ -77,3 +77,7 @@ class NGramDropout(nn.Module):
 			return out
 		else:
 			return inpute
+
+def reduce_model(modin):
+
+	return reduce_model_list(modin, [Dropout, TokenDropout, NGramDropout], [lambda m: (m.p, m.inplace,), lambda m: (m.p, m.inplace, m.keep_magnitude,), lambda m: (m.p, m.inplace, m.seqdim, m.keep_magnitude, m.sample_p, m.max_n,)])

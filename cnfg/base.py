@@ -33,8 +33,7 @@ report_eva = False
 use_cuda = True
 # enable Data Parallel multi-gpu support with values like: 'cuda:0, 1, 3'.
 gpuid = 'cuda:0, 1'
-# [EXP] enable mixed precision (FP16) with "O1"
-amp_opt = None
+use_amp = False
 
 bindDecoderEmb = True
 share_emb = False
