@@ -62,7 +62,7 @@ class DecoderLayer(DecoderLayerBase):
 			else:
 				states_return = inputo + _query_unit
 
-				context = self.self_attn(_query_unit, states_return / step, True)
+				context = self.self_attn(_query_unit, states_return / float(step), True)
 
 			if self.drop is not None:
 				context = self.drop(context)

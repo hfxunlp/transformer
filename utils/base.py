@@ -16,15 +16,25 @@ import logging
 
 from utils.h5serial import h5save, h5load
 
+from cnfg.ihyp import h5modelwargs
+
 secure_type_map = {torch.float16: torch.float64, torch.float32: torch.float64, torch.uint8: torch.int64, torch.int8: torch.int64, torch.int16: torch.int64, torch.int32: torch.int64}
 
 def all_done_bool(stat, *inputs, **kwargs):
 
 	return stat.all().item()
 
-def all_done_byte(stat, bsize, **kwargs):
+def all_done_byte(stat, bsize=None, **kwargs):
 
-	return stat.int().sum().item() == bsize
+	return stat.int().sum().item() == (stat.numel() if bsize is None else bsize)
+
+def exist_any_bool(stat):
+
+	return stat.any().item()
+
+def exist_any_byte(stat):
+
+	return stat.int().sum().item() > 0
 
 # handling torch.bool
 try:
@@ -32,10 +42,12 @@ try:
 	secure_type_map[mask_tensor_type] = torch.int64
 	nccl_type_map = {torch.bool:torch.uint8}
 	all_done = all_done_bool
+	exist_any = exist_any_bool
 except Exception as e:
 	mask_tensor_type = torch.uint8
 	nccl_type_map = None
 	all_done = all_done_byte
+	exist_any = exist_any_byte
 
 def pad_tensors(tensor_list, dim=-1):
 
@@ -160,18 +172,18 @@ def load_model_cpu_old(modf, base_model):
 
 	return base_model
 
-def save_model(model, fname, sub_module=False, logger=None):
+def save_model(model, fname, sub_module=False, logger=None, h5args=h5modelwargs):
 
 	_msave = model.module if sub_module else model
 	try:
-		h5save([t.data for t in _msave.parameters()], fname)
+		h5save([t.data for t in _msave.parameters()], fname, h5args=h5args)
 	except Exception as e:
 		if logger is None:
 			print(e)
 		else:
 			logger.info(str(e))
 
-def async_save_model(model, fname, sub_module=False, logger=None, para_lock=None, log_success=None):
+def async_save_model(model, fname, sub_module=False, logger=None, h5args=h5modelwargs, para_lock=None, log_success=None):
 
 	def _worker(model, fname, sub_module=False, logger=None, para_lock=None, log_success=None):
 
@@ -179,10 +191,10 @@ def async_save_model(model, fname, sub_module=False, logger=None, para_lock=None
 		_msave = model.module if sub_module else model
 		try:
 			if para_lock is None:
-				h5save([t.data for t in _msave.parameters()], fname)
+				h5save([t.data for t in _msave.parameters()], fname, h5args=h5args)
 			else:
 				with para_lock:
-					h5save([t.data for t in _msave.parameters()], fname)
+					h5save([t.data for t in _msave.parameters()], fname, h5args=h5args)
 		except Exception as e:
 			if logger is None:
 				print(e)

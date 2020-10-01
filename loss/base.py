@@ -4,7 +4,7 @@ import torch
 from torch.nn.modules.loss import _Loss
 from torch.nn.modules.loss import NLLLoss as NLLLossBase
 
-import torch.nn.functional as F
+from torch.nn.functional import kl_div, nll_loss
 
 from utils.base import clear_pad_mask
 
@@ -55,13 +55,13 @@ class LabelSmoothingLoss(_Loss):
 		self.reduction = reduction
 		self.conf = 1.0 - label_smoothing
 
-	# output: (batch size, num_classes)
+	# input: (batch size, num_classes)
 	# target: (batch size)
-	# they will be flattened automatically if the dimension of output is larger than 2.
+	# they will be flattened automatically if the dimension of input is larger than 2.
 
-	def forward(self, output, target):
+	def forward(self, input, target):
 
-		_output = output.view(-1, output.size(-1)) if output.dim() > 2 else output
+		_input = input.view(-1, input.size(-1)) if input.dim() > 2 else input
 
 		_target = target.view(-1, 1)
 
@@ -73,23 +73,25 @@ class LabelSmoothingLoss(_Loss):
 		elif self.ignore_index >= 0:
 			model_prob.masked_fill_(_target == self.ignore_index, 0.0)
 
-		return F.kl_div(_output, model_prob, reduction=self.reduction)
+		rs = kl_div(_input, model_prob, reduction=self.reduction)
+
+		return rs.view(target.size()) if self.reduction == 'none' and target.dim() > 1 else rs
 
 class NLLLoss(NLLLossBase):
 
 	def forward(self, input, target):
 
-		isize = input.size()
+		rs = nll_loss(input.view(-1, input.size(-1)), target.view(-1), weight=self.weight, ignore_index=self.ignore_index, reduction=self.reduction)
 
-		return F.nll_loss(input.view(-1, isize[-1]), target.view(-1), weight=self.weight, ignore_index=self.ignore_index, reduction=self.reduction).view(isize[:-1])
+		return rs.view(target.size()) if self.reduction == 'none' and target.dim() > 1 else rs
 
 class RankingLoss(_Loss):
 
-	# output: (batch size)
+	# input: (batch size)
 	# target: (batch size)
-	def forward(self, output, target):
+	def forward(self, input, target):
 
-		loss = output * target
+		loss = input * target
 		if self.reduction == 'mean':
 			loss = loss / loss.numel()
 
@@ -148,9 +150,9 @@ class MultiLabelSmoothingLoss(_Loss):
 
 		self.conf = 1.0 - label_smoothing
 
-	def forward(self, output, target, lang_id=0):
+	def forward(self, input, target, lang_id=0):
 
-		_output = output.view(-1, output.size(-1)) if output.dim() > 2 else output
+		_input = input.view(-1, input.size(-1)) if input.dim() > 2 else input
 
 		_target = target.view(-1, 1)
 
@@ -162,7 +164,9 @@ class MultiLabelSmoothingLoss(_Loss):
 		elif self.ignore_index >= 0:
 			model_prob.masked_fill_(_target == self.ignore_index, 0.0)
 
-		return F.kl_div(_output, model_prob, reduction=self.reduction)
+		rs = kl_div(_input, model_prob, reduction=self.reduction)
+
+		return rs.view(target.size()) if self.reduction == 'none' and target.dim() > 1 else rs
 
 class ReducedLabelSmoothingLoss(LabelSmoothingLoss):
 
@@ -172,12 +176,12 @@ class ReducedLabelSmoothingLoss(LabelSmoothingLoss):
 
 		self.reduce_dim = reduce_dim
 
-	def forward(self, output, target):
+	def forward(self, input, target):
 
 		if self.reduce_dim is not None:
-			output, target = clear_pad_mask([output, target], target.eq(0), [self.reduce_dim - 1, self.reduce_dim], mask_dim=self.reduce_dim, return_contiguous=True)[0]
+			input, target = clear_pad_mask([input, target], target.eq(0), [self.reduce_dim - 1, self.reduce_dim], mask_dim=self.reduce_dim, return_contiguous=True)[0]
 
-		_output = output.view(-1, output.size(-1)) if output.dim() > 2 else output
+		_input = input.view(-1, input.size(-1)) if input.dim() > 2 else input
 
 		_target = target.view(-1, 1)
 
@@ -189,4 +193,6 @@ class ReducedLabelSmoothingLoss(LabelSmoothingLoss):
 		elif self.ignore_index >= 0:
 			model_prob.masked_fill_(_target == self.ignore_index, 0.0)
 
-		return F.kl_div(_output, model_prob, reduction=self.reduction)
+		rs = kl_div(_input, model_prob, reduction=self.reduction)
+
+		return rs.view(target.size()) if self.reduction == 'none' and target.dim() > 1 else rs

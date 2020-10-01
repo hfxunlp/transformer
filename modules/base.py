@@ -217,7 +217,7 @@ class AverageAttn(nn.Module):
 		self.num_pos = num_pos
 		self.register_buffer('w', torch.Tensor(num_pos, 1))
 
-		self.ffn = nn.Sequential(Linear(isize, _hsize), Dropout(dropout, inplace=True), Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize))
+		self.ffn = nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_Custom_Act), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize))
 
 		self.gw = Linear(isize * 2, isize * 2)
 
@@ -235,7 +235,7 @@ class AverageAttn(nn.Module):
 			seql = iV.size(1)
 
 			# avg: (bsize, seql, vsize)
-			avg = iv.cumsum(dim=1) * (self.get_ext(seql) if seql > self.num_pos else self.w.narrow(0, 0, seql))
+			avg = iV.cumsum(dim=1) * (self.get_ext(seql) if seql > self.num_pos else self.w.narrow(0, 0, seql))
 
 		avg = self.ffn(avg)
 
