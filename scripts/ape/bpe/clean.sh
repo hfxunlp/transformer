@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e -o pipefail -x
+
 export cachedir=cache
 
 export dataid=w19ape

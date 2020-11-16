@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e -o pipefail -x
+
 # take the processed data from scripts/mkbpe.sh and convert to tensor representation.
 
 export cachedir=cache
@@ -24,6 +26,8 @@ export maxtokens=256
 export ngpu=1
 
 export wkd=$cachedir/$dataid
+
+mkdir -p $wkd
 
 python tools/ape/sort.py $srcd/$srctf $srcd/$mttf $srcd/$tgttf $wkd/src.train.srt $wkd/mt.train.srt $wkd/tgt.train.srt $maxtokens
 python tools/ape/sort.py $srcd/$srcvf $srcd/$mtvf $srcd/$tgtvf $wkd/src.dev.srt $wkd/mt.dev.srt $wkd/tgt.dev.srt 1048576

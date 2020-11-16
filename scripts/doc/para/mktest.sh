@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e -o pipefail -x
+
 export srcd=w19edoc
 export srctf=test.en.w19edoc
 export modelf="expm/w19edoc/doc/base/checkpoint.h5"

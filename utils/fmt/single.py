@@ -38,5 +38,6 @@ def batch_mapper(finput, vocabi, bsize, maxpad, maxpart, maxtoken, minbsize):
 		yield rsi, mlen_i + extok_i
 
 def batch_padder(finput, vocabi, bsize, maxpad, maxpart, maxtoken, minbsize):
+
 	for i_d, mlen_i in batch_mapper(finput, vocabi, bsize, maxpad, maxpart, maxtoken, minbsize):
 		yield pad_batch(i_d, mlen_i)

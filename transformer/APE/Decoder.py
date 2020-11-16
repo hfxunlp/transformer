@@ -170,7 +170,7 @@ class Decoder(DecoderBase):
 			out = self.classifier(out)
 			wds = SampleMax(out.softmax(-1), dim=-1, keepdim=False) if sample else out.argmax(dim=-1)
 
-			trans.append(wds.masked_fill(done_trans, 0) if fill_pad else wds)
+			trans.append(wds.masked_fill(done_trans, pad_id) if fill_pad else wds)
 
 			done_trans = done_trans | wds.eq(2)
 			if all_done(done_trans, bsize):

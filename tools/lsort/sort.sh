@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e -o pipefail -x
+
 export srcsf=$1
 export srctf=$2
 export rssf=$3

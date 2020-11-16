@@ -37,10 +37,7 @@ def handle(srcfs, srcfm, srcft, tgtfs, tgtfm, tgtft, cratio=0.8, bratio=5.0, sra
 	def legal(strins, strint, cratio, bratio, sratio, pratio, oratio, num_rules_drop):
 
 		def ratio_bilingual(ls, lt):
-			if ls > lt:
-				return ls / lt
-			else:
-				return lt / ls
+			return ls / lt if ls > lt else lt / ls
 
 		ls, lens, lenso = legal_mono(strins, cratio, bratio, sratio)
 		lt, lent, lento = legal_mono(strint, cratio, bratio, sratio)
@@ -49,10 +46,7 @@ def handle(srcfs, srcfm, srcft, tgtfs, tgtfm, tgtft, cratio=0.8, bratio=5.0, sra
 			nrule += 1
 		if ratio_bilingual(lenso, lento) > oratio:
 			nrule += 1
-		if nrule < num_rules_drop:
-			return True
-		else:
-			return False
+		return nrule < num_rules_drop
 
 	ens = "\n".encode("utf-8")
 

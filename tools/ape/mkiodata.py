@@ -11,8 +11,8 @@ from utils.fmt.ape.triple import batch_padder
 from cnfg.ihyp import *
 
 def handle(finput, fmt, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulgpu=True, bsize=max_sentences_gpu, maxpad=max_pad_tokens_sentence, maxpart=normal_tokens_vs_pad_tokens, maxtoken=max_tokens_gpu, minfreq=False, vsize=False):
-	vcbi, nwordi = ldvocab(fvocab_i, minfreq, vsize)
-	vcbt, nwordt = ldvocab(fvocab_t, minfreq, vsize)
+	vcbi, nwordi = ldvocab(fvocab_i, minf=minfreq, omit_vsize=vsize, vanilla=False)
+	vcbt, nwordt = ldvocab(fvocab_t, minf=minfreq, omit_vsize=vsize, vanilla=False)
 	if expand_for_mulgpu:
 		_bsize = bsize * minbsize
 		_maxtoken = maxtoken * minbsize
@@ -36,7 +36,7 @@ def handle(finput, fmt, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for
 	rsf["ndata"] = numpy.array([curd], dtype = numpy.int32)
 	rsf["nword"] = numpy.array([nwordi, nwordt], dtype = numpy.int32)
 	rsf.close()
-	print("Number of batches: %d\nSource Vocabulary Size: %d\nTarget Vocabulary Size: %d" % (curd, nwordi, nwordt))
+	print("Number of batches: %d\nSource Vocabulary Size: %d\nTarget Vocabulary Size: %d" % (curd, nwordi, nwordt,))
 
 if __name__ == "__main__":
 	handle(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6], int(sys.argv[7]))

@@ -109,11 +109,11 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			if cur_b % nreport == 0:
 				if report_eva:
 					_leva, _eeva = eva(ed, nd, model, lossf, mv_device, multi_gpu, _use_amp)
-					logger.info("Average loss over %d tokens: %.3f, valid loss/error: %.3f %.2f" % (part_wd, part_loss / part_wd, _leva, _eeva))
+					logger.info("Average loss over %d tokens: %.3f, valid loss/error: %.3f %.2f" % (part_wd, part_loss / part_wd, _leva, _eeva,))
 					free_cache(mv_device)
 					model.train()
 				else:
-					logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd))
+					logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd,))
 				part_loss = 0.0
 				part_wd = 0
 
@@ -135,7 +135,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				save_states(statesf, tl[cur_b - 1:])
 		cur_b += 1
 	if part_wd != 0.0:
-		logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd))
+		logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd,))
 	return sum_loss / sum_wd, _done_tokens, _cur_checkid, _cur_rstep, _ls
 
 def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
@@ -288,7 +288,7 @@ cur_checkid = 0
 tminerr = inf_default
 
 minloss, minerr = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu, use_amp)
-logger.info("".join(("Init lr: ", ",".join(tostr(getlr(optimizer))), ", Dev Loss/Error: %.3f %.2f" % (minloss, minerr))))
+logger.info("".join(("Init lr: ", ",".join(tostr(getlr(optimizer))), ", Dev Loss/Error: %.3f %.2f" % (minloss, minerr,))))
 
 if fine_tune_m is None:
 	save_model(mymodel, wkdir + "init.h5", multi_gpu, logger)
@@ -299,10 +299,10 @@ else:
 		logger.info("Continue last epoch")
 		tminerr, done_tokens, cur_checkid, remain_steps, _ = train(td, load_states(cnt_states), vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, False, False, scaler)
 		vloss, vprec = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu, use_amp)
-		logger.info("Epoch: 0, train loss: %.3f, valid loss/error: %.3f %.2f" % (tminerr, vloss, vprec))
-		save_model(mymodel, wkdir + "train_0_%.3f_%.3f_%.2f.h5" % (tminerr, vloss, vprec), multi_gpu, logger)
+		logger.info("Epoch: 0, train loss: %.3f, valid loss/error: %.3f %.2f" % (tminerr, vloss, vprec,))
+		save_model(mymodel, wkdir + "train_0_%.3f_%.3f_%.2f.h5" % (tminerr, vloss, vprec,), multi_gpu, logger)
 		if save_optm_state:
-			h5save(optimizer.state_dict(), wkdir + "train_0_%.3f_%.3f_%.2f.optm.h5" % (tminerr, vloss, vprec))
+			h5save(optimizer.state_dict(), wkdir + "train_0_%.3f_%.3f_%.2f.optm.h5" % (tminerr, vloss, vprec,))
 		logger.info("New best model saved")
 
 if cnfg.dss_ws is not None and cnfg.dss_ws > 0.0 and cnfg.dss_ws < 1.0:
@@ -326,12 +326,12 @@ for i in range(1, maxrun + 1):
 	free_cache(use_cuda)
 	terr, done_tokens, cur_checkid, remain_steps, _Dws = train(td, tl, vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, dss_ws > 0, i >= start_chkp_save, scaler)
 	vloss, vprec = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu, use_amp)
-	logger.info("Epoch: %d, train loss: %.3f, valid loss/error: %.3f %.2f" % (i, terr, vloss, vprec))
+	logger.info("Epoch: %d, train loss: %.3f, valid loss/error: %.3f %.2f" % (i, terr, vloss, vprec,))
 
 	if (vprec <= minerr) or (vloss <= minloss):
-		save_model(mymodel, wkdir + "eva_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, logger)
+		save_model(mymodel, wkdir + "eva_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec,), multi_gpu, logger)
 		if save_optm_state:
-			h5save(optimizer.state_dict(), wkdir + "eva_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec))
+			h5save(optimizer.state_dict(), wkdir + "eva_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec,))
 		logger.info("New best model saved")
 
 		namin = 0
@@ -344,11 +344,11 @@ for i in range(1, maxrun + 1):
 	else:
 		if terr < tminerr:
 			tminerr = terr
-			save_model(mymodel, wkdir + "train_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, logger)
+			save_model(mymodel, wkdir + "train_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec,), multi_gpu, logger)
 			if save_optm_state:
-				h5save(optimizer.state_dict(), wkdir + "train_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec))
+				h5save(optimizer.state_dict(), wkdir + "train_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec,))
 		elif epoch_save:
-			save_model(mymodel, wkdir + "epoch_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, logger)
+			save_model(mymodel, wkdir + "epoch_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec,), multi_gpu, logger)
 
 		namin += 1
 		if namin >= earlystop:

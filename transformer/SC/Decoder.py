@@ -10,6 +10,8 @@ from modules.TA import PositionwiseFF
 from utils.base import all_done, repeat_bsize_for_beam_tensor
 from math import sqrt
 
+from utils.fmt.base import pad_id
+
 from transformer.Decoder import DecoderLayer as DecoderLayerBase
 from transformer.Decoder import Decoder as DecoderBase
 
@@ -159,7 +161,7 @@ class Decoder(DecoderBase):
 			out = self.classifier(out)
 			wds = SampleMax(out.softmax(-1), dim=-1, keepdim=False) if sample else out.argmax(dim=-1)
 
-			trans.append(wds.masked_fill(done_trans, 0) if fill_pad else wds)
+			trans.append(wds.masked_fill(done_trans, pad_id) if fill_pad else wds)
 
 			done_trans = done_trans | wds.eq(2)
 			if all_done(done_trans, bsize):

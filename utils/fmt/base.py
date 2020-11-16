@@ -50,12 +50,14 @@ def line_reader(fname):
 			if tmp:
 				yield tmp.decode("utf-8")
 
-def ldvocab(vfile, minf=False, omit_vsize=False):
+def ldvocab(vfile, minf=False, omit_vsize=False, vanilla=False):
 
 	global init_vocab, init_normal_token_id
 
-	rs = init_vocab.copy()
-	cwd = init_normal_token_id
+	if vanilla:
+		rs, cwd = {}, 0
+	else:
+		rs, cwd = init_vocab.copy(), init_normal_token_id
 	if omit_vsize:
 		vsize = omit_vsize
 	else:
@@ -85,6 +87,34 @@ def ldvocab(vfile, minf=False, omit_vsize=False):
 		else:
 			break
 	return rs, cwd
+
+def save_vocab(vcb_dict, fname, omit_vsize=False):
+
+	r_vocab = {}
+	for k, v in vcb_dict.items():
+		if v not in r_vocab:
+			r_vocab[v]=[str(v), k]
+		else:
+			r_vocab[v].append(k)
+
+	freqs = list(r_vocab.keys())
+	freqs.sort(reverse=True)
+
+	ens = "\n".encode("utf-8")
+	remain = omit_vsize
+	with open(fname, "wb") as f:
+		for freq in freqs:
+			cdata = r_vocab[freq]
+			ndata = len(cdata) - 1
+			if remain and (remain < ndata):
+				cdata = cdata[:remain + 1]
+				ndata = remain
+			f.write(" ".join(cdata).encode("utf-8"))
+			f.write(ens)
+			if remain:
+				remain -= ndata
+				if remain <= 0:
+					break
 
 def reverse_dict(din):
 

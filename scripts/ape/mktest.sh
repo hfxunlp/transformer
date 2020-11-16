@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e -o pipefail -x
+
 export srcd=w19ape/test
 export srctf=test.src.tc.w19ape
 export srcmf=test.mt.tc.w19ape

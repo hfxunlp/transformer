@@ -5,6 +5,8 @@ from utils.sampler import SampleMax
 from utils.base import all_done, repeat_bsize_for_beam_tensor
 from math import sqrt
 
+from utils.fmt.base import pad_id
+
 from transformer.EnsembleDecoder import Decoder as DecoderBase
 
 # Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network(https://arxiv.org/abs/1805.00631)
@@ -117,7 +119,7 @@ class Decoder(DecoderBase):
 			out = torch.stack(outs).mean(0)
 			wds = SampleMax(out, dim=-1, keepdim=False) if sample else out.argmax(dim=-1)
 
-			trans.append(wds.masked_fill(done_trans, 0) if fill_pad else wds)
+			trans.append(wds.masked_fill(done_trans, pad_id) if fill_pad else wds)
 
 			done_trans = done_trans | wds.eq(2)
 			if all_done(done_trans, bsize):

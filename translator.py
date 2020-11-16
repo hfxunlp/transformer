@@ -49,8 +49,8 @@ class TranslatorCore:
 
 	def __init__(self, modelfs, fvocab_i, fvocab_t, cnfg, minbsize=1, expand_for_mulgpu=True, bsize=64, maxpad=16, maxpart=4, maxtoken=1536, minfreq = False, vsize = False):
 
-		vcbi, nwordi = ldvocab(fvocab_i, minfreq, vsize)
-		vcbt, nwordt = ldvocab(fvocab_t, minfreq, vsize)
+		vcbi, nwordi = ldvocab(fvocab_i, minf=minfreq, omit_vsize=vsize, vanilla=False)
+		vcbt, nwordt = ldvocab(fvocab_t, minf=minfreq, omit_vsize=vsize, vanilla=False)
 		self.vcbi, self.vcbt = vcbi, reverse_dict(vcbt)
 
 		if expand_for_mulgpu:

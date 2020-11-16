@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e -o pipefail -x
+
 export srcd=wmt14
 export srctf=test.tc.en.w14ed32
 export modelf="expm/w14ed32/std/base/checkpoint.h5"

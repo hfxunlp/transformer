@@ -14,7 +14,8 @@ from utils.base import *
 from utils.init import init_model_params
 from utils.dynbatch import GradientMonitor
 from utils.h5serial import h5save, h5load
-from utils.fmt.base import tostr, save_states, load_states, pad_id
+from utils.fmt.base import tostr, save_states, load_states, pad_id, parse_double_value_tuple
+
 from utils.fmt.base4torch import parse_cuda, load_emb
 
 from lrsch import GoogleLR
@@ -34,17 +35,16 @@ from cnfg.ihyp import *
 
 from transformer.NMT import NMT
 
-num_layer, update_angle = cnfg.nlayer, cnfg.update_angle
+update_angle = cnfg.update_angle
+enc_layer, dec_layer = parse_double_value_tuple(cnfg.nlayer)
 
 def select_function(modin, select_index):
 
-	global num_layer
-	_sel_layer, _sel_enc = select_index % num_layer, select_index < num_layer
-	_sel_m = modin.enc.nets[_sel_layer] if _sel_enc else modin.dec.nets[_sel_layer]
+	_sel_m = (list(modin.enc.nets) + list(modin.dec.nets))[select_index]
 
 	return _sel_m.parameters()
 
-grad_mon = GradientMonitor(num_layer * 2, select_function, module=None, angle_alpha=cnfg.dyn_tol_alpha, num_tol_amin=cnfg.dyn_tol_amin, num_his_record=cnfg.num_dynb_his, num_his_gm=1)
+grad_mon = GradientMonitor(enc_layer + dec_layer, select_function, module=None, angle_alpha=cnfg.dyn_tol_alpha, num_tol_amin=cnfg.dyn_tol_amin, num_his_record=cnfg.num_dynb_his, num_his_gm=1)
 
 def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, chkpof=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False, scaler=None):
 

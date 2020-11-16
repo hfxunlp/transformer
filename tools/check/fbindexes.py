@@ -4,7 +4,7 @@ import sys
 
 from utils.fmt.base import ldvocab, init_vocab
 
-def handle(vcbf, srcfl, rsf, minfreq = False, vsize = False):
+def handle(vcbf, srcfl, rsf, minfreq=False, vsize=False):
 
 	vcb, nwords = ldvocab(vcbf, minfreq, vsize)
 

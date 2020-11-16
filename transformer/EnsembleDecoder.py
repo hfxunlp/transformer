@@ -6,6 +6,8 @@ from utils.sampler import SampleMax
 from utils.base import all_done, repeat_bsize_for_beam_tensor
 from math import sqrt
 
+from utils.fmt.base import pad_id
+
 class Decoder(nn.Module):
 
 	# models: list of decoders
@@ -60,7 +62,7 @@ class Decoder(nn.Module):
 	# beam_size: the beam size for beam search
 	# max_len: maximum length to generate
 
-	def decode(self, inpute, src_pad_mask, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
+	def decode(self, inpute, src_pad_mask=None, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
 
 		return self.beam_decode(inpute, src_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad) if beam_size > 1 else self.greedy_decode(inpute, src_pad_mask, max_len, fill_pad=fill_pad)
 
@@ -138,7 +140,7 @@ class Decoder(nn.Module):
 			out = torch.stack(outs).mean(0)
 			wds = SampleMax(out, dim=-1, keepdim=False) if sample else out.argmax(dim=-1)
 
-			trans.append(wds.masked_fill(done_trans, 0) if fill_pad else wds)
+			trans.append(wds.masked_fill(done_trans, pad_id) if fill_pad else wds)
 
 			done_trans = done_trans | wds.eq(2)
 			if all_done(done_trans, bsize):

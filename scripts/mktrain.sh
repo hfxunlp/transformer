@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e -o pipefail -x
+
 # take the processed data from scripts/mkbpe.sh and convert to tensor representation.
 
 export cachedir=cache
@@ -22,6 +24,8 @@ export maxtokens=256
 export ngpu=1
 
 export wkd=$cachedir/$dataid
+
+mkdir -p $wkd
 
 python tools/sort.py $srcd/$srctf $srcd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens
 # use the following command to sort a very large dataset with limited memory

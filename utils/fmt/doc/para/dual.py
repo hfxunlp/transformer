@@ -50,5 +50,6 @@ def batch_mapper(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtok
 		yield rsi, rst, mlen_i + extok_i, mlen_t + extok_t, nsent
 
 def batch_padder(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize):
+
 	for i_d, td, mlen_i, mlen_t, nsent in batch_mapper(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize):
 		yield pad_batch(i_d, mlen_i), pad_batch(td, mlen_t), nsent

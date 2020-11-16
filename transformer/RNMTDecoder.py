@@ -187,7 +187,7 @@ class Decoder(nn.Module):
 	# beam_size: the beam size for beam search
 	# max_len: maximum length to generate
 
-	def decode(self, inpute, src_pad_mask, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
+	def decode(self, inpute, src_pad_mask=None, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
 
 		return self.beam_decode(inpute, src_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad) if beam_size > 1 else self.greedy_decode(inpute, src_pad_mask, max_len, fill_pad=fill_pad)
 

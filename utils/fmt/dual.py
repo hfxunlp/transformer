@@ -36,13 +36,12 @@ def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 
 def batch_mapper(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize):
 
-	global use_unk
-
 	for i_d, td, mlen_i, mlen_t in batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 		rsi, extok_i = map_batch(i_d, vocabi)
 		rst, extok_t = map_batch(td, vocabt)
 		yield rsi, rst, mlen_i + extok_i, mlen_t + extok_t
 
 def batch_padder(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize):
+
 	for i_d, td, mlen_i, mlen_t in batch_mapper(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize):
 		yield pad_batch(i_d, mlen_i), pad_batch(td, mlen_t)
