@@ -87,12 +87,12 @@ class PositionalEmb(nn.Module):
 		poff = self.poff
 
 		if step_pick:
-			pos = torch.Tensor([length + poff], dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
-			ed = self.w.new(1, self.num_dim)
+			pos = torch.tensor([length + poff], dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
+			ed = self.w.new_empty(1, self.num_dim)
 		else:
 			npos = self.num_pos
 			pos = torch.arange(npos + poff, length + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
-			ed = self.w.new(length - npos, self.num_dim)
+			ed = self.w.new_empty(length - npos, self.num_dim)
 		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(1e4) / self.num_dim)).exp()
 		_tmp = pos * rdiv_term
 		if self.alpha != 1.0:
@@ -105,7 +105,7 @@ class PositionalEmb(nn.Module):
 
 	def get_pos(self, step):
 
-		return self.w[step] if step <= self.num_pos else self.get_ext(step, True).squeeze(0)
+		return self.w[step] if step < self.num_pos else self.get_ext(step, True).squeeze(0)
 
 class MultiHeadAttn(nn.Module):
 
@@ -623,8 +623,6 @@ class CoordinateEmb(nn.Module):
 
 		return rs.unsqueeze(0).expand(bsize, seql, self.num_dim) if expand else rs.unsqueeze(0)
 
-	# when self.num_dim % 2 == 1, a bug happened, since rdiv_term for sin and cos are different
-
 	def reset_parameters(self):
 
 		poff = self.poff
@@ -642,15 +640,15 @@ class CoordinateEmb(nn.Module):
 	def get_ext(self, length, step, step_pick=False):
 
 		poff = self.poff
-		_step = torch.Tensor([step + poff], dtype=self.w.dtype, device=self.w.device).view(1, 1)
+		_step = torch.tensor([step + poff], dtype=self.w.dtype, device=self.w.device).view(1, 1)
 
 		if step_pick:
-			_pos = torch.Tensor([length + poff], dtype=self.w.dtype, device=self.w.device).view(1, 1)
-			ed = self.w.new(1, self.num_dim)
+			_pos = torch.tensor([length + poff], dtype=self.w.dtype, device=self.w.device).view(1, 1)
+			ed = self.w.new_empty(1, self.num_dim)
 		else:
 			npos = self.num_pos
 			_pos = torch.arange(npos + poff if step <= self.num_steps else poff, length + poff, dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
-			ed = self.w.new(length - npos, self.num_dim)
+			ed = self.w.new_empty(length - npos, self.num_dim)
 		rdiv_term = (torch.arange(self.doff, self.num_dim + self.doff, 2, dtype=self.w.dtype, device=self.w.device) * -(log(1e4) / self.num_dim)).exp()
 		_tmp1, _tmp2 = _pos * rdiv_term, _step * rdiv_term
 		if self.alpha != 1.0:
@@ -660,11 +658,9 @@ class CoordinateEmb(nn.Module):
 
 		return ed
 
-	# step of weight to retrieve, start from 0
-
 	def get_pos(self, step, layer):
 
-		return self.w[layer][step] if step <= self.num_pos and layer <= self.num_steps else self.get_ext(step, layer, True).squeeze(0)
+		return self.w[layer][step] if step < self.num_pos and layer < self.num_steps else self.get_ext(step, layer, True).squeeze(0)
 
 class Temperature(nn.Module):
 
