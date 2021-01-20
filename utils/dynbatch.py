@@ -4,6 +4,7 @@ import torch
 
 from math import log2, exp, pi, acos
 from random import random
+from utils.angle import prep_cos, cos_acc_pg
 
 # comment the following line and uncomment the 4 lines following it to load para_group_select_alpha from cnfg.dynb
 para_group_select_alpha = 3.0
@@ -43,18 +44,6 @@ def backup_para_grad(plin):
 		rs = [pu.grad.clone() for pu in plin]
 
 	return rs
-
-def prep_cos(og, ng):
-
-	return (og * ng).sum(), og.pow(2).sum(), ng.pow(2).sum()
-
-def cos_acc_pg(old_pg, new_pg):
-
-	with torch.no_grad():
-		on, o, n = zip(*[prep_cos(ou, nu) for ou, nu in zip(old_pg, new_pg)])
-		sim = (torch.stack(on, 0).sum() / (torch.stack(o, 0).sum() * torch.stack(n, 0).sum()).sqrt()).item()
-
-	return sim
 
 class EffRecorder:
 

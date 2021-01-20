@@ -16,9 +16,14 @@ class AdaBelief(Optimizer):
 
 		self.weight_decouple, self.rectify, self.fixed_decay = weight_decouple, rectify, fixed_decay
 
+	@torch.no_grad()
 	def step(self, closure=None):
 
-		loss = None if closure is None else closure()
+		if closure is None:
+			loss = None
+		else:
+			with torch.enable_grad():
+				loss = closure()
 
 		for group in self.param_groups:
 

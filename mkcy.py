@@ -50,11 +50,11 @@ if __name__ == "__main__":
 
 	eccargs = ["-Ofast", "-march=native", "-pipe", "-fomit-frame-pointer"]
 
-	baselist = ["loss.py", "lrsch.py", "translator.py", "discriminator.py"]
+	baselist = ["lrsch.py", "translator.py"]
 
 	extlist = [Extension(get_name(pyf), [pyf], extra_compile_args=eccargs) for pyf in baselist]
 
-	for _mp in ("modules/", "parallel/", "transformer/", "utils/"):
+	for _mp in ("modules/", "loss/", "parallel/", "transformer/", "utils/", "optm/"):
 		_tmp = walk_path(_mp, eccargs)
 		if _tmp:
 			extlist.extend(_tmp)

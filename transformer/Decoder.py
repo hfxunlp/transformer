@@ -52,8 +52,6 @@ class DecoderLayer(nn.Module):
 		if query_unit is None:
 			_inputo = self.layer_normer1(inputo)
 
-			states_return = None
-
 			context = self.self_attn(_inputo, mask=tgt_pad_mask)
 
 			if self.drop is not None:
@@ -85,7 +83,7 @@ class DecoderLayer(nn.Module):
 
 		context = self.ff(context)
 
-		if states_return is None:
+		if query_unit is None:
 			return context
 		else:
 			return context, states_return
@@ -407,7 +405,7 @@ class Decoder(nn.Module):
 			# select the corresponding translation history for the top-k candidate and update translation records
 			# trans: (bsize * beam_size, nquery) => (bsize * beam_size, nquery + 1)
 
-			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), 0) if fill_pad else wds), 1)
+			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), pad_id) if fill_pad else wds), 1)
 
 			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
 
@@ -449,9 +447,9 @@ class Decoder(nn.Module):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 
-	def get_sos_emb(self, inpute):
+	def get_sos_emb(self, inpute, bsize=None):
 
-		bsize = inpute.size(0)
+		bsize = inpute.size(0) if bsize is None else bsize
 
 		return self.wemb.weight[1].view(1, 1, -1).expand(bsize, 1, -1)
 

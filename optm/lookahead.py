@@ -1,5 +1,6 @@
 #encoding: utf-8
 
+import torch
 from torch.optim.optimizer import Optimizer
 
 class Lookahead(Optimizer):

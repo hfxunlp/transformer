@@ -48,6 +48,10 @@ Implementation of transparent attention proposed in [Training Deeper Neural Mach
 
 Implementation of sentential context proposed in [Exploiting Sentential Context for Neural Machine Translation](https://www.aclweb.org/anthology/P19-1624/).
 
+## `RealFormer/`
+
+Implementation of [RealFormer: Transformer Likes Residual Attention](https://arxiv.org/abs/2012.11747) for machine translation.
+
 ## `Doc/`
 
 Implementation of context-aware Transformer proposed in [Improving the Transformer Translation Model with Document-Level Context](https://www.aclweb.org/anthology/D18-1049/).

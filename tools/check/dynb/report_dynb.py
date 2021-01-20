@@ -5,7 +5,7 @@ import sys
 import torch
 from torch.cuda.amp import autocast, GradScaler
 
-from torch import optim
+from torch.optim import Adam as Optimizer
 
 from parallel.base import DataParallelCriterion
 from parallel.parallelMT import DataParallelMT
@@ -110,7 +110,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				if multi_gpu:
 					model.collect_gradients()
 				optm_step(optm, scaler)
-				optm.zero_grad()
+				optm.zero_grad(set_to_none=True)
 				if multi_gpu:
 					model.update_replicas()
 				lrsch.step()
@@ -120,7 +120,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				if multi_gpu:
 					model.reset_grad()
 				else:
-					optm.zero_grad()
+					optm.zero_grad(set_to_none=True)
 			log_dynb = random() <= log_dyn_p
 			_done_tokens = 0
 			if _cur_rstep is not None:
@@ -300,8 +300,8 @@ if use_cuda:
 	mymodel.to(cuda_device)
 	lossf.to(cuda_device)
 
-optimizer = optim.Adam(mymodel.parameters(), lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
-optimizer.zero_grad()
+optimizer = Optimizer(mymodel.parameters(), lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
+optimizer.zero_grad(set_to_none=True)
 
 use_amp = cnfg.use_amp and use_cuda
 scaler = GradScaler() if use_amp else None

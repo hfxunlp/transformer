@@ -6,9 +6,12 @@ run_id = "base"
 
 data_id = "w14ed32"
 
-train_data = "cache/"+data_id+"/train.h5"
-dev_data = "cache/"+data_id+"/dev.h5"
-test_data = "cache/"+data_id+"/test.h5"
+exp_dir = "expm/"
+cache_dir = "cache/"
+
+train_data = cache_dir+data_id+"/train.h5"
+dev_data = cache_dir+data_id+"/dev.h5"
+test_data = cache_dir+data_id+"/test.h5"
 
 fine_tune_m = None
 
@@ -41,7 +44,7 @@ share_emb = False
 isize = 512
 ff_hsize = isize * 4
 nhead = max(1, isize // 64)
-attn_hsize = None
+attn_hsize = isize
 
 nlayer = 6
 

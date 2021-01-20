@@ -49,14 +49,19 @@ class DataParallelModel(DataParallel):
 			self.ngradev = ngpu
 		if ngpu == 1:
 			_fwd_m = self.module if self.nets is None else self.nets[0]
-			return _fwd_m(*inputs[0], **kwargs[0]) if self.gather_output else [_fwd_m(*inputs[0], **kwargs[0])]
-		devices = self.device_ids[:ngpu]
-		replicas = self.replicate(self.module, devices) if self.nets is None else self.nets[:ngpu]
-		outputs = parallel_apply(replicas, inputs, devices, kwargs)
-		if self.gather_output:
-			return self.gather(outputs, self.output_device)
+			outputs = _fwd_m(*inputs[0], **kwargs[0])
+			if self.gather_output:
+				return outputs
+			else:
+				return tuple((ou,) for ou in outputs) if isinstance(outputs, tuple) else outputs
 		else:
-			return tuple(zip(*outputs)) if isinstance(outputs[0], tuple) else outputs
+			devices = self.device_ids[:ngpu]
+			replicas = self.replicate(self.module, devices) if self.nets is None else self.nets[:ngpu]
+			outputs = parallel_apply(replicas, inputs, devices, kwargs)
+			if self.gather_output:
+				return self.gather(outputs, self.output_device)
+			else:
+				return tuple(zip(*outputs)) if isinstance(outputs[0], tuple) else outputs
 
 	def train(self, mode=True):
 
@@ -111,14 +116,14 @@ class DataParallelModel(DataParallel):
 					mp.data = para
 		self.ngradev = 0
 
-	def zero_grad(self):
+	def zero_grad(self, set_to_none=True):
 
-		self.module.zero_grad()
+		self.module.zero_grad(set_to_none=set_to_none)
 		if self.nets is not None and self.ngradev > 1:
 			# currently, pytorch broadcast binds parameters between self.nets[0] and self.module, so the following line ensures correctness but less efficient
 			#for net in self.nets:
 			for net in self.nets[1:]:
-				net.zero_grad()
+				net.zero_grad(set_to_none=set_to_none)
 		self.ngradev = 0
 
 	def collect_gradients_func(self, func):

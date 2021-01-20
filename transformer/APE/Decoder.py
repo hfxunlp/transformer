@@ -30,8 +30,6 @@ class DecoderLayer(DecoderLayerBase):
 		if query_unit is None:
 			_inputo = self.layer_normer1(inputo)
 
-			states_return = None
-
 			context = self.self_attn(_inputo, mask=tgt_pad_mask)
 
 			if self.drop is not None:
@@ -71,7 +69,7 @@ class DecoderLayer(DecoderLayerBase):
 
 		context = self.ff(context)
 
-		if states_return is None:
+		if query_unit is None:
 			return context
 		else:
 			return context, states_return
@@ -267,7 +265,7 @@ class Decoder(DecoderBase):
 
 			_inds = (_inds // beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
 
-			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), 0) if fill_pad else wds), 1)
+			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), pad_id) if fill_pad else wds), 1)
 
 			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
 

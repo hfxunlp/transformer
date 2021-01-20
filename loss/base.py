@@ -75,7 +75,7 @@ class LabelSmoothingLoss(_Loss):
 
 		rs = kl_div(_input, model_prob, reduction=self.reduction)
 
-		return rs.view(target.size()) if self.reduction == 'none' and target.dim() > 1 else rs
+		return rs.view(input.size()) if self.reduction == 'none' and target.dim() > 1 else rs
 
 class NLLLoss(NLLLossBase):
 
@@ -83,7 +83,7 @@ class NLLLoss(NLLLossBase):
 
 		rs = nll_loss(input.view(-1, input.size(-1)), target.view(-1), weight=self.weight, ignore_index=self.ignore_index, reduction=self.reduction)
 
-		return rs.view(target.size()) if self.reduction == 'none' and target.dim() > 1 else rs
+		return rs.view(input.size()) if self.reduction == 'none' and target.dim() > 1 else rs
 
 class RankingLoss(_Loss):
 
@@ -166,7 +166,7 @@ class MultiLabelSmoothingLoss(_Loss):
 
 		rs = kl_div(_input, model_prob, reduction=self.reduction)
 
-		return rs.view(target.size()) if self.reduction == 'none' and target.dim() > 1 else rs
+		return rs.view(input.size()) if self.reduction == 'none' and target.dim() > 1 else rs
 
 class ReducedLabelSmoothingLoss(LabelSmoothingLoss):
 
@@ -195,4 +195,4 @@ class ReducedLabelSmoothingLoss(LabelSmoothingLoss):
 
 		rs = kl_div(_input, model_prob, reduction=self.reduction)
 
-		return rs.view(target.size()) if self.reduction == 'none' and target.dim() > 1 else rs
+		return rs.view(input.size()) if self.reduction == 'none' and target.dim() > 1 else rs

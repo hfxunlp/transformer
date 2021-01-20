@@ -443,9 +443,9 @@ class Decoder(nn.Module):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 
-	def get_sos_emb(self, inpute):
+	def get_sos_emb(self, inpute, bsize=None):
 
-		bsize = inpute.size(0)
+		bsize = inpute.size(0) if bsize is None else bsize
 
 		return self.wemb.weight[1].view(1, -1).expand(bsize, -1)
 

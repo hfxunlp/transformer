@@ -38,8 +38,6 @@ ntest = td["ndata"][:].item()
 nword = td["nword"][:].tolist()
 nwordi, nwordt = nword[0], nword[-1]
 
-cuda_device = torch.device(cnfg.gpuid)
-
 if len(sys.argv) == 4:
 	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
 

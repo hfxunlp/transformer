@@ -1,11 +1,9 @@
 #encoding: utf-8
 
-import sys
-
 import torch
 from torch.cuda.amp import autocast, GradScaler
 
-from torch import optim
+from torch.optim import Adam as Optimizer
 
 from parallel.base import DataParallelCriterion
 from parallel.parallelMT import DataParallelMT
@@ -97,7 +95,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				if multi_gpu:
 					model.collect_gradients()
 				optm_step(optm, scaler)
-				optm.zero_grad()
+				optm.zero_grad(set_to_none=True)
 				if multi_gpu:
 					model.update_replicas()
 				lrsch.step()
@@ -105,7 +103,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				if multi_gpu:
 					model.reset_grad()
 				else:
-					optm.zero_grad()
+					optm.zero_grad(set_to_none=True)
 			_done_tokens = 0
 			if _cur_rstep is not None:
 				if save_checkp_epoch and (save_every is not None) and (_cur_rstep % save_every == 0) and (chkpf is not None) and (_cur_rstep > 0):
@@ -201,8 +199,6 @@ def init_fixing(module):
 		module.fix_init()
 
 rid = cnfg.run_id
-if len(sys.argv) > 1:
-	rid = sys.argv[1]
 
 earlystop = cnfg.earlystop
 
@@ -226,7 +222,7 @@ epoch_save = cnfg.epoch_save
 
 remain_steps = cnfg.training_steps
 
-wkdir = "".join(("expm/", cnfg.data_id, "/", cnfg.group_id, "/", rid, "/"))
+wkdir = "".join((cnfg.exp_dir, cnfg.data_id, "/", cnfg.group_id, "/", rid, "/"))
 if not p_check(wkdir):
 	makedirs(wkdir)
 
@@ -280,8 +276,8 @@ if use_cuda:
 	mymodel.to(cuda_device)
 	lossf.to(cuda_device)
 
-optimizer = optim.Adam(mymodel.parameters(), lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
-optimizer.zero_grad()
+optimizer = Optimizer(mymodel.parameters(), lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
+optimizer.zero_grad(set_to_none=True)
 
 use_amp = cnfg.use_amp and use_cuda
 scaler = GradScaler() if use_amp else None

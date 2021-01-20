@@ -271,7 +271,7 @@ class Decoder(DecoderBase):
 			# select the corresponding translation history for the top-k candidate and update translation records
 			# trans: (bsize * beam_size, nquery) => (bsize * beam_size, nquery + 1)
 
-			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), 0) if fill_pad else wds), 1)
+			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), pad_id) if fill_pad else wds), 1)
 
 			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
 

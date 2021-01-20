@@ -25,16 +25,16 @@ def handle(finput, fmt, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for
 	tgt_grp = rsf.create_group("tgt")
 	curd = 0
 	for i_d, md, td in batch_padder(finput, fmt, ftarget, vcbi, vcbt, _bsize, maxpad, maxpart, _maxtoken, minbsize):
-		rid = numpy.array(i_d, dtype = numpy.int32)
-		rmd = numpy.array(md, dtype = numpy.int32)
-		rtd = numpy.array(td, dtype = numpy.int32)
+		rid = numpy.array(i_d, dtype=numpy.int32)
+		rmd = numpy.array(md, dtype=numpy.int32)
+		rtd = numpy.array(td, dtype=numpy.int32)
 		wid = str(curd)
 		src_grp.create_dataset(wid, data=rid, **h5datawargs)
 		mt_grp.create_dataset(wid, data=rmd, **h5datawargs)
 		tgt_grp.create_dataset(wid, data=rtd, **h5datawargs)
 		curd += 1
-	rsf["ndata"] = numpy.array([curd], dtype = numpy.int32)
-	rsf["nword"] = numpy.array([nwordi, nwordt], dtype = numpy.int32)
+	rsf["ndata"] = numpy.array([curd], dtype=numpy.int32)
+	rsf["nword"] = numpy.array([nwordi, nwordt], dtype=numpy.int32)
 	rsf.close()
 	print("Number of batches: %d\nSource Vocabulary Size: %d\nTarget Vocabulary Size: %d" % (curd, nwordi, nwordt,))
 

@@ -36,6 +36,14 @@ def exist_any_byte(stat):
 
 	return stat.int().sum().item() > 0
 
+def flip_mask_bool(mask, dim):
+
+	return mask.to(torch.uint8).flip(dim).to(mask.dtype)
+
+def flip_mask_byte(mask, dim):
+
+	return mask.flip(dim)
+
 # handling torch.bool
 try:
 	mask_tensor_type = torch.bool
@@ -43,11 +51,13 @@ try:
 	nccl_type_map = {torch.bool:torch.uint8}
 	all_done = all_done_bool
 	exist_any = exist_any_bool
+	flip_mask = flip_mask_bool
 except Exception as e:
 	mask_tensor_type = torch.uint8
 	nccl_type_map = None
 	all_done = all_done_byte
 	exist_any = exist_any_byte
+	flip_mask = flip_mask_byte
 
 def pad_tensors(tensor_list, dim=-1):
 

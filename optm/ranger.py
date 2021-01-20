@@ -1,5 +1,6 @@
 # Efficient combination of RAdam and Lookahead.
 
+import torch
 from math import sqrt
 from torch.optim.optimizer import Optimizer
 
@@ -17,9 +18,14 @@ class Ranger(Optimizer):
 		self.alpha = alpha
 		self.steps = steps
 
+	@torch.no_grad()
 	def step(self, closure=None):
 
-		loss = None if closure is None else closure()
+		if closure is None:
+			loss = None
+		else:
+			with torch.enable_grad():
+				loss = closure()
 
 		self.cur_step += 1
 		if self.cur_step >= self.steps:

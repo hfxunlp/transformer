@@ -2,6 +2,7 @@
 
 # Portal from: https://github.com/LiyuanLucasLiu/RAdam/blob/master/radam.py
 
+import torch
 from math import sqrt
 from torch.optim.optimizer import Optimizer
 
@@ -15,9 +16,14 @@ class RAdam(Optimizer):
 		self.N_sma_threshhold = N_sma_threshhold
 		self.degenerated_to_sgd = degenerated_to_sgd
 
+	@torch.no_grad()
 	def step(self, closure=None):
 
-		loss = None if closure is None else closure()
+		if closure is None:
+			loss = None
+		else:
+			with torch.enable_grad():
+				loss = closure()
 
 		for group in self.param_groups:
 

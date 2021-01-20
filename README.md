@@ -1,7 +1,7 @@
 # Neutron
 Neutron: A pytorch based implementation of [Transformer](https://arxiv.org/abs/1706.03762) and its variants.
 
-This project is developed with python 3.7.
+This project is developed with python 3.8.
 
 ## Setup dependencies
 
@@ -27,9 +27,7 @@ Most [configurations](https://github.com/anoidgit/transformer/blob/master/cnfg/R
 
 Just execute the following command to launch the training:
 
-`python train.py (runid)`
-
-where `runid` can be omitted. In that case, the `run_id` in `cnfg/base.py` will be taken as the id of the experiment.
+`python train.py`
 
 ## Generation
 

@@ -28,7 +28,7 @@ class DecoderLayer(nn.Module):
 		outs = []
 		if query_unit is None:
 			out = inputo
-			states_return = None
+
 			for net in self.nets:
 				out = net(inpute, out, src_pad_mask, tgt_pad_mask)
 				outs.append(out)
@@ -44,7 +44,7 @@ class DecoderLayer(nn.Module):
 
 		out = self.combiner(*outs)
 
-		if states_return is None:
+		if query_unit is None:
 			return out
 		else:
 			return out, states_return
