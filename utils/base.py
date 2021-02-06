@@ -107,13 +107,23 @@ def unfreeze_module(module):
 
 	def unfreeze_fixing(mod):
 
-		if "fix_unfreeze" in dir(mod):
+		if hasattr(mod, "fix_unfreeze"):
 			mod.fix_unfreeze()
 
 	for p in module.parameters():
 		p.requires_grad_(True)
 
 	module.apply(unfreeze_fixing)
+
+def eq_indexes(tensor, indexes):
+
+	rs = None
+	for ind in indexes:
+		if rs is None:
+			rs = tensor.eq(ind)
+		else:
+			rs |= tensor.eq(ind)
+	return rs
 
 def getlr(optm):
 
@@ -219,7 +229,7 @@ def async_save_model(model, fname, sub_module=False, logger=None, h5args=h5model
 def get_logger(fname):
 
 	logger = logging.getLogger(__name__)
-	logger.setLevel(level = logging.INFO)
+	logger.setLevel(level=logging.INFO)
 	handler = logging.FileHandler(fname)
 	handler.setLevel(logging.INFO)
 	formatter = logging.Formatter('[%(asctime)s %(levelname)s] %(message)s')

@@ -128,7 +128,7 @@ class Encoder(nn.Module):
 
 	def fix_init(self):
 
-		if "fix_load" in dir(self):
+		if hasattr(self, "fix_load"):
 			self.fix_load()
 		with torch.no_grad():
 			self.wemb.weight[pad_id].zero_()

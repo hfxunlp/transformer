@@ -17,6 +17,9 @@ cache_len_default = 256
 use_k_relative_position = 0
 disable_std_pemb = False
 
+# using fast implementation of label smoothing loss, but it cannot exclude the negative impact of special tokens, like <pad>, on training. `forbidden_indexes` in `cnfg/base.py` shall be set to None to enable.
+use_fast_loss = False
+
 # configure maximum batch size w.r.t GPU memory
 max_sentences_gpu = 768
 max_tokens_gpu = 4608

@@ -17,7 +17,7 @@ def legal(pname, fbl):
 
 	rs = True
 	for pyst, pyf in fbl:
-		if pname.startswith(pyst) or pname==pyf:
+		if pname.startswith(pyst) or pname == pyf:
 			rs = False
 			break
 

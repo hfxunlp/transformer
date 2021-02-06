@@ -29,7 +29,7 @@ from utils.fmt.base4torch import parse_cuda
 
 def load_fixing(module):
 
-	if "fix_load" in dir(module):
+	if hasattr(module, "fix_load"):
 		module.fix_load()
 
 td = h5py.File(sys.argv[2], "r")

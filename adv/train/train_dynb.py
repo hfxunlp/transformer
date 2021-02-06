@@ -16,7 +16,7 @@ from utils.fmt.base import tostr, save_states, load_states, pad_id, parse_double
 
 from utils.fmt.base4torch import parse_cuda, load_emb
 
-from lrsch import GoogleLR
+from lrsch import GoogleLR as LRScheduler
 from loss.base import LabelSmoothingLoss
 
 from random import shuffle
@@ -195,7 +195,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 
 def init_fixing(module):
 
-	if "fix_init" in dir(module):
+	if hasattr(module, "fix_init"):
 		module.fix_init()
 
 rid = cnfg.run_id
@@ -291,7 +291,7 @@ if fine_tune_state is not None:
 	logger.info("Load optimizer state from: " + fine_tune_state)
 	optimizer.load_state_dict(h5load(fine_tune_state))
 
-lrsch = GoogleLR(optimizer, cnfg.isize, cnfg.warm_step, scale=cnfg.lr_scale)
+lrsch = LRScheduler(optimizer, cnfg.isize, cnfg.warm_step, scale=cnfg.lr_scale)
 
 num_checkpoint = cnfg.num_checkpoint
 cur_checkid = 0

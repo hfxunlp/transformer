@@ -1,6 +1,6 @@
 #encoding: utf-8
 
-from math import sqrt, log, exp, pi
+from math import sqrt, log, exp
 import torch
 from torch import nn
 from torch.nn import functional as nnFunc
@@ -9,7 +9,7 @@ from torch.autograd import Function
 from utils.base import reduce_model_list
 from modules.act import Custom_Act
 from modules.act import reduce_model as reduce_model_act
-from modules.dropout import Dropout, TokenDropout, InfDropout
+from modules.dropout import Dropout
 from modules.dropout import reduce_model as reduce_model_drop
 
 from cnfg.ihyp import *

@@ -2,6 +2,9 @@
 
 import torch
 from torch import nn
+
+from utils.base import all_done
+
 from transformer.EnsembleEncoder import Encoder
 
 # import Decoder from transformer.AGG.Ensemble implementation or transformer.AGG.Ensemble implementation to enable feature combination between layers
@@ -73,9 +76,9 @@ class NMT(nn.Module):
 			out = torch.cat((out, wds), -1)
 
 			# done_trans: (bsize)
-			done_trans = wds.squeeze(1).eq(2) if done_trans is None else (done_trans + wds.squeeze(1).eq(2)).gt(0)
+			done_trans = wds.squeeze(1).eq(2) if done_trans is None else (done_trans | wds.squeeze(1).eq(2))
 
-			if done_trans.sum().item() == bsize:
+			if all_done(done_trans, bsize):
 				break
 
 		return out.narrow(1, 1, out.size(1) - 1)
@@ -142,7 +145,7 @@ class NMT(nn.Module):
 			out = torch.cat((out.index_select(0, _inds), wds), -1)
 
 			# done_trans: (bsize, beam_size)
-			done_trans = wds.view(bsize, beam_size).eq(2) if done_trans is None else (done_trans.view(real_bsize).index_select(0, _inds) + wds.view(real_bsize).eq(2)).gt(0).view(bsize, beam_size)
+			done_trans = wds.view(bsize, beam_size).eq(2) if done_trans is None else (done_trans.view(real_bsize).index_select(0, _inds) | wds.view(real_bsize).eq(2)).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)
@@ -151,12 +154,12 @@ class NMT(nn.Module):
 			_done = False
 			if length_penalty > 0.0:
 				lpv = lpv.index_select(0, _inds)
-			elif (not return_all) and done_trans.select(1, 0).sum().item() == bsize:
+			elif (not return_all) and all_done(done_trans.select(1, 0), bsize):
 				_done = True
 
 			# check beam states(done or not)
 
-			if _done or (done_trans.sum().item() == real_bsize):
+			if _done or all_done(done_trans, real_bsize):
 				break
 
 		out = out.narrow(1, 1, out.size(1) - 1)

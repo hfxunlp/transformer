@@ -19,7 +19,7 @@ from utils.base import load_model_cpu
 
 def load_fixing(module):
 
-	if "fix_load" in dir(module):
+	if hasattr(module, "fix_load"):
 		module.fix_load()
 
 td = h5py.File(cnfg.dev_data, "r")

@@ -20,7 +20,7 @@ def data_loader(sentences_iter, vcbi, minbsize=1, bsize=768, maxpad=16, maxpart=
 		yield torch.tensor(i_d, dtype=torch.long)
 
 def load_fixing(module):
-	if "fix_load" in dir(module):
+	if hasattr(module, "fix_load"):
 		module.fix_load()
 
 def sorti(lin):
