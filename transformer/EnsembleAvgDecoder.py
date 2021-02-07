@@ -9,7 +9,9 @@ from utils.fmt.base import pad_id
 
 from transformer.EnsembleDecoder import Decoder as DecoderBase
 
-# Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network(https://arxiv.org/abs/1805.00631)
+from cnfg.ihyp import *
+
+# Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network (https://www.aclweb.org/anthology/P18-1166/)
 
 class Decoder(DecoderBase):
 
@@ -133,7 +135,7 @@ class Decoder(DecoderBase):
 	# beam_size: beam size
 	# max_len: maximum length to generate
 
-	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False, fill_pad=False):
+	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False):
 
 		bsize, seql, isize = inpute[0].size()
 

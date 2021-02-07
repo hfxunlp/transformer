@@ -2,7 +2,7 @@
 
 ## `NMT.py`
 
-The transformer model encapsulates encoder and decoder. Set [these lines](https://github.com/anoidgit/transformer/blob/master/transformer/NMT.py#L8-L13) to make a choice between the standard encoder / decoder and the others.
+The transformer model encapsulates encoder and decoder. Set [these lines](https://github.com/anoidgit/transformer/blob/master/transformer/NMT.py#L10-L14) to make a choice between the standard encoder / decoder and the others.
 
 ## `Encoder.py`
 
@@ -18,7 +18,7 @@ The average decoder of transformer proposed by [Accelerating Neural Transformer 
 
 ## `EnsembleNMT.py`
 
-A model encapsulates several NMT models to do ensemble decoding. Switch [the comment line](https://github.com/anoidgit/transformer/blob/master/transformer/EnsembleNMT.py#L9-L11) to make a choice between the standard decoder and the average decoder.
+A model encapsulates several NMT models to do ensemble decoding. Configure [these lines](https://github.com/anoidgit/transformer/blob/master/transformer/EnsembleNMT.py#L8-L12) to make a choice between the standard decoder and the average decoder.
 
 ## `EnsembleEncoder.py`
 

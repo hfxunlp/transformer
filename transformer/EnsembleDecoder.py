@@ -8,6 +8,8 @@ from math import sqrt
 
 from utils.fmt.base import pad_id
 
+from cnfg.ihyp import *
+
 class Decoder(nn.Module):
 
 	# models: list of decoders
@@ -154,7 +156,7 @@ class Decoder(nn.Module):
 	# beam_size: beam size
 	# max_len: maximum length to generate
 
-	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False, fill_pad=False):
+	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False):
 
 		bsize, seql, isize = inpute[0].size()
 
@@ -261,7 +263,7 @@ class Decoder(nn.Module):
 			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
 
 			if length_penalty > 0.0:
-				lpv = lpv.masked_fill(~done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
+				lpv.masked_fill_(~done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
 
 			# clip from k ** 2 candidate and remain the top-k for each path
 			# scores: (bsize, beam_size * beam_size) => (bsize, beam_size)

@@ -7,7 +7,6 @@ from utils.base import all_done
 from utils.relpos import share_rel_pos_cache
 from utils.fmt.base import parse_double_value_tuple
 
-# import Encoder and Decoder from transformer.AGG.InceptEncoder and transformer.AGG.InceptDecoder/transformer.AGG.InceptAvgDecoder to learn complex representation with incepted transformer, transformer.TA.Encoder for Transparent Encoder.
 from transformer.Encoder import Encoder
 
 # switch the comment between the following two lines to choose standard decoder or average decoder. Using transformer.TA.Decoder for Transparent Decoder.
@@ -117,7 +116,7 @@ class NMT(nn.Module):
 
 		return out.narrow(1, 1, out.size(1) - 1)
 
-	def train_beam_decode(self, inpute, mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=False):
+	def train_beam_decode(self, inpute, mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp):
 
 		bsize, seql = inpute.size()
 

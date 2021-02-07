@@ -115,7 +115,7 @@ class MultiHeadAttn(nn.Module):
 	# num_head: number of heads
 	# dropout: dropout probability
 	# sparsenorm: using sparse normer or standard softmax
-	# bind_qk: query and key can share a same linear transformation for the Reformer: The Efficient Transformer(https://arxiv.org/abs/2001.04451) paper.
+	# bind_qk: query and key can share a same linear transformation for the Reformer: The Efficient Transformer (https://arxiv.org/abs/2001.04451) paper.
 
 	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=0, sparsenorm=False, bind_qk=False, xseql=cache_len_default):
 
@@ -200,7 +200,7 @@ class MultiHeadAttn(nn.Module):
 			_rpm = torch.arange(-length + 1, 1, dtype=self.rel_pos.dtype, device=self.rel_pos.device).unsqueeze(0)
 			return ((_rpm - _rpm.t()).clamp(min=-self.k_rel_pos, max=self.k_rel_pos) + self.k_rel_pos)
 
-# Average Attention is proposed in Accelerating Neural Transformer via an Average Attention Network(https://arxiv.org/abs/1805.00631)
+# Average Attention is proposed in Accelerating Neural Transformer via an Average Attention Network (https://www.aclweb.org/anthology/P18-1166/)
 class AverageAttn(nn.Module):
 
 	# isize: input size of Feed-forward NN

@@ -36,3 +36,6 @@ hdf5_model_compression_level = 0
 
 # For BPE (using full vocabulary), the special <unk> token will never appear and thus can be removed from the vocabulary. Otherwise, it should be set to True.
 use_unk = True
+
+# prune with length penalty in each beam decoding step
+clip_beam_with_lp = True
