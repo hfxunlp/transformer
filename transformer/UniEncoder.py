@@ -1,29 +1,16 @@
 #encoding: utf-8
 
+import torch
 from torch import nn
 from modules.base import *
-from transformer.Encoder import EncoderLayer
 
-# vocabulary:
-#	<pad>:0
-#	<unk>:1
-#	<eos>:2
-#	<sos>:3
-#	...
-# for the classier of the decoder, <sos> is omitted
+from utils.fmt.base import pad_id
+
+from transformer.Encoder import EncoderLayer
 
 from cnfg.ihyp import *
 
 class Encoder(nn.Module):
-
-	# isize: size of word embedding
-	# nwd: number of words
-	# num_layer: number of encoder layers
-	# fhsize: number of hidden units for PositionwiseFeedForward
-	# attn_drop: dropout for MultiHeadAttention
-	# num_head: number of heads in MultiHeadAttention
-	# xseql: maxmimum length of sequence
-	# ahsize: number of hidden units for MultiHeadAttention
 
 	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True):
 
@@ -36,7 +23,7 @@ class Encoder(nn.Module):
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
-		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
+		self.wemb = nn.Embedding(nwd, isize, padding_idx=pad_id)
 
 		self.pemb = CoordinateEmb(isize, xseql, num_layer, 0, 0)
 		self.net = EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
@@ -101,3 +88,10 @@ class Encoder(nn.Module):
 			return out
 		else:
 			return out, loss_act
+
+	def update_vocab(self, indices):
+
+		_wemb = nn.Embedding(len(indices), self.wemb.weight.size(-1), padding_idx=pad_id)
+		with torch.no_grad():
+			_wemb.weight.copy_(self.wemb.weight.index_select(0, indices))
+		self.wemb = _wemb

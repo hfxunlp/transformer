@@ -66,6 +66,13 @@ class NMT(nn.Module):
 		else:
 			self.dec = base_nmt.dec
 
+	def update_vocab(self, src_indices=None, tgt_indices=None):
+
+		if (src_indices is not None) and hasattr(self.enc, "update_vocab"):
+			self.enc.update_vocab(src_indices)
+		if (tgt_indices is not None) and hasattr(self.dec, "update_vocab"):
+			self.dec.update_vocab(tgt_indices)
+
 	# inpute: source sentences from encoder (bsize, seql)
 	# beam_size: the beam size for beam search
 	# max_len: maximum length to generate

@@ -27,7 +27,7 @@ class DecoderLayer(nn.Module):
 
 		self.comb_input = comb_input
 
-	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, concat_query=False):
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None):
 
 		outs = []
 		if query_unit is None:
@@ -44,11 +44,9 @@ class DecoderLayer(nn.Module):
 				outs.append(out)
 			states_return = []
 			for _tmp, net in enumerate(self.nets):
-				out, _state = net(inpute, None if inputo is None else inputo.select(-2, _tmp), src_pad_mask, tgt_pad_mask, out, concat_query)
+				out, _state = net(inpute, None if inputo is None else inputo[_tmp], src_pad_mask, tgt_pad_mask, out)
 				outs.append(out)
 				states_return.append(_state)
-
-			states_return = torch.stack(states_return, -2)
 
 		out = self.combiner(*outs)
 

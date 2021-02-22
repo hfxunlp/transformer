@@ -35,6 +35,10 @@ Tools to check the implementation and the data.
 
 When you using a shared vocabulary for source side and target side, there are still some words which only appear at the source side even joint BPE is applied. Those words take up probabilities in the label smoothing classifier, and this tool can prevent this through generating a larger and well covered forbidden indexes list which can be concatnated to `forbidden_indexes` in `cnfg/base.py`.
 
+### `prune_model_vocab.py`
+
+Pruning source and target vocabularies of the trained model, useful for reducing the vocabulary sizes in case a shared vocabulary is used during training.
+
 ## `clean/`
 
 Tools to filter the datasets.

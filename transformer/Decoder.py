@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from modules.base import *
 from utils.sampler import SampleMax
-from utils.base import all_done, repeat_bsize_for_beam_tensor, mask_tensor_type
+from utils.base import all_done, index_tensors, expand_bsize_for_beam, mask_tensor_type
 from math import sqrt
 
 from utils.fmt.base import pad_id
@@ -28,7 +28,7 @@ class DecoderLayer(nn.Module):
 		_ahsize = isize if ahsize is None else ahsize
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos)
+		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos, uni_direction_reduction=True)
 		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop)
 
 		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
@@ -62,11 +62,7 @@ class DecoderLayer(nn.Module):
 		else:
 			_query_unit = self.layer_normer1(query_unit)
 
-			_inputo = _query_unit if inputo is None else torch.cat((inputo, _query_unit,), 1)
-
-			states_return = _inputo
-
-			context = self.self_attn(_query_unit, iK=_inputo)
+			context, states_return = self.self_attn(_query_unit, states=inputo)
 
 			if self.drop is not None:
 				context = self.drop(context)
@@ -115,7 +111,7 @@ class Decoder(nn.Module):
 		self.xseql = xseql
 		self.register_buffer('mask', torch.ones(xseql, xseql, dtype=mask_tensor_type).triu(1).unsqueeze(0))
 
-		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
+		self.wemb = nn.Embedding(nwd, isize, padding_idx=pad_id)
 		if emb_w is not None:
 			self.wemb.weight = emb_w
 
@@ -193,6 +189,14 @@ class Decoder(nn.Module):
 
 		return self.mask.narrow(1, 0, length).narrow(2, 0, length) if length <= self.xseql else self.mask.new_ones(length, length).triu(1).unsqueeze(0)
 
+	# this function repeats buffers of all cross-attention keys/values, corresponding inputs do not need to be repeated in beam search.
+
+	def repeat_cross_attn_buffer(self, beam_size):
+
+		for _m in self.modules():
+			if isinstance(_m, (CrossAttn, MultiHeadAttn,)):
+				_m.repeat_buffer(beam_size)
+
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, seql), see Encoder, get by:
 	#	src_pad_mask = input.eq(0).unsqueeze(1)
@@ -229,7 +233,7 @@ class Decoder(nn.Module):
 		states = {}
 
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, None, out)
+			out, _state = net(inpute, (None, None,), src_pad_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -307,7 +311,7 @@ class Decoder(nn.Module):
 		states = {}
 
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, None, out)
+			out, _state = net(inpute, (None, None,), src_pad_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -331,9 +335,10 @@ class Decoder(nn.Module):
 
 		done_trans = wds.view(bsize, beam_size).eq(2)
 
-		# inpute: (bsize, seql, isize) => (bsize * beam_size, seql, isize)
+		# instead of update inpute: (bsize, seql, isize) => (bsize * beam_size, seql, isize) with the following line, we only update cross-attention buffers.
+		#inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
 
-		inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
+		self.repeat_cross_attn_buffer(beam_size)
 
 		# _src_pad_mask: (bsize, 1, seql) => (bsize * beam_size, 1, seql)
 
@@ -341,8 +346,7 @@ class Decoder(nn.Module):
 
 		# states[i]: (bsize, 1, isize) => (bsize * beam_size, 1, isize)
 
-		for key, value in states.items():
-			states[key] = repeat_bsize_for_beam_tensor(value, beam_size)
+		states = expand_bsize_for_beam(states, beam_size=beam_size)
 
 		for step in range(1, max_len):
 
@@ -428,8 +432,7 @@ class Decoder(nn.Module):
 			# states[i]: (bsize * beam_size, nquery, isize)
 			# _inds: (bsize, beam_size) => (bsize * beam_size)
 
-			for key, value in states.items():
-				states[key] = value.index_select(0, _inds)
+			states = index_tensors(states, indices=_inds, dim=0)
 
 		# if length penalty is only applied in the last step, apply length penalty
 		if (not clip_beam) and (length_penalty > 0.0):
@@ -457,7 +460,7 @@ class Decoder(nn.Module):
 
 		self.fix_load()
 		with torch.no_grad():
-			self.wemb.weight[pad_id].zero_()
+			#self.wemb.weight[pad_id].zero_()
 			self.classifier.weight[pad_id].zero_()
 
 	def fix_load(self):
@@ -474,6 +477,28 @@ class Decoder(nn.Module):
 			with torch.no_grad():
 				_new_w.data.copy_(_tmp.data)
 			self.classifier.weight = _new_w
+
+	# this function will untie the decoder embedding from the encoder
+
+	def update_vocab(self, indices):
+
+		_nwd = len(indices)
+		_wemb = nn.Embedding(_nwd, self.wemb.weight.size(-1), padding_idx=pad_id)
+		_classifier = Linear(self.classifier.weight.size(-1), _nwd)
+		with torch.no_grad():
+			_wemb.weight.copy_(self.wemb.weight.index_select(0, indices))
+			if self.classifier.weight.is_set_to(self.wemb.weight):
+				_classifier.weight = _wemb.weight
+			else:
+				_classifier.weight.copy_(self.classifier.weight.index_select(0, indices))
+			_classifier.bias.copy_(self.classifier.bias.index_select(0, indices))
+		self.wemb, self.classifier = _wemb, _classifier
+
+	def index_cross_attn_buffer(self, indices, dim=0):
+
+		for _m in self.modules():
+			if isinstance(_m, (CrossAttn, MultiHeadAttn,)):
+				_m.index_buffer(indices, dim=dim)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, seql), see Encoder, get by:
@@ -510,7 +535,7 @@ class Decoder(nn.Module):
 		states = {}
 
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, None, out)
+			out, _state = net(inpute, (None, None,), src_pad_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -569,11 +594,11 @@ class Decoder(nn.Module):
 				_ndid = (~done_trans).nonzero().squeeze(1)
 				bsize = _ndid.size(0)
 				wds = wds.index_select(0, _ndid)
-				inpute = inpute.index_select(0, _ndid)
+				#inpute = inpute.index_select(0, _ndid)
+				self.index_cross_attn_buffer(_ndid)
 				if src_pad_mask is not None:
 					src_pad_mask = src_pad_mask.index_select(0, _ndid)
-				for k, value in states.items():
-					states[k] = value.index_select(0, _ndid)
+				states = index_tensors(states, indices=_ndid, dim=0)
 				trans = list(_trans.index_select(0, _ndid).unbind(1))
 
 				# update mapper
@@ -615,7 +640,7 @@ class Decoder(nn.Module):
 		states = {}
 
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, src_pad_mask, None, out)
+			out, _state = net(inpute, (None, None,), src_pad_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -640,8 +665,9 @@ class Decoder(nn.Module):
 		done_trans = wds.view(bsize, beam_size).eq(2)
 
 		# inpute: (bsize, seql, isize) => (bsize * beam_size, seql, isize)
+		#inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
 
-		inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
+		self.repeat_cross_attn_buffer(beam_size)
 
 		# _src_pad_mask: (bsize, 1, seql) => (bsize * beam_size, 1, seql)
 
@@ -649,8 +675,7 @@ class Decoder(nn.Module):
 
 		# states[i]: (bsize, 1, isize) => (bsize * beam_size, 1, isize)
 
-		for key, value in states.items():
-			states[key] = value.repeat(1, beam_size, 1).view(real_bsize, 1, isize)
+		states = expand_bsize_for_beam(states, beam_size=beam_size)
 
 		mapper = list(range(bsize))
 		rs = [None for i in range(bsize)]
@@ -758,8 +783,7 @@ class Decoder(nn.Module):
 			# states[i]: (bsize * beam_size, nquery, isize)
 			# _inds: (bsize, beam_size) => (bsize * beam_size)
 
-			for key, value in states.items():
-				states[key] = value.index_select(0, _inds)
+			states = index_tensors(states, indices=_inds, dim=0)
 
 			if _ndone > 0:
 				_dind = _done_trans_u.nonzero().squeeze(1)
@@ -790,11 +814,14 @@ class Decoder(nn.Module):
 				_real_bsize = _bsize * beam_size
 
 				wds = wds.view(bsize, beam_size).index_select(0, _ndid).view(_real_bsize, 1)
-				inpute = inpute.view(bsize, beam_size, seql, isize).index_select(0, _ndid).view(_real_bsize, seql, isize)
+				#inpute = inpute.view(bsize, beam_size, seql, isize).index_select(0, _ndid).view(_real_bsize, seql, isize)
+				for _m in self.modules():
+					if isinstance(layer, (CrossAttn, MultiHeadAttn,)) and layer.real_iK is not None:
+						layer.real_iK, layer.real_iV = tuple(_vu.view(bsize, beam_size, *list(_vu.size()[1:])).index_select(0, _ndid).view(_real_bsize, *list(_vu.size()[1:])) for _vu in (layer.real_iK, layer.real_iV,))
 				if _src_pad_mask is not None:
 					_src_pad_mask = _src_pad_mask.view(bsize, beam_size, 1, seql).index_select(0, _ndid).view(_real_bsize, 1, seql)
 				for k, value in states.items():
-					states[k] = value.view(bsize, beam_size, -1, isize).index_select(0, _ndid).view(_real_bsize, -1, isize)
+					states[k] = [_vu.view(bsize, beam_size, *list(_vu.size()[1:])).index_select(0, _ndid).view(_real_bsize, *list(_vu.size()[1:])) for _vu in value]
 				sum_scores = sum_scores.index_select(0, _ndid)
 				trans = _trans.index_select(0, _ndid).view(_real_bsize, -1)
 				if length_penalty > 0.0:

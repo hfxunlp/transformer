@@ -5,7 +5,7 @@ from torch import nn
 from modules.base import *
 from utils.sampler import SampleMax
 from modules.paradoc import GateResidual
-from utils.base import all_done, repeat_bsize_for_beam_tensor
+from utils.base import all_done, index_tensors, expand_bsize_for_beam
 from math import sqrt
 
 from utils.fmt.base import pad_id
@@ -42,11 +42,7 @@ class DecoderLayer(DecoderLayerBase):
 		else:
 			_query_unit = self.layer_normer1(query_unit)
 
-			_inputo = _query_unit if inputo is None else torch.cat((inputo, _query_unit,), 1)
-
-			states_return = _inputo
-
-			context = self.self_attn(_query_unit, iK=_inputo)
+			context, states_return = self.self_attn(_query_unit, states=inputo)
 
 			if self.drop is not None:
 				context = self.drop(context)
@@ -162,7 +158,7 @@ class Decoder(DecoderBase):
 		states = {}
 
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, inputc, src_pad_mask, context_mask, None, out)
+			out, _state = net(inpute, (None, None,), inputc, src_pad_mask, context_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -228,7 +224,7 @@ class Decoder(DecoderBase):
 		states = {}
 
 		for _tmp, net in enumerate(self.nets):
-			out, _state = net(inpute, None, inputc, src_pad_mask, context_mask, None, out)
+			out, _state = net(inpute, (None, None,), inputc, src_pad_mask, context_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -244,7 +240,7 @@ class Decoder(DecoderBase):
 
 		done_trans = wds.view(bsize, beam_size).eq(2)
 
-		inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
+		self.repeat_cross_attn_buffer(beam_size)
 
 		_src_pad_mask = None if src_pad_mask is None else src_pad_mask.repeat(1, beam_size, 1).view(real_bsize, 1, seql)
 		_cbsize, _cseql = inputc[0].size()[:2]
@@ -253,8 +249,7 @@ class Decoder(DecoderBase):
 
 		_inputc = [inputu.repeat(1, beam_size, 1).view(_creal_bsize, _cseql, isize) for inputu in inputc]
 
-		for key, value in states.items():
-			states[key] = repeat_bsize_for_beam_tensor(value, beam_size)
+		states = expand_bsize_for_beam(states, beam_size=beam_size)
 
 		for step in range(1, max_len):
 
@@ -306,8 +301,7 @@ class Decoder(DecoderBase):
 			if _done or all_done(done_trans, real_bsize):
 				break
 
-			for key, value in states.items():
-				states[key] = value.index_select(0, _inds)
+			states = index_tensors(states, indices=_inds, dim=0)
 
 		if (not clip_beam) and (length_penalty > 0.0):
 			scores = scores / lpv.view(bsize, beam_size)

@@ -42,12 +42,13 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 
 	src_grp, tgt_grp = td["src"], td["tgt"]
 	for nsent, i_d in tqdm(tl):
-		seq_batch = torch.from_numpy(src_grp[nsent][i_d][:]).long()
-		seq_o = torch.from_numpy(tgt_grp[nsent][i_d][:]).long()
+		seq_batch = torch.from_numpy(src_grp[nsent][i_d][:])
+		seq_o = torch.from_numpy(tgt_grp[nsent][i_d][:])
 		lo = seq_o.size(-1) - 1
 		if mv_device:
 			seq_batch = seq_batch.to(mv_device)
 			seq_o = seq_o.to(mv_device)
+		seq_batch, seq_o = seq_batch.long(), seq_o.long()
 
 		_nsent = seq_batch.size(1)
 		_nsent_use = _nsent - 1
@@ -145,12 +146,13 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	src_grp, tgt_grp = ed["src"], ed["tgt"]
 	with torch.no_grad():
 		for nsent, i_d in tqdm(nd):
-			seq_batch = torch.from_numpy(src_grp[nsent][i_d][:]).long()
-			seq_o = torch.from_numpy(tgt_grp[nsent][i_d][:]).long()
+			seq_batch = torch.from_numpy(src_grp[nsent][i_d][:])
+			seq_o = torch.from_numpy(tgt_grp[nsent][i_d][:])
 			lo = seq_o.size(-1) - 1
 			if mv_device:
 				seq_batch = seq_batch.to(mv_device)
 				seq_o = seq_o.to(mv_device)
+			seq_batch, seq_o = seq_batch.long(), seq_o.long()
 
 			_nsent = seq_batch.size(1)
 			_nsent_use = _nsent - 1
@@ -261,7 +263,7 @@ if cnfg.tgt_emb is not None:
 	logger.info("Load target embedding from: " + cnfg.tgt_emb)
 	load_emb(cnfg.tgt_emb, mymodel.dec.wemb.weight, nwordt, cnfg.scale_down_emb, cnfg.freeze_tgtemb)
 
-if use_cuda:
+if cuda_device:
 	mymodel.to(cuda_device)
 	lossf.to(cuda_device)
 

@@ -1,5 +1,6 @@
 #encoding: utf-8
 
+import torch
 from torch.nn import functional as nnFunc
 from math import sqrt
 
@@ -10,29 +11,27 @@ from cnfg.ihyp import *
 
 class SelfAttn(SelfAttnBase):
 
-	def forward(self, iQ, mask=None, iK=None, resin=None):
+	def forward(self, iQ, mask=None, states=None, resin=None):
 
 		bsize, nquery = iQ.size()[:2]
 		nheads = self.num_head
 		adim = self.attn_dim
 
-		if iK is None:
-
-			real_iQ, real_iK, real_iV = self.adaptor(iQ).view(bsize, nquery, 3, nheads, adim).unbind(2)
-
-		else:
-
-			seql = iK.size(1)
-
-			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), None if self.adaptor.bias is None else self.adaptor.bias.narrow(0, 0, self.hsize)).view(bsize, nquery, nheads, adim), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), None if self.adaptor.bias is None else self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize)).view(bsize, seql, 2, nheads, adim)
-			real_iK, real_iV = _out.unbind(2)
-
+		real_iQ, real_iK, real_iV = self.adaptor(iQ).view(bsize, nquery, 3, nheads, adim).unbind(2)
 		real_iQ, real_iK, real_iV = real_iQ.transpose(1, 2), real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
+
+		if states is not None:
+			_h_real_iK, _h_real_iV = states
+			if _h_real_iK is None:
+				seql = nquery
+			else:
+				seql = nquery + _h_real_iK.size(-1)
+				real_iK, real_iV = torch.cat((_h_real_iK, real_iK,), dim=-1), torch.cat((_h_real_iV, real_iV,), dim=2)
 
 		scores = real_iQ.matmul(real_iK)
 
 		if self.rel_pemb is not None:
-			if iK is None:
+			if states is None:
 				self.rel_pos_cache = self.get_rel_pos(nquery).contiguous() if self.ref_rel_posm is None else self.ref_rel_posm.rel_pos_cache
 				scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.rel_pos_cache).transpose(1, 2)).view(nquery, bsize, nheads, nquery).permute(1, 2, 0, 3)
 			else:
@@ -54,9 +53,12 @@ class SelfAttn(SelfAttnBase):
 		if self.drop is not None:
 			scores = self.drop(scores)
 
-		oMA = scores.matmul(real_iV).transpose(1, 2).contiguous()
+		out = self.outer(scores.matmul(real_iV).transpose(1, 2).contiguous().view(bsize, nquery, self.hsize))
 
-		return self.outer(oMA.view(bsize, nquery, self.hsize)), resout
+		if states is None:
+			return out, resout
+		else:
+			return out, (real_iK, real_iV,), resout
 
 class CrossAttn(CrossAttnBase):
 
@@ -67,10 +69,14 @@ class CrossAttn(CrossAttnBase):
 		nheads = self.num_head
 		adim = self.attn_dim
 
-		real_iQ, _out = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim), self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim)
-		real_iK, real_iV = _out.unbind(2)
-
-		real_iQ, real_iK, real_iV = real_iQ.transpose(1, 2), real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
+		real_iQ = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2)
+		if (self.real_iK is not None) and self.iK.is_set_to(iK) and (not self.training):
+			real_iK, real_iV = self.real_iK, self.real_iV
+		else:
+			real_iK, real_iV = self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim).unbind(2)
+			real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
+			if not self.training:
+				self.iK, self.real_iK, self.real_iV = iK, real_iK, real_iV
 
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
@@ -87,6 +93,4 @@ class CrossAttn(CrossAttnBase):
 		if self.drop is not None:
 			scores = self.drop(scores)
 
-		oMA = scores.matmul(real_iV).transpose(1, 2).contiguous()
-
-		return self.outer(oMA.view(bsize, nquery, self.hsize)), resout
+		return self.outer(scores.matmul(real_iV).transpose(1, 2).contiguous().view(bsize, nquery, self.hsize)), resout

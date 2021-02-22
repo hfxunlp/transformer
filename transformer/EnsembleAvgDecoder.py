@@ -2,7 +2,7 @@
 
 import torch
 from utils.sampler import SampleMax
-from utils.base import all_done, repeat_bsize_for_beam_tensor
+from utils.base import all_done, index_tensors, expand_bsize_for_beam
 from math import sqrt
 
 from utils.fmt.base import pad_id
@@ -202,9 +202,7 @@ class Decoder(DecoderBase):
 
 		# states[i][j]: (bsize, 1, isize) => (bsize * beam_size, 1, isize)
 
-		for key, value in states.items():
-			for _key, _value in value.items():
-				value[_key] = repeat_bsize_for_beam_tensor(_value, beam_size)
+		states = expand_bsize_for_beam(states, beam_size=beam_size)
 
 		for step in range(2, max_len + 1):
 
@@ -296,9 +294,7 @@ class Decoder(DecoderBase):
 			# states[i][j]: (bsize * beam_size, nquery, isize)
 			# _inds: (bsize, beam_size) => (bsize * beam_size)
 
-			for key, value in states.items():
-				for _key, _value in value.items():
-					value[_key] = _value.index_select(0, _inds)
+			states = index_tensors(states, indices=_inds, dim=0)
 
 		# if length penalty is only applied in the last step, apply length penalty
 		if (not clip_beam) and (length_penalty > 0.0):

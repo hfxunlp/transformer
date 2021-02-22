@@ -6,7 +6,7 @@ from torch import nn
 from torch.nn import functional as nnFunc
 from torch.autograd import Function
 
-from utils.base import reduce_model_list
+from utils.base import reduce_model_list, repeat_bsize_for_beam_tensor
 from modules.act import Custom_Act
 from modules.act import reduce_model as reduce_model_act
 from modules.dropout import Dropout
@@ -114,10 +114,14 @@ class MultiHeadAttn(nn.Module):
 	# osize: output size of this layer
 	# num_head: number of heads
 	# dropout: dropout probability
+	# k_rel_pos: uni-directional window size of relative positional encoding
+	# uni_direction_reduction: performing resource reduction for uni-directional self-attention
+	# is_left_to_right_reduction: only for uni_direction_reduction, indicating left-to-right self-attention or right-to-left
+	# zero_reduction: only for uni_direction_reduction, using zeros for padding positions in the relative positional matrix
 	# sparsenorm: using sparse normer or standard softmax
 	# bind_qk: query and key can share a same linear transformation for the Reformer: The Efficient Transformer (https://arxiv.org/abs/2001.04451) paper.
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=0, sparsenorm=False, bind_qk=False, xseql=cache_len_default):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=0, uni_direction_reduction=False, is_left_to_right_reduction=True, zero_reduction=relpos_reduction_with_zeros, sparsenorm=False, bind_qk=False, xseql=cache_len_default):
 
 		super(MultiHeadAttn, self).__init__()
 
@@ -138,22 +142,47 @@ class MultiHeadAttn(nn.Module):
 		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
 		if k_rel_pos > 0:
-			self.k_rel_pos = k_rel_pos
-			self.rel_pemb = nn.Embedding(k_rel_pos * 2 + 1, self.attn_dim)
+			self.rel_shift = k_rel_pos
+			padding_idx = None
+			if uni_direction_reduction:
+				_n_pemb = k_rel_pos + 1
+				if is_left_to_right_reduction:
+					self.clamp_min, self.clamp_max = -k_rel_pos, 0,
+				else:
+					self.clamp_min, self.clamp_max, self.rel_shift = 0, k_rel_pos, 0
+				if zero_reduction:
+					_n_pemb += 1
+					if is_left_to_right_reduction:
+						self.clamp_max += 1
+						padding_idx = self.clamp_max
+					else:
+						self.clamp_min -= 1
+						self.rel_shift += 1
+						padding_idx = 0
+			else:
+				_n_pemb = k_rel_pos + k_rel_pos + 1
+				self.clamp_min, self.clamp_max = -k_rel_pos, k_rel_pos
+			self.rel_pemb = nn.Embedding(_n_pemb, self.attn_dim, padding_idx=padding_idx)
 			_rpm = torch.arange(-xseql + 1, 1, dtype=torch.long).unsqueeze(0)
-			self.register_buffer("rel_pos", (_rpm - _rpm.t()).clamp(min=-k_rel_pos, max=k_rel_pos) + k_rel_pos)
+			self.register_buffer("rel_pos", (_rpm - _rpm.t()).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
 			self.xseql = xseql
 			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
 			self.ref_rel_posm = None
+			self.register_buffer("rel_pos_cache", None)
 		else:
 			self.rel_pemb = None
+
+		self.register_buffer('real_iK', None)
+		self.register_buffer('real_iV', None)
+		self.register_buffer('iK', None)
+		self.register_buffer('iV', None)
 
 	# iQ: query (bsize, num_query, vsize)
 	# iK: keys (bsize, seql, vsize)
 	# iV: values (bsize, seql, vsize)
 	# mask (bsize, num_query, seql)
 
-	def forward(self, iQ, iK, iV, mask=None):
+	def forward(self, iQ, iK, iV, mask=None, states=None):
 
 		bsize, nquery = iQ.size()[:2]
 		seql = iK.size(1)
@@ -164,7 +193,26 @@ class MultiHeadAttn(nn.Module):
 		# real_iK: MultiHead iK (bsize, seql, vsize) => (bsize, nheads, adim, seql)
 		# real_iV: MultiHead iV (bsize, seql, vsize) => (bsize, nheads, seql, adim)
 
-		real_iQ, real_iK, real_iV = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2), self.key_adaptor(iK).view(bsize, seql, nheads, adim).permute(0, 2, 3, 1), self.value_adaptor(iV).view(bsize, seql, nheads, adim).transpose(1, 2)
+		real_iQ = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2)
+
+		if (self.real_iK is not None) and self.iK.is_set_to(iK) and (not self.training):
+			real_iK = self.real_iK
+		else:
+			real_iK = self.key_adaptor(iK).view(bsize, seql, nheads, adim).permute(0, 2, 3, 1)
+			if not self.training:
+				self.iK, self.real_iK = iK, real_iK
+		if (self.real_iV is not None) and self.iV.is_set_to(iV) and (not self.training):
+			real_iV = self.real_iV
+		else:
+			real_iV = self.value_adaptor(iV).view(bsize, seql, nheads, adim).transpose(1, 2)
+			if not self.training:
+				self.iV, self.real_iV = iV, real_iV
+
+		if states is not None:
+			_h_real_iK, _h_real_iV = states
+			if _h_real_iK is not None:
+				seql += _h_real_iK.size(-1)
+				real_iK, real_iV = torch.cat((_h_real_iK, real_iK,), dim=-1), torch.cat((_h_real_iV, real_iV,), dim=2)
 
 		# scores (bsize, nheads, nquery, adim) * (bsize, nheads, adim, seql) => (bsize, nheads, nquery, seql)
 
@@ -184,13 +232,23 @@ class MultiHeadAttn(nn.Module):
 		if self.drop is not None:
 			scores = self.drop(scores)
 
-		# oMA: output of MultiHeadAttention T((bsize, nheads, nquery, seql) * (bsize, nheads, seql, adim)) => (bsize, nquery, nheads, adim)
+		# output of this layer T((bsize, nheads, nquery, seql) * (bsize, nheads, seql, adim)) => (bsize, nquery, nheads, adim) => (bsize, nquery, osize)
 
-		oMA = scores.matmul(real_iV).transpose(1, 2).contiguous()
+		out = self.outer(scores.matmul(real_iV).transpose(1, 2).contiguous().view(bsize, nquery, self.hsize))
 
-		# output of this layer (bsize, nquery, nheads, adim) => (bsize, nquery, osize)
+		if states is None:
+			return out
+		else:
+			return out, (real_iK, real_iV,)
 
-		return self.outer(oMA.view(bsize, nquery, self.hsize))
+	def train(self, mode=True):
+
+		super(MultiHeadAttn, self).train(mode)
+
+		if mode:
+			self.reset_buffer()
+
+		return self
 
 	def get_rel_pos(self, length):
 
@@ -198,7 +256,25 @@ class MultiHeadAttn(nn.Module):
 			return self.rel_pos.narrow(0, 0, length).narrow(1, 0, length)
 		else:
 			_rpm = torch.arange(-length + 1, 1, dtype=self.rel_pos.dtype, device=self.rel_pos.device).unsqueeze(0)
-			return ((_rpm - _rpm.t()).clamp(min=-self.k_rel_pos, max=self.k_rel_pos) + self.k_rel_pos)
+			return ((_rpm - _rpm.t()).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+
+	def reset_buffer(self, value=None):
+
+		self.iK = self.iV = self.real_iK = self.real_iV = self.rel_pos_cache = value
+
+	def repeat_buffer(self, beam_size):
+
+		if self.real_iK is not None:
+			self.real_iK = repeat_bsize_for_beam_tensor(self.real_iK, beam_size)
+		if self.real_iV is not None:
+			self.real_iV = repeat_bsize_for_beam_tensor(self.real_iV, beam_size)
+
+	def index_buffer(self, indices, dim=0):
+
+		if self.real_iK is not None:
+			self.real_iK = self.real_iK.index_select(dim, indices)
+		if self.real_iV is not None:
+			self.real_iV = self.real_iV.index_select(dim, indices)
 
 # Average Attention is proposed in Accelerating Neural Transformer via an Average Attention Network (https://www.aclweb.org/anthology/P18-1166/)
 class AverageAttn(nn.Module):
@@ -254,7 +330,7 @@ class AverageAttn(nn.Module):
 # Accelerated MultiHeadAttn for self attention, use when Q == K == V
 class SelfAttn(nn.Module):
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=use_k_relative_position, sparsenorm=False, xseql=cache_len_default):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=use_k_relative_position, uni_direction_reduction=False, is_left_to_right_reduction=True, zero_reduction=relpos_reduction_with_zeros, sparsenorm=False, xseql=cache_len_default):
 
 		super(SelfAttn, self).__init__()
 
@@ -272,10 +348,29 @@ class SelfAttn(nn.Module):
 		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
 		if k_rel_pos > 0:
-			self.k_rel_pos = k_rel_pos
-			self.rel_pemb = nn.Embedding(k_rel_pos * 2 + 1, self.attn_dim)
+			self.rel_shift = k_rel_pos
+			padding_idx = None
+			if uni_direction_reduction:
+				_n_pemb = k_rel_pos + 1
+				if is_left_to_right_reduction:
+					self.clamp_min, self.clamp_max = -k_rel_pos, 0,
+				else:
+					self.clamp_min, self.clamp_max, self.rel_shift = 0, k_rel_pos, 0
+				if zero_reduction:
+					_n_pemb += 1
+					if is_left_to_right_reduction:
+						self.clamp_max += 1
+						padding_idx = self.clamp_max
+					else:
+						self.clamp_min -= 1
+						self.rel_shift += 1
+						padding_idx = 0
+			else:
+				_n_pemb = k_rel_pos + k_rel_pos + 1
+				self.clamp_min, self.clamp_max = -k_rel_pos, k_rel_pos
+			self.rel_pemb = nn.Embedding(_n_pemb, self.attn_dim, padding_idx=padding_idx)
 			_rpm = torch.arange(-xseql + 1, 1, dtype=torch.long).unsqueeze(0)
-			self.register_buffer("rel_pos", (_rpm - _rpm.t()).clamp(min=-k_rel_pos, max=k_rel_pos) + k_rel_pos)
+			self.register_buffer("rel_pos", (_rpm - _rpm.t()).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
 			self.xseql = xseql
 			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
 			self.ref_rel_posm = None
@@ -283,29 +378,27 @@ class SelfAttn(nn.Module):
 		else:
 			self.rel_pemb = None
 
-	def forward(self, iQ, mask=None, iK=None):
+	def forward(self, iQ, mask=None, states=None):
 
 		bsize, nquery = iQ.size()[:2]
 		nheads = self.num_head
 		adim = self.attn_dim
 
-		if iK is None:
-
-			real_iQ, real_iK, real_iV = self.adaptor(iQ).view(bsize, nquery, 3, nheads, adim).unbind(2)
-
-		else:
-
-			seql = iK.size(1)
-
-			real_iQ, _out = nnFunc.linear(iQ, self.adaptor.weight.narrow(0, 0, self.hsize), None if self.adaptor.bias is None else self.adaptor.bias.narrow(0, 0, self.hsize)).view(bsize, nquery, nheads, adim), nnFunc.linear(iK, self.adaptor.weight.narrow(0, self.hsize, self.hsize + self.hsize), None if self.adaptor.bias is None else self.adaptor.bias.narrow(0, self.hsize, self.hsize + self.hsize)).view(bsize, seql, 2, nheads, adim)
-			real_iK, real_iV = _out.unbind(2)
-
+		real_iQ, real_iK, real_iV = self.adaptor(iQ).view(bsize, nquery, 3, nheads, adim).unbind(2)
 		real_iQ, real_iK, real_iV = real_iQ.transpose(1, 2), real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
+
+		if states is not None:
+			_h_real_iK, _h_real_iV = states
+			if _h_real_iK is None:
+				seql = nquery
+			else:
+				seql = nquery + _h_real_iK.size(-1)
+				real_iK, real_iV = torch.cat((_h_real_iK, real_iK,), dim=-1), torch.cat((_h_real_iV, real_iV,), dim=2)
 
 		scores = real_iQ.matmul(real_iK)
 
 		if self.rel_pemb is not None:
-			if iK is None:
+			if states is None:
 				self.rel_pos_cache = self.get_rel_pos(nquery).contiguous() if self.ref_rel_posm is None else self.ref_rel_posm.rel_pos_cache
 				scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.rel_pos_cache).transpose(1, 2)).view(nquery, bsize, nheads, nquery).permute(1, 2, 0, 3)
 			else:
@@ -322,9 +415,12 @@ class SelfAttn(nn.Module):
 		if self.drop is not None:
 			scores = self.drop(scores)
 
-		oMA = scores.matmul(real_iV).transpose(1, 2).contiguous()
+		out = self.outer(scores.matmul(real_iV).transpose(1, 2).contiguous().view(bsize, nquery, self.hsize))
 
-		return self.outer(oMA.view(bsize, nquery, self.hsize))
+		if states is None:
+			return out
+		else:
+			return out, (real_iK, real_iV,)
 
 	def get_rel_pos(self, length):
 
@@ -332,7 +428,11 @@ class SelfAttn(nn.Module):
 			return self.rel_pos.narrow(0, 0, length).narrow(1, 0, length)
 		else:
 			_rpm = torch.arange(-length + 1, 1, dtype=self.rel_pos.dtype, device=self.rel_pos.device).unsqueeze(0)
-			return ((_rpm - _rpm.t()).clamp(min=-self.k_rel_pos, max=self.k_rel_pos) + self.k_rel_pos)
+			return ((_rpm - _rpm.t()).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+
+	def reset_buffer(self, value=None):
+
+		self.rel_pos_cache = value
 
 # Accelerated MultiHeadAttn for cross attention, use when K == V
 class CrossAttn(nn.Module):
@@ -356,6 +456,10 @@ class CrossAttn(nn.Module):
 
 		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
+		self.register_buffer('real_iK', None)
+		self.register_buffer('real_iV', None)
+		self.register_buffer('iK', None)
+
 	def forward(self, iQ, iK, mask=None):
 
 		bsize, nquery = iQ.size()[:2]
@@ -363,10 +467,14 @@ class CrossAttn(nn.Module):
 		nheads = self.num_head
 		adim = self.attn_dim
 
-		real_iQ, _out = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim), self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim)
-		real_iK, real_iV = _out.unbind(2)
-
-		real_iQ, real_iK, real_iV = real_iQ.transpose(1, 2), real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
+		real_iQ = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2)
+		if (self.real_iK is not None) and self.iK.is_set_to(iK) and (not self.training):
+			real_iK, real_iV = self.real_iK, self.real_iV
+		else:
+			real_iK, real_iV = self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim).unbind(2)
+			real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
+			if not self.training:
+				self.iK, self.real_iK, self.real_iV = iK, real_iK, real_iV
 
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
 
@@ -378,9 +486,30 @@ class CrossAttn(nn.Module):
 		if self.drop is not None:
 			scores = self.drop(scores)
 
-		oMA = scores.matmul(real_iV).transpose(1, 2).contiguous()
+		return self.outer(scores.matmul(real_iV).transpose(1, 2).contiguous().view(bsize, nquery, self.hsize))
 
-		return self.outer(oMA.view(bsize, nquery, self.hsize))
+	def train(self, mode=True):
+
+		super(CrossAttn, self).train(mode)
+
+		if mode:
+			self.reset_buffer()
+
+		return self
+
+	def reset_buffer(self, value=None):
+
+		self.iK = self.real_iK = self.real_iV = value
+
+	def repeat_buffer(self, beam_size):
+
+		if self.real_iK is not None:
+			self.real_iK, self.real_iV = repeat_bsize_for_beam_tensor(self.real_iK, beam_size), repeat_bsize_for_beam_tensor(self.real_iV, beam_size)
+
+	def index_buffer(self, indices, dim=0):
+
+		if self.real_iK is not None:
+			self.real_iK, self.real_iV = self.real_iK.index_select(dim, indices), self.real_iV.index_select(dim, indices)
 
 # Aggregation from: Exploiting Deep Representations for Neural Machine Translation
 class ResidueCombiner(nn.Module):

@@ -13,7 +13,7 @@ computation_order = "v1"
 # default cached sequence length (for positional embedding, etc.)
 cache_len_default = 256
 
-# window size (one side) of relative positional embeddings, 0 to disable. 16 and 8 are used in [Self-Attention with Relative Position Representations](https://www.aclweb.org/anthology/N18-2074/) for Transformer Base and Big respectively. disable_std_pemb to disable the standard positional embedding when use the relative position, or to disable only the decoder side with a tuple (False, True,), useful for AAN.
+# window size (one side) of relative positional embeddings, 0 to disable. 8 and 16 are used in [Self-Attention with Relative Position Representations](https://www.aclweb.org/anthology/N18-2074/) for Transformer Base and Big respectively. disable_std_pemb to disable the standard positional embedding when use the relative position, or to disable only the decoder side with a tuple (False, True,), useful for AAN.
 use_k_relative_position = 0
 disable_std_pemb = False
 
@@ -21,9 +21,9 @@ disable_std_pemb = False
 use_fast_loss = False
 
 # configure maximum batch size w.r.t GPU memory
-max_sentences_gpu = 768
-max_tokens_gpu = 4608
-max_pad_tokens_sentence = 16
+max_sentences_gpu = 2048
+max_tokens_gpu = 6144
+max_pad_tokens_sentence = 32
 normal_tokens_vs_pad_tokens = 4
 
 # trade CPU for IO and disk space, see [h5py](http://docs.h5py.org/en/stable/high/dataset.html) for details.

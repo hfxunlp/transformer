@@ -12,6 +12,8 @@ from modules.rnncells import *
 
 from utils.fmt.base import pad_id
 
+from transformer.Decoder import Decoder as DecoderBase
+
 from cnfg.ihyp import *
 
 class FirstLayer(nn.Module):
@@ -103,7 +105,7 @@ class DecoderLayer(nn.Module):
 
 			return out + inputo if self.residual else out, (hx, cx)
 
-class Decoder(nn.Module):
+class Decoder(DecoderBase):
 
 	# isize: size of word embedding
 	# nwd: number of words
@@ -115,19 +117,11 @@ class Decoder(nn.Module):
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
 
-	def __init__(self, isize, nwd, num_layer, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None, projector=True):
-
-		super(Decoder, self).__init__()
+	def __init__(self, isize, nwd, num_layer, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None, projector=True, **kwargs):
 
 		_ahsize = isize if ahsize is None else ahsize
 
-		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
-
-		self.xseql = xseql
-
-		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
-		if emb_w is not None:
-			self.wemb.weight = emb_w
+		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize=isize, dropout=dropout, attn_drop=attn_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=_ahsize, norm_output=norm_output, bindemb=bindemb, forbidden_index=forbidden_index, **kwargs)
 
 		self.flayer = FirstLayer(isize, osize=isize, dropout=dropout)
 
@@ -142,11 +136,7 @@ class Decoder(nn.Module):
 		#if bindemb:
 			#list(self.classifier.modules())[-1].weight = self.wemb.weight
 
-		self.lsm = nn.LogSoftmax(-1)
-
-		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) if norm_output else None
-
-		self.fbl = None if forbidden_index is None else tuple(set(forbidden_index))
+		self.mask = None
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: decoded translation (bsize, nquery)
@@ -180,16 +170,6 @@ class Decoder(nn.Module):
 		out = self.lsm(self.classifier(torch.cat((out, attn), -1)))
 
 		return out
-
-	# inpute: encoded representation from encoder (bsize, seql, isize)
-	# src_pad_mask: mask for given encoding source sentence (bsize, seql), see Encoder, get by:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
-	# beam_size: the beam size for beam search
-	# max_len: maximum length to generate
-
-	def decode(self, inpute, src_pad_mask=None, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
-
-		return self.beam_decode(inpute, src_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad) if beam_size > 1 else self.greedy_decode(inpute, src_pad_mask, max_len, fill_pad=fill_pad)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
@@ -324,7 +304,7 @@ class Decoder(nn.Module):
 
 		# inpute: (bsize, seql, isize) => (bsize * beam_size, seql, isize)
 
-		inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
+		self.repeat_cross_attn_buffer(beam_size)
 
 		# _src_pad_mask: (bsize, 1, seql) => (bsize * beam_size, 1, seql)
 
@@ -333,8 +313,7 @@ class Decoder(nn.Module):
 		# states[i]: (bsize, 2, isize) => (bsize * beam_size, 2, isize)
 
 		statefl = statefl.repeat(1, beam_size, 1).view(real_bsize, 2, isize)
-		for key, value in states.items():
-			states[key] = value.repeat(1, beam_size, 1).view(real_bsize, 2, isize)
+		states = expand_bsize_for_beam(states, beam_size=beam_size)
 
 		for step in range(1, max_len):
 
@@ -424,8 +403,7 @@ class Decoder(nn.Module):
 			# _inds: (bsize, beam_size) => (bsize * beam_size)
 
 			statefl = statefl.index_select(0, _inds)
-			for key, value in states.items():
-				states[key] = value.index_select(0, _inds)
+			states = index_tensors(states, indices=_inds, dim=0)
 
 		# if length penalty is only applied in the last step, apply length penalty
 		if (not clip_beam) and (length_penalty > 0.0):
@@ -441,24 +419,8 @@ class Decoder(nn.Module):
 
 			return trans.view(bsize, beam_size, -1).select(1, 0)
 
-	# inpute: encoded representation from encoder (bsize, seql, isize)
-
-	def get_sos_emb(self, inpute, bsize=None):
-
-		bsize = inpute.size(0) if bsize is None else bsize
-
-		return self.wemb.weight[1].view(1, -1).expand(bsize, -1)
-
-	def fix_init(self):
-
-		self.fix_load()
-		with torch.no_grad():
-			self.wemb.weight[pad_id].zero_()
-			self.classifier.weight[pad_id].zero_()
-
-	def fix_load(self):
+	'''def fix_load(self):
 
 		if self.fbl is not None:
 			with torch.no_grad():
-				#list(self.classifier.modules())[-1].bias.index_fill_(0, torch.tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf_default)
-				self.classifier.bias.index_fill_(0, torch.tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf_default)
+				list(self.classifier.modules())[-1].bias.index_fill_(0, torch.tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf_default)'''

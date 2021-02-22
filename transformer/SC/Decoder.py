@@ -7,7 +7,7 @@ from modules.base import ResidueCombiner
 from utils.sampler import SampleMax
 from modules.TA import PositionwiseFF
 
-from utils.base import all_done, repeat_bsize_for_beam_tensor
+from utils.base import all_done, index_tensors, expand_bsize_for_beam, repeat_bsize_for_beam_tensor
 from math import sqrt
 
 from utils.fmt.base import pad_id
@@ -29,7 +29,7 @@ class DecoderLayer(DecoderLayerBase):
 		self.ff = PositionwiseFF(isize, _fhsize, dropout)
 		self.scff = ResidueCombiner(isize, 2, _fhsize)
 
-	def forward(self, inpute, inputh, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, concat_query=False):
+	def forward(self, inpute, inputh, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None):
 
 		if query_unit is None:
 
@@ -46,13 +46,7 @@ class DecoderLayer(DecoderLayerBase):
 
 			_query_unit = self.scff(query_unit, inputh)
 
-			if concat_query:
-
-				inputo = _query_unit if inputo is None else torch.cat((inputo, _query_unit,), 1)
-
-			states_return = inputo
-
-			context = self.self_attn(_query_unit, iK=inputo)
+			context, states_return = self.self_attn(_query_unit, states=inputo)
 
 			if self.drop is not None:
 				context = self.drop(context)
@@ -208,13 +202,12 @@ class Decoder(DecoderBase):
 
 		done_trans = wds.view(bsize, beam_size).eq(2)
 
-		inpute = inpute.repeat(1, beam_size, 1, 1).view(real_bsize, seql, isize, -1)
 		inputh = repeat_bsize_for_beam_tensor(inputh, beam_size)
+		self.repeat_cross_attn_buffer(beam_size)
 
 		_src_pad_mask = None if src_pad_mask is None else src_pad_mask.repeat(1, beam_size, 1).view(real_bsize, 1, seql)
 
-		for key, value in states.items():
-			states[key] = repeat_bsize_for_beam_tensor(value, beam_size)
+		states = expand_bsize_for_beam(states, beam_size=beam_size)
 
 		for step in range(1, max_len):
 
@@ -265,8 +258,7 @@ class Decoder(DecoderBase):
 			if _done or all_done(done_trans, real_bsize):
 				break
 
-			for key, value in states.items():
-				states[key] = value.index_select(0, _inds)
+			states = index_tensors(states, indices=_inds, dim=0)
 
 		if (not clip_beam) and (length_penalty > 0.0):
 			scores = scores / lpv.view(bsize, beam_size)

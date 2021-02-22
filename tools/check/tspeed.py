@@ -71,7 +71,7 @@ else:
 	multi_gpu = False
 	cuda_devices = None
 
-if use_cuda:
+if cuda_device:
 	mymodel.to(cuda_device)
 	if multi_gpu:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
@@ -83,9 +83,10 @@ length_penalty = cnfg.length_penalty
 src_grp = td["src"]
 with torch.no_grad():
 	for i in tqdm(range(ntest)):
-		seq_batch = torch.from_numpy(src_grp[str(i)][:]).long()
-		if use_cuda:
+		seq_batch = torch.from_numpy(src_grp[str(i)][:])
+		if cuda_device:
 			seq_batch = seq_batch.to(cuda_device)
+		seq_batch = seq_batch.long()
 		output = mymodel.decode(seq_batch, beam_size, None, length_penalty)
 
 td.close()

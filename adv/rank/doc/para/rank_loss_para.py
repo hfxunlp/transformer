@@ -65,7 +65,7 @@ use_amp = cnfg.use_amp and use_cuda
 # Important to make cudnn methods deterministic
 set_random_seed(cnfg.seed, use_cuda)
 
-if use_cuda:
+if cuda_device:
 	mymodel.to(cuda_device)
 	lossf.to(cuda_device)
 	if multi_gpu:
@@ -81,12 +81,13 @@ with open(sys.argv[1], "wb") as f:
 	with torch.no_grad():
 		for i in tqdm(range(ntest)):
 			_curid = str(i)
-			seq_batch = torch.from_numpy(src_grp[_curid][:]).long()
-			seq_o = torch.from_numpy(tgt_grp[_curid][:]).long()
+			seq_batch = torch.from_numpy(src_grp[_curid][:])
+			seq_o = torch.from_numpy(tgt_grp[_curid][:])
 			lo = seq_o.size(-1) - 1
-			if use_cuda:
+			if cuda_device:
 				seq_batch = seq_batch.to(cuda_device)
 				seq_o = seq_o.to(cuda_device)
+			seq_batch, seq_o = seq_batch.long(), seq_o.long()
 			bsize, _nsent = seq_batch.size()[:2]
 			_nsent_use = _nsent - 1
 			seq_o = seq_o.narrow(1, 1, _nsent_use)

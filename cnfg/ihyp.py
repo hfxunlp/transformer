@@ -45,6 +45,7 @@ adam_betas_default = (0.9, 0.98,)
 use_k_relative_position_encoder, use_k_relative_position_decoder = parse_double_value_tuple(use_k_relative_position)
 rel_pos_enabled = (max(use_k_relative_position_encoder, use_k_relative_position_decoder) > 0)
 disable_std_pemb_encoder, disable_std_pemb_decoder = parse_double_value_tuple(disable_std_pemb)
+relpos_reduction_with_zeros = True
 
 h5datawargs = {} if hdf5_data_compression is None else {"compression": hdf5_data_compression, "compression_opts": hdf5_data_compression_level, "shuffle":True}
 h5modelwargs = {} if hdf5_model_compression is None else {"compression": hdf5_model_compression, "compression_opts": hdf5_model_compression_level, "shuffle":True}

@@ -57,7 +57,7 @@ use_amp = cnfg.use_amp and use_cuda
 
 set_random_seed(cnfg.seed, use_cuda)
 
-if use_cuda:
+if cuda_device:
 	mymodel.to(cuda_device)
 	if multi_gpu:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
@@ -73,11 +73,12 @@ src_grp, mt_grp = td["src"], td["tgt"]
 with open(sys.argv[1], "wb") as f:
 	with torch.no_grad():
 		for i in tqdm(range(ntest)):
-			seq_batch = torch.from_numpy(src_grp[str(i)][:]).long()
-			seq_mt = torch.from_numpy(mt_grp[str(i)][:]).long()
-			if use_cuda:
+			seq_batch = torch.from_numpy(src_grp[str(i)][:])
+			seq_mt = torch.from_numpy(mt_grp[str(i)][:])
+			if cuda_device:
 				seq_batch = seq_batch.to(cuda_device)
 				seq_mt = seq_mt.to(cuda_device)
+			seq_batch, seq_mt = seq_batch.long(), seq_mt.long()
 			with autocast(enabled=use_amp):
 				output = mymodel.decode(seq_batch, seq_mt, beam_size, None, length_penalty)
 			if multi_gpu:

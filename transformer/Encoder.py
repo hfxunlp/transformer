@@ -82,7 +82,7 @@ class Encoder(nn.Module):
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
-		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
+		self.wemb = nn.Embedding(nwd, isize, padding_idx=pad_id)
 
 		self.pemb = None if disable_pemb else PositionalEmb(isize, xseql, 0, 0)
 		if share_layer:
@@ -126,9 +126,16 @@ class Encoder(nn.Module):
 
 		self.out_normer = None if self.out_normer is None else base_encoder.out_normer
 
+	def update_vocab(self, indices):
+
+		_wemb = nn.Embedding(len(indices), self.wemb.weight.size(-1), padding_idx=pad_id)
+		with torch.no_grad():
+			_wemb.weight.copy_(self.wemb.weight.index_select(0, indices))
+		self.wemb = _wemb
+
 	def fix_init(self):
 
 		if hasattr(self, "fix_load"):
 			self.fix_load()
-		with torch.no_grad():
-			self.wemb.weight[pad_id].zero_()
+		#with torch.no_grad():
+		#	self.wemb.weight[pad_id].zero_()

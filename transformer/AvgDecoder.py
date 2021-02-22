@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from modules.base import *
 from utils.sampler import SampleMax
-from utils.base import all_done, repeat_bsize_for_beam_tensor
+from utils.base import all_done, index_tensors, expand_bsize_for_beam
 from utils.aan import share_aan_cache
 from math import sqrt
 
@@ -99,14 +99,20 @@ class Decoder(DecoderBase):
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False, **kwargs):
 
 		_ahsize = isize if ahsize is None else ahsize
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		super(Decoder, self).__init__(isize, nwd, num_layer, _fhsize, dropout, attn_drop, emb_w, num_head, xseql, _ahsize, norm_output, bindemb, forbidden_index)
+		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=_ahsize, norm_output=norm_output, bindemb=bindemb, forbidden_index=forbidden_index, share_layer=share_layer, **kwargs)
 
-		self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
+		if share_layer:
+			_shared_layer = DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
+			self.nets = nn.ModuleList([_shared_layer for i in range(num_layer)])
+		else:
+			self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
+
+		self.mask = None
 
 		share_aan_cache(self)
 
@@ -286,7 +292,7 @@ class Decoder(DecoderBase):
 
 		# inpute: (bsize, seql, isize) => (bsize * beam_size, seql, isize)
 
-		inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
+		self.repeat_cross_attn_buffer(beam_size)
 
 		# _src_pad_mask: (bsize, 1, seql) => (bsize * beam_size, 1, seql)
 
@@ -294,8 +300,7 @@ class Decoder(DecoderBase):
 
 		# states[i]: (bsize, 1, isize) => (bsize * beam_size, 1, isize)
 
-		for key, value in states.items():
-			states[key] = repeat_bsize_for_beam_tensor(value, beam_size)
+		states = expand_bsize_for_beam(states, beam_size=beam_size)
 
 		for step in range(2, max_len + 1):
 
@@ -381,8 +386,7 @@ class Decoder(DecoderBase):
 			# states[i]: (bsize * beam_size, nquery, isize)
 			# _inds: (bsize, beam_size) => (bsize * beam_size)
 
-			for key, value in states.items():
-				states[key] = value.index_select(0, _inds)
+			states = index_tensors(states, indices=_inds, dim=0)
 
 		# if length penalty is only applied in the last step, apply length penalty
 		if (not clip_beam) and (length_penalty > 0.0):

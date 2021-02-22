@@ -40,14 +40,15 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 	cur_b, _ls = 1, {} if save_loss else None
 	src_grp, mt_grp, tgt_grp = td["src"], td["mt"], td["tgt"]
 	for i_d in tqdm(tl):
-		seq_batch = torch.from_numpy(src_grp[i_d][:]).long()
-		seq_mt = torch.from_numpy(mt_grp[i_d][:]).long()
-		seq_o = torch.from_numpy(tgt_grp[i_d][:]).long()
+		seq_batch = torch.from_numpy(src_grp[i_d][:])
+		seq_mt = torch.from_numpy(mt_grp[i_d][:])
+		seq_o = torch.from_numpy(tgt_grp[i_d][:])
 		lo = seq_o.size(1) - 1
 		if mv_device:
 			seq_batch = seq_batch.to(mv_device)
 			seq_mt = seq_mt.to(mv_device)
 			seq_o = seq_o.to(mv_device)
+		seq_batch, seq_mt, seq_o = seq_batch.long(), seq_mt.long(), seq_o.long()
 
 		oi = seq_o.narrow(1, 0, lo)
 		ot = seq_o.narrow(1, 1, lo).contiguous()
@@ -142,14 +143,15 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	with torch.no_grad():
 		for i in tqdm(range(nd)):
 			bid = str(i)
-			seq_batch = torch.from_numpy(src_grp[bid][:]).long()
-			seq_mt = torch.from_numpy(mt_grp[bid][:]).long()
-			seq_o = torch.from_numpy(tgt_grp[bid][:]).long()
+			seq_batch = torch.from_numpy(src_grp[bid][:])
+			seq_mt = torch.from_numpy(mt_grp[bid][:])
+			seq_o = torch.from_numpy(tgt_grp[bid][:])
 			lo = seq_o.size(1) - 1
 			if mv_device:
 				seq_batch = seq_batch.to(mv_device)
 				seq_mt = seq_mt.to(mv_device)
 				seq_o = seq_o.to(mv_device)
+			seq_batch, seq_mt, seq_o = seq_batch.long(), seq_mt.long(), seq_o.long()
 			ot = seq_o.narrow(1, 1, lo).contiguous()
 			with autocast(enabled=use_amp):
 				output = model(seq_batch, seq_mt, seq_o.narrow(1, 0, lo))
@@ -251,7 +253,7 @@ if cnfg.tgt_emb is not None:
 	logger.info("Load target embedding from: " + cnfg.tgt_emb)
 	load_emb(cnfg.tgt_emb, mymodel.dec.wemb.weight, nwordt, cnfg.scale_down_emb, cnfg.freeze_tgtemb)
 
-if use_cuda:
+if cuda_device:
 	mymodel.to(cuda_device)
 	lossf.to(cuda_device)
 

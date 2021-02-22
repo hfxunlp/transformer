@@ -14,4 +14,4 @@ def SampleMax(input, dim=-1, keepdim=False):
 	_msize[dim] = 1
 	_ms.logical_xor_(torch.cat((_ms.new_zeros(_msize, dtype=_ms.dtype, device=_ms.device), _ms.narrow(dim, 0, _nkeep),), dim=dim))
 
-	return _ms.long().argmax(dim=dim, keepdim=keepdim)
+	return _ms.byte().argmax(dim=dim, keepdim=keepdim)

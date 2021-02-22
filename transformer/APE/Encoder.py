@@ -6,7 +6,7 @@ from modules.base import Dropout, PositionalEmb
 from transformer.Encoder import Encoder as EncoderBase
 from transformer.Decoder import DecoderLayer as MSEncoderLayerBase
 
-from utils.fmt.base import parse_double_value_tuple
+from utils.fmt.base import pad_id, parse_double_value_tuple
 
 from math import sqrt
 
@@ -48,7 +48,7 @@ class MSEncoder(nn.Module):
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
-		self.wemb = nn.Embedding(nwd, isize, padding_idx=0)
+		self.wemb = nn.Embedding(nwd, isize, padding_idx=pad_id)
 		if emb_w is not None:
 			self.wemb.weight = emb_w
 
@@ -101,3 +101,17 @@ class Encoder(nn.Module):
 		enc_src = self.src_enc(inpute, src_mask)
 
 		return enc_src, self.tgt_enc(enc_src, inputo, src_mask, tgt_mask)
+
+	def update_vocab(self, indices):
+
+		_bind_emb = self.src_enc.wemb.weight.is_set_to(self.tgt_enc.wemb.weight)
+		_swemb = nn.Embedding(len(indices), self.src_enc.wemb.weight.size(-1), padding_idx=pad_id)
+		_twemb = nn.Embedding(len(indices), self.tgt_enc.wemb.weight.size(-1), padding_idx=pad_id)
+		with torch.no_grad():
+			_swemb.weight.copy_(self.src_enc.wemb.weight.index_select(0, indices))
+		if _bind_emb:
+			_twemb.weight = _swemb.weight
+		else:
+			with torch.no_grad():
+				_twemb.weight.copy_(self.tgt_enc.wemb.weight.index_select(0, indices))
+		self.src_enc.wemb, self.tgt_enc.wemb = _swemb, _twemb

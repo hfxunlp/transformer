@@ -1,6 +1,7 @@
 #encoding: utf-8
 
 import torch
+from torch import Tensor
 from torch.nn import ModuleDict
 
 from threading import Thread
@@ -267,19 +268,33 @@ def expand_bsize_for_beam(*inputs, beam_size=1):
 
 	outputs = []
 	for inputu in inputs:
-		if inputu is None:
-			outputs.append(None)
-		elif isinstance(inputu, list):
-			outputs.append(list(expand_bsize_for_beam(*inputu, beam_size=beam_size)))
-		elif isinstance(inputu, tuple):
-			outputs.append(tuple(expand_bsize_for_beam(*inputu, beam_size=beam_size)))
-		elif isinstance(inputu, dict):
-			_tmp = {}
-			for _k, _v in inputu.items():
-				_tmp[_k] = expand_bsize_for_beam(_v, beam_size=beam_size)
-			outputs.append(_tmp)
-		else:
+		if isinstance(inputu, Tensor):
 			outputs.append(repeat_bsize_for_beam_tensor(inputu, beam_size))
+		elif isinstance(inputu, dict):
+			outputs.append({k: expand_bsize_for_beam(v, beam_size=beam_size) for k, v in inputu.items()})
+		elif isinstance(inputu, tuple):
+			outputs.append(tuple(expand_bsize_for_beam(tmpu, beam_size=beam_size) for tmpu in inputu))
+		elif isinstance(inputu, list):
+			outputs.append([expand_bsize_for_beam(tmpu, beam_size=beam_size) for tmpu in inputu])
+		else:
+			outputs.append(inputu)
+
+	return outputs[0] if len(inputs) == 1 else tuple(outputs)
+
+def index_tensors(*inputs, indices=None, dim=0):
+
+	outputs = []
+	for inputu in inputs:
+		if isinstance(inputu, Tensor):
+			outputs.append(inputu.index_select(dim, indices))
+		elif isinstance(inputu, dict):
+			outputs.append({k: index_tensors(v, indices=indices, dim=dim) for k, v in inputu.items()})
+		elif isinstance(inputu, tuple):
+			outputs.append(tuple(index_tensors(tmpu, indices=indices, dim=dim) for tmpu in inputu))
+		elif isinstance(inputu, list):
+			outputs.append([index_tensors(tmpu, indices=indices, dim=dim) for tmpu in inputu])
+		else:
+			outputs.append(inputu)
 
 	return outputs[0] if len(inputs) == 1 else tuple(outputs)
 

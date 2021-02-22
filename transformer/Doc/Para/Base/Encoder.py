@@ -150,3 +150,7 @@ class Encoder(nn.Module):
 	def get_padmask(self, seql):
 
 		return self.pad_mask.narrow(-1, 0, seql) if seql <= self.xseql else torch.cat((self.pad_mask, self.pad_mask.new_ones(1, 1, self.nprev_context - 1, seql - self.xseql),), dim=-1)
+
+	def update_vocab(self, indices):
+
+		self.context_enc.update_vocab(indices)

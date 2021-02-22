@@ -1,7 +1,7 @@
 #encoding: utf-8
 
 ''' usage:
-	python tools/average_model.py $averaged_model_file.h5 $model1.h5 $ model2.h5 ...
+	python tools/average_model.py $averaged_model_file.h5 $model1.h5 $model2.h5 ...
 '''
 
 import sys

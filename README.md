@@ -1,5 +1,5 @@
 # Neutron
-Neutron: A pytorch based implementation of [Transformer](https://arxiv.org/abs/1706.03762) and its variants.
+Neutron: A pytorch based implementation of the [Transformer](https://arxiv.org/abs/1706.03762) and its variants.
 
 This project is developed with python 3.8.
 
@@ -96,11 +96,11 @@ Tokenized case-sensitive BLEU measured with [multi-bleu.perl](https://github.com
 | | BLEU | Training Speed | Decoding Speed |
 | :------| ------: | ------: | ------: |
 | Attention is all you need | 27.3 | | |
-| Neutron | 28.07 | 21562.98 | 68.25  |
+| Neutron | 28.07 | 22424.63 | 150.15  |
 
 ## Acknowledgments
 
-The project starts when Hongfei XU (the developer) was a postgraduate student at [Zhengzhou University](http://www5.zzu.edu.cn/nlp/), and continues when he is a PhD candidate at [Saarland University](https://www.uni-saarland.de/nc/en/home.html) supervised by [Prof. Dr. Josef van Genabith](https://www.dfki.de/en/web/about-us/employee/person/jova02/) and [Prof. Dr. Deyi Xiong](http://cic.tju.edu.cn/faculty/xiongdeyi/), and a Junior Researcher at [DFKI, MLT (German Research Center for Artificial Intelligence, Multilinguality and Language Technology)](https://www.dfki.de/en/web/research/research-departments-and-groups/multilinguality-and-language-technology/). Hongfei XU enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project.
+Hongfei Xu enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project.
 
 Details of this project can be found [here](https://arxiv.org/abs/1903.07402), and please cite it if you enjoy the implementation :)
 
