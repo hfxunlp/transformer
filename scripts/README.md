@@ -36,6 +36,10 @@ export maxtokens=256
 
 # number of GPU(s) plan to use in training.
 export ngpu=1
+
+# sorting dataset and building vocabularies. true for the first time generation, false when only update the .h5 files.
+export do_sort=true
+export build_vocab=true
 ```
 
 ## `mktest.sh`

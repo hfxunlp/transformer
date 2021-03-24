@@ -8,12 +8,11 @@ from utils.base import mask_tensor_type
 
 Dropout = nn.Dropout
 
-class TokenDropout(nn.Module):
+class TokenDropout(Dropout):
 
 	def __init__(self, p=0.5, inplace=False, keep_magnitude=True):
 
-		super(TokenDropout, self).__init__()
-		self.p, self.inplace = float(p), inplace
+		super(TokenDropout, self).__init__(p=p, inplace=inplace)
 		self.keep_magnitude = (1.0 / (1.0 - self.p)) if keep_magnitude else False
 
 	def forward(self, inpute):
@@ -45,12 +44,12 @@ def sample(lin):
 
 	return rs
 
-class NGramDropout(nn.Module):
+class NGramDropout(Dropout):
 
 	def __init__(self, p=0.5, inplace=False, seqdim=1, sample_p=[1.0 / tmpu for tmpu in range(1, 3 + 1)], keep_magnitude=True):
 
-		super(NGramDropout, self).__init__()
-		self.p, self.inplace, self.seqdim = float(p), inplace, seqdim
+		super(NGramDropout, self).__init__(p=p, inplace=inplace)
+		self.seqdim = seqdim
 		self.keep_magnitude = (1.0 / (1.0 - self.p)) if keep_magnitude else False
 		self.sample_p = norm([float(pu) for pu in sample_p])
 		self.max_n = len(sample_p)

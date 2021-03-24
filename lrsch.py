@@ -10,7 +10,7 @@ class GoogleLR(_LRScheduler):
 		self.cur_step, self.warm_steps = 0, warm_steps
 		self.k = scale / sqrt(dmodel)
 		self.wk = self.k / sqrt(warm_steps) / warm_steps
-		super(GoogleLR, self).__init__(optimizer, last_epoch)
+		super(GoogleLR, self).__init__(optimizer, last_epoch=last_epoch)
 
 	def get_lr(self):
 
@@ -28,7 +28,7 @@ class WarmUpInverseSqrtLR(_LRScheduler):
 		self.lr_step = (warm_end_lr - warm_init_lr) / warm_steps
 		self.decay_factor = warm_end_lr * sqrt(warm_steps)
 
-		super(WarmUpInverseSqrtLR, self).__init__(optimizer, last_epoch)
+		super(WarmUpInverseSqrtLR, self).__init__(optimizer, last_epoch=last_epoch)
 
 	def get_lr(self):
 
@@ -52,7 +52,7 @@ class InverseSqrtLR(_LRScheduler):
 		self.base_lr = lr
 		self.epoch_steps = scalar
 		self.min_lr = (lr / 512.0) if min_lr is None else min_lr
-		super(InverseSqrtLR, self).__init__(optimizer, last_epoch)
+		super(InverseSqrtLR, self).__init__(optimizer, last_epoch=last_epoch)
 
 	def get_lr(self):
 

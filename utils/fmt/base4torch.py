@@ -6,16 +6,20 @@ from math import sqrt
 from utils.fmt.base import list_reader
 from utils.h5serial import h5save, h5load
 
-def parse_cuda(use_cuda_arg, gpuid):
+def parse_cuda(use_cuda_arg, gpuid=None):
 
 	if use_cuda_arg and torch.cuda.is_available():
 		use_cuda = True
-		if len(gpuid.split(",")) > 1:
-			cuda_device = torch.device(gpuid[:gpuid.find(",")].strip())
-			cuda_devices = [int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(",")]
+		ngpus = torch.cuda.device_count()
+		if gpuid is None:
+			cuda_devices = tuple(torch.device('cuda', i) for i in range(ngpus))
+		else:
+			cuda_devices = tuple(int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(","))
+			cuda_devices = tuple(torch.device('cuda', i) for i in gpus if (i >= 0) and (i < ngpus))
+		cuda_device = cuda_devices[0]
+		if len(cuda_devices) > 1:
 			multi_gpu = True
 		else:
-			cuda_device = torch.device(gpuid)
 			cuda_devices = None
 			multi_gpu = False
 		torch.cuda.set_device(cuda_device.index)
@@ -24,21 +28,21 @@ def parse_cuda(use_cuda_arg, gpuid):
 
 	return use_cuda, cuda_device, cuda_devices, multi_gpu
 
-def parse_cuda_decode(use_cuda_arg, gpuid, multi_gpu_decoding):
+def parse_cuda_decode(use_cuda_arg, gpuid=None, multi_gpu_decoding=False):
 
 	if use_cuda_arg and torch.cuda.is_available():
 		use_cuda = True
-		if len(gpuid.split(",")) > 1:
-			if multi_gpu_decoding:
-				cuda_device = torch.device(gpuid[:gpuid.find(",")].strip())
-				cuda_devices = [int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(",")]
-				multi_gpu = True
-			else:
-				cuda_device = torch.device("cuda:" + gpuid[gpuid.rfind(",") + 1:].strip())
-				cuda_devices = None
-				multi_gpu = False
+		ngpus = torch.cuda.device_count()
+		if gpuid is None:
+			cuda_devices = tuple(torch.device('cuda', i) for i in range(ngpus))
 		else:
-			cuda_device = torch.device(gpuid)
+			cuda_devices = tuple(int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(","))
+			cuda_devices = tuple(torch.device('cuda', i) for i in gpus if (i >= 0) and (i < ngpus))
+		if len(cuda_devices) > 1 and multi_gpu_decoding:
+			cuda_device = cuda_devices[0]
+			multi_gpu = True
+		else:
+			cuda_device = cuda_devices[-1]
 			cuda_devices = None
 			multi_gpu = False
 		torch.cuda.set_device(cuda_device.index)

@@ -16,14 +16,17 @@ else:
 init_token_id = 3
 
 def tostr(lin):
+
 	return [str(lu) for lu in lin]
 
 def save_states(fname, stl):
+
 	with open(fname, "wb") as f:
-		f.write(" ".join([i[0][1:] for i in stl]).encode("utf-8"))
+		f.write(" ".join(stl).encode("utf-8"))
 		f.write("\n".encode("utf-8"))
 
 def load_states(fname):
+
 	rs = []
 	with open(fname, "rb") as f:
 		for line in f:
@@ -32,7 +35,8 @@ def load_states(fname):
 				for tmpu in tmp.decode("utf-8").split():
 					if tmpu:
 						rs.append(tmpu)
-	return [("i" + tmpu, "t" + tmpu) for tmpu in rs]
+
+	return rs
 
 def list_reader(fname):
 
@@ -44,6 +48,7 @@ def list_reader(fname):
 				yield tmp
 
 def line_reader(fname):
+
 	with open(fname, "rb") as frd:
 		for line in frd:
 			tmp = line.strip()
@@ -118,11 +123,7 @@ def save_vocab(vcb_dict, fname, omit_vsize=False):
 
 def reverse_dict(din):
 
-	rs = {}
-	for k, v in din.items():
-		rs[v] = k
-
-	return rs
+	return {v:k for k, v in din.items()}
 
 def ldvocab_list(vfile, minf=False, omit_vsize=False):
 
@@ -176,6 +177,7 @@ def clean_liststr_lentok(lin):
 	return " ".join(rs), len(rs)
 
 def maxfreq_filter(ls, lt, max_remove=True):
+
 	tmp = {}
 	for us, ut in zip(ls, lt):
 		if us not in tmp:
@@ -211,6 +213,7 @@ def shuffle_pair(*inputs):
 
 	tmp = list(zip(*inputs))
 	shuffle(tmp)
+
 	return zip(*tmp)
 
 def get_bsize(maxlen, maxtoken, maxbsize):
@@ -307,6 +310,14 @@ def legal_vocab(sent, ilgset, ratio):
 	rt = float(ilg) / float(total)
 
 	return False if rt > ratio else True
+
+def all_in(lin, sin):
+
+	for lu in lin:
+		if not lu in sin:
+			return False
+
+	return True
 
 def get_char_ratio(strin):
 

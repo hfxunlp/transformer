@@ -12,8 +12,10 @@ from torch.nn import DataParallel
 
 from threading import Lock, Thread
 
-from utils.base import filter_para_grad
+from utils.base import filter_para_grad, divide_para_ind, reorder_by_sort, range_parameter_iter, filter_para_grad_iter
 from utils.fmt.base import clean_list
+
+from parallel.optm import MultiGPUOptimizer
 
 """	Example::
 
@@ -28,13 +30,14 @@ class DataParallelModel(DataParallel):
 	# host replicates should improve a little bit performance if there are additional calls to update_replicas and collect_gradients in the training scripts.
 	def __init__(self, module, device_ids=None, output_device=None, dim=0, host_replicate=False, gather_output=True):
 
-		super(DataParallelModel, self).__init__(module, device_ids, output_device, dim)
+		super(DataParallelModel, self).__init__(module, device_ids=device_ids, output_device=output_device, dim=dim)
 
 		if host_replicate and self.device_ids and (len(self.device_ids) > 1):
 			self.make_replicas()
 		else:
 			self.nets = None
 
+		self.optm_splt = None
 		self.gather_output = gather_output
 		self.ngradev = 0
 
@@ -48,8 +51,7 @@ class DataParallelModel(DataParallel):
 		if self.training and ngpu > self.ngradev:
 			self.ngradev = ngpu
 		if ngpu == 1:
-			_fwd_m = self.module if self.nets is None else self.nets[0]
-			outputs = _fwd_m(*inputs[0], **kwargs[0])
+			outputs = self.module(*inputs[0], **kwargs[0])
 			if self.gather_output:
 				return outputs
 			else:
@@ -68,7 +70,7 @@ class DataParallelModel(DataParallel):
 		super(DataParallelModel, self).train(mode)
 
 		if self.nets is not None:
-			for net in self.nets:
+			for net in self.nets[1:]:
 				net.train(mode)
 
 		return self
@@ -80,40 +82,87 @@ class DataParallelModel(DataParallel):
 
 	def collect_gradients(self):
 
-		if self.ngradev > 1:
+		if self.optm_splt is not None:
+			grads = [[p.grad for p in filter_para_grad(net.parameters())] for net in self.nets[:self.ngradev]]
+			for i, (net, device, (lind, rind,),) in enumerate(zip(self.nets, self.device_ids, self.optm_splt)):
+				_dev_grads = [gradu[lind:rind] for gradu in grads]
+				if i > 0:
+					_dev_grads.insert(0, _dev_grads.pop(i) if i < self.ngradev else [_pg.new_zeros(_pg.size(), device=device) for _pg in _dev_grads[0]])
+				_dev_grads = comm.reduce_add_coalesced(_dev_grads, device)
+				for mp, grad in zip(range_parameter_iter(net, lind, rind, func=filter_para_grad_iter), _dev_grads):
+					mp.grad = grad
+		elif self.ngradev > 1:
 			# in case some parameters might not be used during the forward propagation on some GPUs: p.data.new_zeros(p.data.size()) if p.grad is None else p.grad instead of p.grad, but in most cases, this can warn you in case you miss the use of some parameters in the forward computation.
 			grads = comm.reduce_add_coalesced([[p.grad for p in filter_para_grad(net.parameters())] for net in self.nets[:self.ngradev]], self.output_device)# if self.ngradev > 1 else [p.grad for p in filter_para_grad(self.nets[0].parameters())]
 			for mp, grad in zip(filter_para_grad(self.module.parameters()), grads):
 				mp.grad = grad
 
-# the parallelization of the update of parameters is supported, but not adviced, since the cost of multi threads is much higher and thus slower than the loop unless you are running on lots of GPUs.
+# the parallelization of the update of parameters can be supported, but not adviced, since the cost of multi threads is much higher and thus slower than the loop unless you are running on lots of GPUs.
 # Note that gradients will be cleared every time this function was called
-	def update_replicas(self, parallel=False):
+	def update_replicas(self):
 
-		params = [para.data for para in filter_para_grad(self.module.parameters())]
+		if self.optm_splt is None:
+			params = [para.data for para in filter_para_grad(self.module.parameters())]
 
-		if len(params) > 0:
-			param_copies = tuple([t for tensors in comm.broadcast_coalesced(params, self.device_ids) for t in tensors])
+			if len(params) > 0:
+				param_copies = comm.broadcast_coalesced(params, self.device_ids)
 
-			# currently, pytorch broadcast binds parameters between self.nets[0] and self.module, so the following line ensures correctness but less efficient
-			#for module, param_copy in zip(self.nets, [param_copies[i:i + len(params)] for i in range(0, len(param_copies), len(params))]):
-			for module, param_copy in zip(self.nets[1:], [param_copies[i:i + len(params)] for i in range(len(params), len(param_copies), len(params))]):
+				# currently, pytorch broadcast binds parameters between self.nets[0] and self.module, so the following line ensures correctness but less efficient
+				#for module, param_copy in zip(self.nets, param_copies):
+				for module, param_copy in zip(self.nets[1:], param_copies[1:]):
+					for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
+						mp.data, mp.grad = para, None
+		else:
+			for i, (net, (lind, rind,),) in enumerate(zip(self.nets, self.optm_splt)):
+				_dev_params = [para.data for para in range_parameter_iter(net, lind, rind, func=filter_para_grad_iter)]
+				if i > 0:
+					_devices = self.device_ids[:]
+					_devices.insert(0, _devices.pop(i))
+				else:
+					_devices = self.device_ids
+				_dev_param_copies = comm.broadcast_coalesced(_dev_params, _devices)
+				if i > 0:
+					_dev_param_copies.insert(i, _dev_param_copies.pop(0))
+					for pc, _dpc in zip(param_copies, _dev_param_copies):
+						pc.extend(_dpc)
+				else:
+					param_copies = _dev_param_copies
+			for module, param_copy in zip(self.nets, param_copies):
 				for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
 					mp.data, mp.grad = para, None
 
 		self.ngradev = 0
 
-	def update_replicas_para(self, parallel=False):
+	def update_replicas_para(self):
 
-		params = [para.data for para in filter_para_grad(self.module.parameters())]
+		if self.optm_splt is None:
+			params = [para.data for para in filter_para_grad(self.module.parameters())]
 
-		if len(params) > 0:
-			param_copies = tuple([t for tensors in comm.broadcast_coalesced(params, self.device_ids) for t in tensors])
+			if len(params) > 0:
+				param_copies = comm.broadcast_coalesced(params, self.device_ids)
 
-			#for module, param_copy in zip(self.nets, [param_copies[i:i + len(params)] for i in range(0, len(param_copies), len(params))]):
-			for module, param_copy in zip(self.nets[1:], [param_copies[i:i + len(params)] for i in range(len(params), len(param_copies), len(params))]):
+				for module, param_copy in zip(self.nets[1:], param_copies[1:]):
+					for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
+						mp.data = para
+		else:
+			for i, (net, (lind, rind,),) in enumerate(zip(self.nets, self.optm_splt)):
+				_dev_params = [para.data for para in range_parameter_iter(net, lind, rind, func=filter_para_grad_iter)]
+				if i > 0:
+					_devices = self.device_ids[:]
+					_devices.insert(0, _devices.pop(i))
+				else:
+					_devices = self.device_ids
+				_dev_param_copies = comm.broadcast_coalesced(_dev_params, _devices)
+				if i > 0:
+					_dev_param_copies.insert(i, _dev_param_copies.pop(0))
+					for pc, _dpc in zip(param_copies, _dev_param_copies):
+						pc.extend(_dpc)
+				else:
+					param_copies = _dev_param_copies
+			for module, param_copy in zip(self.nets, param_copies):
 				for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
 					mp.data = para
+
 		self.ngradev = 0
 
 	def zero_grad(self, set_to_none=True):
@@ -155,12 +204,24 @@ class DataParallelModel(DataParallel):
 					para.grad = None
 		self.ngradev = 0
 
+	def build_optimizer(self, optm_func, *optm_args, **optm_kwargs):
+
+		paras = filter_para_grad(self.module.parameters())
+		if self.nets is None or (len(paras) < 2):
+			return optm_func(self.module.parameters(), *optm_args, **optm_kwargs)
+		else:
+			self.optm_splt, _np = divide_para_ind(paras, len(self.device_ids), return_np=True)
+			optml = [optm_func(range_parameter_iter(net, lind, rind, func=filter_para_grad_iter), *optm_args, **optm_kwargs) for net, (lind, rind,) in zip(self.nets, self.optm_splt)]
+			# sort the optimizers with slightly more parameters ahead to start their optimization steps earlier
+			optml, _device_ids = reorder_by_sort(_np, optml, self.device_ids[:len(optml)], reverse=True)
+			return MultiGPUOptimizer(optml, device_ids=_device_ids)
+
 class DataParallelCriterion(DataParallel):
 
 	# if there is no parameter update in criterion, turn on replicate_once should improve a little bit performance.
 	def __init__(self, module, device_ids=None, output_device=None, dim=0, replicate_once=False):
 
-		super(DataParallelCriterion, self).__init__(module, device_ids, output_device, dim)
+		super(DataParallelCriterion, self).__init__(module, device_ids=device_ids, output_device=output_device, dim=dim)
 
 		if replicate_once and self.device_ids and (len(self.device_ids) > 1):
 			self.nets = replicate(self.module, self.device_ids, True)
@@ -176,8 +237,7 @@ class DataParallelCriterion(DataParallel):
 		targets = clean_list(targets)
 		ngpu = len(targets)
 		if ngpu == 1:
-			_fwd_m = self.module if self.nets is None else self.nets[0]
-			return _fwd_m(inputs[0], *targets[0], **kwargs[0])
+			return self.module(inputs[0], *targets[0], **kwargs[0])
 		devices = self.device_ids[:ngpu]
 		replicas = self.replicate(self.module, devices) if self.nets is None else self.nets[:ngpu]
 		outputs = criterion_parallel_apply(replicas, inputs, targets, devices, kwargs)
@@ -192,11 +252,11 @@ def replicate(network, devices, no_gradient=False):
 		para.grad = None
 		return para
 
-	num_replicas = len(devices)
+	num_replicas = len(devices) - 1
 
 	params = [clear_gradient(para) for para in network.parameters()] if no_gradient else list(network.parameters())
 	param_indices = {param: idx for idx, param in enumerate(params)}
-	param_copies = comm.broadcast_coalesced(params, devices)
+	param_copies = comm.broadcast_coalesced(params, devices)[1:]
 
 	buffers = list(network.buffers())
 	buffers_rg = []
@@ -210,8 +270,8 @@ def replicate(network, devices, no_gradient=False):
 	buffer_indices_rg = {buf: idx for idx, buf in enumerate(buffers_rg)}
 	buffer_indices_not_rg = {buf: idx for idx, buf in enumerate(buffers_not_rg)}
 
-	buffer_copies_rg = secure_broadcast_coalesced(buffers_rg, devices)
-	buffer_copies_not_rg = secure_broadcast_coalesced(buffers_not_rg, devices)
+	buffer_copies_rg = secure_broadcast_coalesced(buffers_rg, devices)[1:]
+	buffer_copies_not_rg = secure_broadcast_coalesced(buffers_not_rg, devices)[1:]
 
 	modules = list(network.modules())
 	module_copies = [[] for device in devices]
@@ -286,7 +346,7 @@ def replicate(network, devices, no_gradient=False):
 				for method_name in module._c._method_names():
 					replica._c.clone_method(module._c, method_name)
 
-	return [module_copies[j][0] for j in range(num_replicas)]
+	return [network] + [module_copies[j][0] for j in range(num_replicas)]
 
 # update these two functions with the update of parallel_apply(https://github.com/pytorch/pytorch/blob/master/torch/nn/parallel/parallel_apply.py)
 

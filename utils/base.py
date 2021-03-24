@@ -300,12 +300,7 @@ def index_tensors(*inputs, indices=None, dim=0):
 
 def remove_layers(all_layers, ltr):
 
-	rs = []
-	for i, _l in enumerate(all_layers):
-		if i not in ltr:
-			rs.append(_l)
-
-	return rs
+	return [_l for i, _l in enumerate(all_layers) if i not in ltr]
 
 def free_cache(free_cuda=False):
 
@@ -314,12 +309,13 @@ def free_cache(free_cuda=False):
 
 def filter_para_grad(plin):
 
-	rs = []
+	return [para for para in plin if para.requires_grad]
+
+def filter_para_grad_iter(plin):
+
 	for para in plin:
 		if para.requires_grad:
-			rs.append(para)
-
-	return rs
+			yield para
 
 def ModuleList2Dict(modin):
 
@@ -420,10 +416,99 @@ def iternext(iterin):
 
 	return rs
 
-def optm_step(optm, scaler=None):
+def optm_step(optm, model=None, scaler=None, closure=None, multi_gpu=False, multi_gpu_optimizer=False):
 
+	if multi_gpu:
+		model.collect_gradients()
 	if scaler is None:
-		optm.step()
+		optm.step(closure=closure)
 	else:
-		scaler.step(optm)
+		scaler.step(optm, closure=closure)
 		scaler.update()
+	if not multi_gpu_optimizer:
+		optm.zero_grad(set_to_none=True)
+	if multi_gpu:
+		model.update_replicas()
+
+def divide_para_ind(para_list, ngroup, return_np=False):
+
+	elel = [pu.numel() for pu in para_list]
+	n_elel = len(elel)
+	if n_elel <= ngroup:
+		rs = [(lind, lind + 1,) for lind in range(n_elel)]
+	else:
+		sum_p = sum(elel)
+		p_group = ceil(sum_p / ngroup)
+		dp_group = p_group + p_group
+		rs = []
+		lind = rind = p_g = nd = 0
+		nprevs = ngroup - 1
+		for elu in elel:
+			_np_g = p_g + elu
+			if _np_g < p_group:
+				rind += 1
+				p_g = _np_g
+			else:
+				if (_np_g + p_g) > dp_group:
+					rs.append((lind, rind,))
+					lind = rind
+					rind += 1
+					p_g = elu
+				else:
+					rind += 1
+					rs.append((lind, rind,))
+					lind = rind
+					p_g = 0
+				nd += 1
+				if nd >= nprevs:
+					break
+		rs.append((lind, n_elel,))
+
+	if return_np:
+		return rs, [sum(elel[lind:rind]) for lind, rind in rs]
+	else:
+		return rs
+
+def reorder_by_sort(lins, *inputs, reverse=False):
+
+	td = {}
+	for lus, lud in zip(lins, zip(*inputs)):
+		if lus in td:
+			td[lus].append(lud)
+		else:
+			td[lus] = [lud]
+
+	rs = None
+	for slus in sorted(list(td.keys()), reverse=reverse):
+		if rs is None:
+			rs = td[slus]
+		else:
+			rs.extend(td[slus])
+
+	rs = tuple(zip(*rs))
+
+	return rs if len(inputs) > 1 else rs[0]
+
+def range_parameter_iter(model, lind, rind, func=None):
+
+	mp_iter = model.parameters() if func is None else func(model.parameters())
+	for i, p in enumerate(mp_iter):
+		if i >= lind:
+			if i < rind:
+				yield p
+			else:
+				break
+
+def range_parameter_iter_func(model, lind, rind, func=None):
+
+	def iter_func(*args, **kwargs):
+
+		mp_iter = model.parameters() if func is None else func(model.parameters())
+		for i, p in enumerate(mp_iter):
+			if i >= lind:
+				if i < rind:
+					yield p
+				else:
+					break
+
+	return iter_func

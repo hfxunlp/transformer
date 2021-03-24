@@ -34,9 +34,10 @@ batch_report = 5000
 report_eva = False
 
 use_cuda = True
-# enable Data Parallel multi-gpu support with values like: 'cuda:0, 1, 3'.
-gpuid = 'cuda:0, 1'
+# Data Parallel multi-GPU support can be enabled with values like: 'cuda:0, 1, 3'. Set to None to use all GPUs.
+gpuid = 'cuda:0'
 use_amp = False
+multi_gpu_optimizer = True
 
 bindDecoderEmb = True
 share_emb = False

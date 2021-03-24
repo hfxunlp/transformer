@@ -14,21 +14,6 @@ from cnfg.ihyp import *
 
 class Decoder(DecoderBase):
 
-	# isize: size of word embedding
-	# nwd: number of words
-	# num_layer: number of encoder layers
-	# fhsize: number of hidden units for PositionwiseFeedForward
-	# attn_drop: dropout for MultiHeadAttention
-	# emb_w: weight for embedding. Use only when the encoder and decoder share a same dictionary
-	# num_head: number of heads in MultiHeadAttention
-	# xseql: maxmimum length of sequence
-	# ahsize: number of hidden units for MultiHeadAttention
-	# bindemb: bind embedding and classifier weight
-
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None):
-
-		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize, dropout, attn_drop, emb_w, num_head, xseql, ahsize, norm_output, bindemb, forbidden_index)
-
 	# inpute: encoded representation from encoder (bsize, seql, isize, num_layer)
 	# inputo: decoded translation (bsize, nquery)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:

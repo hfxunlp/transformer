@@ -48,11 +48,13 @@ training_steps = 100000
 batch_report = 2000
 report_eva = False
 
-# run on GPU or not, and GPU device(s) to use. Data Parallel depended multi-gpu support can be enabled with values like: 'cuda:0, 1, 3'.
+# run on GPU or not, and GPU device(s) to use. Data Parallel multi-GPU support can be enabled with values like: 'cuda:0, 1, 3'. Set gpuid to None to use all GPUs.
 use_cuda = True
 gpuid = 'cuda:0'
 # use mixed precision (FP16)
 use_amp = False
+# use multi-gpu optimizer, may help bring slight acceleration for the training of large models (e.g. deep/big Transformers) with complex optimizers (e.g. Adam).
+multi_gpu_optimizer = True
 
 # bind the embedding matrix with the classifer weight in decoder
 bindDecoderEmb = True

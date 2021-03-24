@@ -187,7 +187,7 @@ class Decoder(nn.Module):
 
 	def _get_subsequent_mask(self, length):
 
-		return self.mask.narrow(1, 0, length).narrow(2, 0, length) if length <= self.xseql else self.mask.new_ones(length, length).triu(1).unsqueeze(0)
+		return self.mask.narrow(1, 0, length).narrow(2, 0, length).contiguous() if length <= self.xseql else self.mask.new_ones(length, length).triu(1).unsqueeze(0)
 
 	# this function repeats buffers of all cross-attention keys/values, corresponding inputs do not need to be repeated in beam search.
 

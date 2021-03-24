@@ -25,12 +25,12 @@ class DecoderLayer(DecoderLayerBase):
 	# num_head: number of heads in MultiHeadAttention
 	# ahsize: hidden size of MultiHeadAttention
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, **kwargs):
 
 		_ahsize = isize if ahsize is None else ahsize
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		super(DecoderLayer, self).__init__(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
+		super(DecoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, **kwargs)
 
 		self.self_attn = AverageAttn(isize, _fhsize, dropout)
 

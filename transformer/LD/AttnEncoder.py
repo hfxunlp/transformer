@@ -12,13 +12,9 @@ from cnfg.ihyp import *
 
 class Encoder(EncoderBase):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, num_layer_dec=6, max_chunk_tokens=8, min_chunks=6):
+	def __init__(self, isize, nwd, num_layer, *inputs, **kwargs):
 
-		_ahsize = isize if ahsize is None else ahsize
-
-		_fhsize = _ahsize * 4 if fhsize is None else fhsize
-
-		super(Encoder, self).__init__(isize, nwd, num_layer, _fhsize, dropout, attn_drop, num_head, xseql, _ahsize, norm_output, num_layer_dec, max_chunk_tokens, min_chunks)
+		super(Encoder, self).__init__(isize, nwd, num_layer, *inputs, **kwargs)
 
 		self.attn_emb = ATTNCombiner(isize, isize, dropout)
 		self.attns = nn.ModuleList([ATTNCombiner(isize, isize, dropout) for i in range(num_layer)])

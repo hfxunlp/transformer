@@ -2,7 +2,6 @@
 
 import torch
 from torch.cuda.amp import autocast, GradScaler
-#from torch import nn
 
 from torch.optim import Adam as Optimizer
 
@@ -28,12 +27,18 @@ from os.path import exists as p_check
 
 import h5py
 
-import cnfg.base as cnfg
+import cnfg.probe as cnfg
 from cnfg.ihyp import *
 
-from transformer.NMT import NMT
+from transformer.NMT import NMT as NMTBase
+from transformer.Probe.NMT import NMT
+
+probe_reorder = cnfg.probe_reorder
 
 def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, multi_gpu_optimizer, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, chkpof=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False, scaler=None):
+
+	global probe_reorder
+	ind_shift = 2 if probe_reorder else 1
 
 	sum_loss = part_loss = 0.0
 	sum_wd = part_wd = 0
@@ -44,14 +49,14 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 	for i_d in tqdm(tl):
 		seq_batch = torch.from_numpy(src_grp[i_d][:])
 		seq_o = torch.from_numpy(tgt_grp[i_d][:])
-		lo = seq_o.size(1) - 1
+		lo = seq_o.size(1) - ind_shift
 		if mv_device:
 			seq_batch = seq_batch.to(mv_device)
 			seq_o = seq_o.to(mv_device)
 		seq_batch, seq_o = seq_batch.long(), seq_o.long()
 
 		oi = seq_o.narrow(1, 0, lo)
-		ot = seq_o.narrow(1, 1, lo).contiguous()
+		ot = seq_o.narrow(1, ind_shift, lo).contiguous()
 		with autocast(enabled=_use_amp):
 			output = model(seq_batch, oi)
 			loss = lossf(output, ot)
@@ -59,8 +64,6 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				loss = loss.sum()
 		loss_add = loss.data.item()
 
-		# scale the sum of losses down according to the number of tokens adviced by: https://mp.weixin.qq.com/s/qAHZ4L5qK3rongCIIq5hQw, I think not reasonable.
-		#loss /= wd_add
 		if scaler is None:
 			loss.backward()
 		else:
@@ -88,7 +91,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 					else:
 						_chkpf = chkpf
 						_chkpof = chkpof
-					save_model(model, _chkpf, multi_gpu, logger)
+					save_model(model.module.dec if multi_gpu else model.dec, _chkpf, False, logger)
 					if chkpof is not None:
 						h5save(optm.state_dict(), _chkpof)
 					if statesf is not None:
@@ -104,11 +107,11 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			if cur_b % nreport == 0:
 				if report_eva:
 					_leva, _eeva = eva(ed, nd, model, lossf, mv_device, multi_gpu, _use_amp)
-					logger.info("Average loss over %d tokens: %.3f, valid loss/error: %.3f %.2f" % (part_wd, part_loss / part_wd, _leva, _eeva,))
+					logger.info("Average loss over %d tokens: %.3f, valid loss/error: %.3f %.2f" % (part_wd, part_loss / part_wd, _leva, _eeva))
 					free_cache(mv_device)
 					model.train()
 				else:
-					logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd,))
+					logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd))
 				part_loss = 0.0
 				part_wd = 0
 
@@ -122,18 +125,21 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			else:
 				_chkpf = chkpf
 				_chkpof = chkpof
-			#save_model(model, _chkpf, isinstance(model, nn.DataParallel), logger)
-			save_model(model, _chkpf, multi_gpu, logger)
+			save_model(model.module.dec if multi_gpu else model.dec, _chkpf, False, logger)
 			if chkpof is not None:
 				h5save(optm.state_dict(), _chkpof)
 			if statesf is not None:
 				save_states(statesf, tl[cur_b - 1:])
 		cur_b += 1
 	if part_wd != 0.0:
-		logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd,))
+		logger.info("Average loss over %d tokens: %.3f" % (part_wd, part_loss / part_wd))
 	return sum_loss / sum_wd, _done_tokens, _cur_checkid, _cur_rstep, _ls
 
 def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
+
+	global probe_reorder
+	ind_shift = 2 if probe_reorder else 1
+
 	r = w = 0
 	sum_loss = 0.0
 	model.eval()
@@ -143,12 +149,12 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 			bid = str(i)
 			seq_batch = torch.from_numpy(src_grp[bid][:])
 			seq_o = torch.from_numpy(tgt_grp[bid][:])
-			lo = seq_o.size(1) - 1
+			lo = seq_o.size(1) - ind_shift
 			if mv_device:
 				seq_batch = seq_batch.to(mv_device)
 				seq_o = seq_o.to(mv_device)
 			seq_batch, seq_o = seq_batch.long(), seq_o.long()
-			ot = seq_o.narrow(1, 1, lo).contiguous()
+			ot = seq_o.narrow(1, ind_shift, lo).contiguous()
 			with autocast(enabled=use_amp):
 				output = model(seq_batch, seq_o.narrow(1, 0, lo))
 				loss = lossf(output, ot)
@@ -229,7 +235,7 @@ nword = td["nword"][:].tolist()
 nwordi, nwordt = nword[0], nword[-1]
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
-mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
+mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_layer_fwd)
 
 fine_tune_m = cnfg.fine_tune_m
 
@@ -239,11 +245,19 @@ mymodel = init_model_params(mymodel)
 mymodel.apply(init_fixing)
 if fine_tune_m is not None:
 	logger.info("Load pre-trained model from: " + fine_tune_m)
-	mymodel = load_model_cpu(fine_tune_m, mymodel)
+	_tmpm = NMTBase(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
+	_tmpm = init_model_params(_tmpm)
+	_tmpm.apply(init_fixing)
+	_tmpm = load_model_cpu(fine_tune_m, _tmpm)
+	freeze_module(_tmpm)
+	mymodel.load_base(_tmpm)
+	_tmpm = None
 
-#lw = torch.ones(nwordt).float()
-#lw[0] = 0.0
-#lossf = nn.NLLLoss(lw, ignore_index=0, reduction='sum')
+if cnfg.probe_remove_self:
+	mymodel.dec.nets[-1].perform_self_attn = False
+elif cnfg.probe_remove_cross:
+	mymodel.dec.nets[-1].perform_cross_attn = False
+
 lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction='sum', forbidden_index=cnfg.forbidden_indexes)
 
 if cnfg.src_emb is not None:
@@ -261,7 +275,6 @@ use_amp = cnfg.use_amp and use_cuda
 scaler = (MultiGPUGradScaler() if multi_gpu_optimizer else GradScaler()) if use_amp else None
 
 if multi_gpu:
-	#mymodel = nn.DataParallel(mymodel, device_ids=cuda_devices, output_device=cuda_device.index)
 	mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 	lossf = DataParallelCriterion(lossf, device_ids=cuda_devices, output_device=cuda_device.index, replicate_once=True)
 
@@ -269,7 +282,6 @@ if multi_gpu_optimizer:
 	optimizer = mymodel.build_optimizer(Optimizer, lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
 	mymodel.zero_grad(set_to_none=True)
 else:
-	# lr will be over written by LRScheduler before used
 	optimizer = Optimizer((mymodel.module if multi_gpu else mymodel).parameters(), lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
 	optimizer.zero_grad(set_to_none=True)
 
@@ -279,7 +291,6 @@ if fine_tune_state is not None:
 	optimizer.load_state_dict(h5load(fine_tune_state))
 
 lrsch = LRScheduler(optimizer, cnfg.isize, cnfg.warm_step, scale=cnfg.lr_scale)
-#lrsch.step()
 
 num_checkpoint = cnfg.num_checkpoint
 cur_checkid = 0
@@ -287,10 +298,10 @@ cur_checkid = 0
 tminerr = inf_default
 
 minloss, minerr = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu, use_amp)
-logger.info("Init lr: %s, Dev Loss/Error: %.3f %.2f" % (" ".join(tostr(getlr(optimizer))), minloss, minerr,))
+logger.info("".join(("Init lr: ", ",".join(tostr(getlr(optimizer))), ", Dev Loss/Error: %.3f %.2f" % (minloss, minerr))))
 
 if fine_tune_m is None:
-	save_model(mymodel, wkdir + "init.h5", multi_gpu, logger)
+	save_model(mymodel.module.dec if multi_gpu else mymodel.dec, wkdir + "init.h5", False, logger)
 	logger.info("Initial model saved")
 else:
 	cnt_states = cnfg.train_statesf
@@ -298,10 +309,10 @@ else:
 		logger.info("Continue last epoch")
 		tminerr, done_tokens, cur_checkid, remain_steps, _ = train(td, load_states(cnt_states), vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, multi_gpu_optimizer, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, False, False, scaler)
 		vloss, vprec = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu, use_amp)
-		logger.info("Epoch: 0, train loss: %.3f, valid loss/error: %.3f %.2f" % (tminerr, vloss, vprec,))
-		save_model(mymodel, wkdir + "train_0_%.3f_%.3f_%.2f.h5" % (tminerr, vloss, vprec,), multi_gpu, logger)
+		logger.info("Epoch: 0, train loss: %.3f, valid loss/error: %.3f %.2f" % (tminerr, vloss, vprec))
+		save_model(mymodel.module.dec if multi_gpu else mymodel.dec, wkdir + "train_0_%.3f_%.3f_%.2f.h5" % (tminerr, vloss, vprec), False, logger)
 		if save_optm_state:
-			h5save(optimizer.state_dict(), wkdir + "train_0_%.3f_%.3f_%.2f.optm.h5" % (tminerr, vloss, vprec,))
+			h5save(optimizer.state_dict(), wkdir + "train_0_%.3f_%.3f_%.2f.optm.h5" % (tminerr, vloss, vprec))
 		logger.info("New best model saved")
 
 if cnfg.dss_ws is not None and cnfg.dss_ws > 0.0 and cnfg.dss_ws < 1.0:
@@ -325,12 +336,12 @@ for i in range(1, maxrun + 1):
 	free_cache(use_cuda)
 	terr, done_tokens, cur_checkid, remain_steps, _Dws = train(td, tl, vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, multi_gpu_optimizer, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, dss_ws > 0, i >= start_chkp_save, scaler)
 	vloss, vprec = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu, use_amp)
-	logger.info("Epoch: %d, train loss: %.3f, valid loss/error: %.3f %.2f" % (i, terr, vloss, vprec,))
+	logger.info("Epoch: %d, train loss: %.3f, valid loss/error: %.3f %.2f" % (i, terr, vloss, vprec))
 
 	if (vprec <= minerr) or (vloss <= minloss):
-		save_model(mymodel, wkdir + "eva_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec,), multi_gpu, logger)
+		save_model(mymodel.module.dec if multi_gpu else mymodel.dec, wkdir + "eva_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), False, logger)
 		if save_optm_state:
-			h5save(optimizer.state_dict(), wkdir + "eva_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec,))
+			h5save(optimizer.state_dict(), wkdir + "eva_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec))
 		logger.info("New best model saved")
 
 		namin = 0
@@ -343,17 +354,16 @@ for i in range(1, maxrun + 1):
 	else:
 		if terr < tminerr:
 			tminerr = terr
-			save_model(mymodel, wkdir + "train_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec,), multi_gpu, logger)
+			save_model(mymodel.module.dec if multi_gpu else mymodel.dec, wkdir + "train_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), False, logger)
 			if save_optm_state:
-				h5save(optimizer.state_dict(), wkdir + "train_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec,))
+				h5save(optimizer.state_dict(), wkdir + "train_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec))
 		elif epoch_save:
-			save_model(mymodel, wkdir + "epoch_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec,), multi_gpu, logger)
+			save_model(mymodel.module.dec if multi_gpu else mymodel.dec, wkdir + "epoch_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), False, logger)
 
 		namin += 1
 		if namin >= earlystop:
 			if done_tokens > 0:
 				optm_step(optimizer, model=mymodel, scaler=scaler, multi_gpu=multi_gpu, multi_gpu_optimizer=multi_gpu_optimizer)
-				#lrsch.step()
 				done_tokens = 0
 			logger.info("early stop")
 			break
@@ -371,19 +381,10 @@ for i in range(1, maxrun + 1):
 			tl = dynamic_sample(_crit_inc, dss_ws, dss_rm)
 		_prev_Dws = _Dws
 
-	#oldlr = getlr(optimizer)
-	#lrsch.step(terr)
-	#newlr = getlr(optimizer)
-	#if updated_lr(oldlr, newlr):
-		#logger.info("".join(("lr update from: ", ",".join(tostr(oldlr)), ", to: ", ",".join(tostr(newlr)))))
-		#hook_lr_update(optimizer, use_ams)
-
 if done_tokens > 0:
 	optm_step(optimizer, model=mymodel, scaler=scaler, multi_gpu=multi_gpu, multi_gpu_optimizer=multi_gpu_optimizer)
-	#lrsch.step()
-	#done_tokens = 0
 
-save_model(mymodel, wkdir + "last.h5", multi_gpu, logger)
+save_model(mymodel.module.dec if multi_gpu else mymodel.dec, wkdir + "last.h5", False, logger)
 if save_optm_state:
 	h5save(optimizer.state_dict(), wkdir + "last.optm.h5")
 logger.info("model saved")

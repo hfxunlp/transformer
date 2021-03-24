@@ -23,25 +23,34 @@ export maxtokens=256
 
 export ngpu=1
 
+export do_sort=true
+export build_vocab=true
+
 export wkd=$cachedir/$dataid
 
 mkdir -p $wkd
 
-python tools/sort.py $srcd/$srctf $srcd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens
-# use the following command to sort a very large dataset with limited memory
-#bash tools/lsort/sort.sh $srcd/$srctf $srcd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens
-python tools/sort.py $srcd/$srcvf $srcd/$tgtvf $wkd/src.dev.srt $wkd/tgt.dev.srt 1048576
+if $do_sort; then
+	python tools/sort.py $srcd/$srctf $srcd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens
+	# use the following command to sort a very large dataset with limited memory
+	#bash tools/lsort/sort.sh $srcd/$srctf $srcd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens
+	python tools/sort.py $srcd/$srcvf $srcd/$tgtvf $wkd/src.dev.srt $wkd/tgt.dev.srt 1048576
+fi
 
 if $share_vcb; then
 	export src_vcb=$wkd/common.vcb
 	export tgt_vcb=$src_vcb
-	python tools/share_vocab.py $wkd/src.train.srt $wkd/tgt.train.srt $src_vcb $vsize
-	python tools/check/fbindexes.py $tgt_vcb $wkd/tgt.train.srt $wkd/tgt.dev.srt $wkd/fbind.py
+	if $build_vocab; then
+		python tools/share_vocab.py $wkd/src.train.srt $wkd/tgt.train.srt $src_vcb $vsize
+		python tools/check/fbindexes.py $tgt_vcb $wkd/tgt.train.srt $wkd/tgt.dev.srt $wkd/fbind.py
+	fi
 else
 	export src_vcb=$wkd/src.vcb
 	export tgt_vcb=$wkd/tgt.vcb
-	python tools/vocab.py $wkd/src.train.srt $src_vcb $vsize
-	python tools/vocab.py $wkd/tgt.train.srt $tgt_vcb $vsize
+	if $build_vocab; then
+		python tools/vocab.py $wkd/src.train.srt $src_vcb $vsize
+		python tools/vocab.py $wkd/tgt.train.srt $tgt_vcb $vsize
+	fi
 fi
 
 python tools/mkiodata.py $wkd/src.train.srt $wkd/tgt.train.srt $src_vcb $tgt_vcb $wkd/$rsf_train $ngpu
