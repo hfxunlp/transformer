@@ -13,6 +13,7 @@ export srcvf=dev.tc.en
 export tgtvf=dev.tc.de
 
 export vratio=0.2
+export rratio=0.4
 export maxtokens=256
 
 export bpeops=32000
@@ -25,6 +26,9 @@ mkdir -p $tgtd
 
 # clean the data first by removing different translations with lower frequency of same sentences
 python tools/clean/maxkeeper.py $srcd/$srctf $srcd/$tgttf $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp $maxtokens
+python tools/clean/token_repeat.py $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp $tgtd/src.clean.rtmp $tgtd/tgt.clean.rtmp $rratio
+mv $tgtd/src.clean.rtmp $tgtd/src.clean.tmp
+mv $tgtd/tgt.clean.rtmp $tgtd/tgt.clean.tmp
 
 python tools/vocab.py $tgtd/src.clean.tmp $tgtd/src.full.vcb 1048576
 python tools/vocab.py $tgtd/tgt.clean.tmp $tgtd/tgt.full.vcb 1048576

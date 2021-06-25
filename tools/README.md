@@ -16,11 +16,11 @@ Build vocabulary for the training set.
 
 ## `mkiodata.py`
 
-Convert text data to hdf5 format for the training script. Settings for the training data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/cnfg/hyp.py#L20-L24).
+Convert text data to hdf5 format for the training script. Settings for the training data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/hfxunlp/transformer/blob/master/cnfg/hyp.py#L23-L27).
 
 ## `mktest.py`
 
-Convert translation requests to hdf5 format for the prediction script. Settings for the test data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/anoidgit/transformer/blob/master/cnfg/hyp.py#L20-L24).
+Convert translation requests to hdf5 format for the prediction script. Settings for the test data like batch size, maximum tokens per batch unit and padding limitation can be found [here](https://github.com/hfxunlp/transformer/blob/master/cnfg/hyp.py#L23-L27).
 
 ## `prune_model_vocab.py`
 
@@ -38,7 +38,7 @@ When you using a shared vocabulary for source side and target side, there are st
 
 ## `clean/`
 
-Tools to filter the datasets.
+Cleaning tools.
 
 ## `doc/`
 

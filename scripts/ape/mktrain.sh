@@ -33,8 +33,8 @@ export wkd=$cachedir/$dataid
 mkdir -p $wkd
 
 if $do_sort; then
-	python tools/ape/sort.py $srcd/$srctf $srcd/$mttf $srcd/$tgttf $wkd/src.train.srt $wkd/mt.train.srt $wkd/tgt.train.srt $maxtokens
-	python tools/ape/sort.py $srcd/$srcvf $srcd/$mtvf $srcd/$tgtvf $wkd/src.dev.srt $wkd/mt.dev.srt $wkd/tgt.dev.srt 1048576
+	python tools/sort.py $srcd/$srctf $srcd/$mttf $srcd/$tgttf $wkd/src.train.srt $wkd/mt.train.srt $wkd/tgt.train.srt $maxtokens
+	python tools/sort.py $srcd/$srcvf $srcd/$mtvf $srcd/$tgtvf $wkd/src.dev.srt $wkd/mt.dev.srt $wkd/tgt.dev.srt 1048576
 fi
 
 if $share_vcb; then

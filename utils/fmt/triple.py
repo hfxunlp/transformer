@@ -1,6 +1,6 @@
 #encoding: utf-8
 
-from utils.fmt.base import list_reader, get_bsize, map_batch, pad_batch
+from utils.fmt.base import list_reader, line_reader, get_bsize, map_batch, pad_batch
 
 def batch_loader(finput, fref, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 

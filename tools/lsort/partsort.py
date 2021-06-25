@@ -3,47 +3,43 @@
 import sys
 from os import path
 
-from utils.fmt.base import clean_list_len, iter_dict_sort, dict_insert_list
+from utils.fmt.base import clean_liststr_lentok, all_true, all_le, iter_dict_sort, dict_insert_list, dict_insert_set, FileList
 
-def handle(srcfs, srcft, tgtd, max_len=256, cache_token=268435456):
+def handle(srcfl, tgtd, max_len=256, remove_same=False, cache_token=500000000):
 
-	def save_cache(cache, srcf, tgtf):
+	def save_cache(cache, tgtfl):
 
 		ens = "\n".encode("utf-8")
 
-		with open(srcf, "wb") as fs, open(tgtf, "wb") as ft:
+		with FileList(tgtfl, "wb") as wfl:
 			for tmp in iter_dict_sort(cache):
-				ls, lt = zip(*tmp)
-				fs.write("\n".join(ls).encode("utf-8"))
-				fs.write(ens)
-				ft.write("\n".join(lt).encode("utf-8"))
-				ft.write(ens)
+				lines = zip(*tmp)
+				for du, f in zip(lines, wfl):
+					f.write(ens.join(du))
+					f.write(ens)
 
 	_max_len = max(1, max_len - 2)
 
+	_insert_func = dict_insert_set if remove_same else dict_insert_list
 	data = {}
-
 	mem_token = curf = 0
-
-	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft:
-		for ls, lt in zip(fs, ft):
-			ls, lt = ls.strip(), lt.strip()
-			if ls and lt:
-				ls, slen = clean_list_len(ls.decode("utf-8").split())
-				lt, tlen = clean_list_len(lt.decode("utf-8").split())
-				if (slen <= _max_len) and (tlen <= _max_len):
-					lgth = slen + tlen
-					data = dict_insert_list(data, (ls, lt,), lgth, tlen)
+	num_files = len(srcfl)
+	with FileList(srcfl, "rb") as fl:
+		for lines in zip(*fl):
+			lines = [line.strip() for line in lines]
+			if all_true(lines):
+				lines, lens = zip(*[clean_liststr_lentok(line.decode("utf-8").split()) for line in lines])
+				if all_le(lens, max_len):
+					lgth = sum(lens)
+					data = _insert_func(data, tuple(line.encode("utf-8") for line in lines), lgth, *reversed(lens[1:]))
 					mem_token += lgth
-					if mem_token > cache_token:
-						_curfid = str(curf)
-						save_cache(data, path.join(tgtd, _curfid + ".src"), path.join(tgtd, _curfid + ".tgt"))
+					if mem_token >= cache_token:
+						save_cache(data, [path.join(tgtd, "%d.%d.txt" % (i, curf,)) for i in range(num_files)])
 						data = {}
 						mem_token = 0
 						curf += 1
 	if data:
-		_curfid = str(curf)
-		save_cache(data, path.join(tgtd, _curfid + ".src"), path.join(tgtd, _curfid + ".tgt"))
+		save_cache(data, [path.join(tgtd, "%d.%d.txt" % (i, curf,)) for i in range(num_files)])
 
 if __name__ == "__main__":
-	handle(sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]))
+	handle(sys.argv[1:-2], sys.argv[-2], int(sys.argv[-1]))

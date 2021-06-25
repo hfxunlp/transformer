@@ -1,6 +1,7 @@
 #encoding: utf-8
 
 import sys
+from utils.fmt.base import FileList
 
 interval = 15
 
@@ -11,27 +12,22 @@ def handle(srcf, osfl):
 	fwd = {}
 
 	ens = "\n".encode("utf-8")
-
-	rdl = [open(srcf, "rb")] + [open(osf, "rb") for osf in osfl]
-
-	for lind in zip(*rdl):
-		li = [lu.strip().decode("utf-8") for lu in lind]
-		src = li[0]
-		if src:
-			lts = len(src.split())
-			wid = lts // interval
-			if wid not in fwd:
-				sind = str(wid) + "_"
-				fwrtl = [open(sind+srcf, "wb") for srcf in osfl]
-				fwd[wid] = fwrtl
-			else:
-				fwrtl = fwd[wid]
-			for wl, fw in zip(li[1:], fwrtl):
-				fw.write(wl.encode("utf-8"))
-				fw.write(ens)
-
-	for f in rdl:
-		f.close()
+	with FileList([srcf] + osfl, "rb") as rdl:
+		for lind in zip(*rdl):
+			li = [lu.strip().decode("utf-8") for lu in lind]
+			src = li[0]
+			if src:
+				lts = len(src.split())
+				wid = lts // interval
+				if wid not in fwd:
+					sind = str(wid) + "_"
+					fwrtl = [open(sind + srcf, "wb") for srcf in osfl]
+					fwd[wid] = fwrtl
+				else:
+					fwrtl = fwd[wid]
+				for wl, fw in zip(li[1:], fwrtl):
+					fw.write(wl.encode("utf-8"))
+					fw.write(ens)
 
 	for k, fwl in fwd.items():
 		for f in fwl:

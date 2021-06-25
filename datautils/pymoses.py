@@ -45,7 +45,7 @@ class Truecaser(BatchProcessor):
 
 	def process(self, input):
 
-		return self.handler.truecase(input.encode("utf-8", "ignore")), return_str=True).decode("utf-8", "ignore")
+		return self.handler.truecase(input.encode("utf-8", "ignore"), return_str=True).decode("utf-8", "ignore")
 
 class Detruecaser(BatchProcessor):
 

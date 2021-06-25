@@ -15,9 +15,43 @@ else:
 	init_normal_token_id = 3
 init_token_id = 3
 
+serial_func, deserial_func = repr, eval
+
 def tostr(lin):
 
 	return [str(lu) for lu in lin]
+
+def save_objects(fname, *inputs):
+
+	ens = "\n".encode("utf-8")
+	with open(fname, "wb") as f:
+		for tmpu in inputs:
+			f.write(serial_func(tmpu).encode("utf-8"))
+			f.write(ens)
+
+def load_objects(fname):
+
+	rs = []
+	with open(fname, "rb") as f:
+		for line in f:
+			tmp = line.strip()
+			if tmp:
+				rs.append(deserial_func(tmp.decode("utf-8")))
+
+	return tuple(rs) if len(rs) > 1 else rs[0]
+
+def load_states(fname):
+
+	rs = []
+	with open(fname, "rb") as f:
+		for line in f:
+			tmp = line.strip()
+			if tmp:
+				for tmpu in tmp.decode("utf-8").split():
+					if tmpu:
+						rs.append(tmpu)
+
+	return rs
 
 def save_states(fname, stl):
 
@@ -176,38 +210,39 @@ def clean_liststr_lentok(lin):
 
 	return " ".join(rs), len(rs)
 
-def maxfreq_filter(ls, lt, max_remove=True):
+def maxfreq_filter_core(ls, lt):
 
 	tmp = {}
 	for us, ut in zip(ls, lt):
-		if us not in tmp:
-			tmp[us] = {ut: 1} if max_remove else set([ut])
+		if us in tmp:
+			tmp[us][ut] = tmp[us].get(ut, 0) + 1
 		else:
-			if max_remove:
-				tmp[us][ut] = tmp[us].get(ut, 0) + 1
-			elif ut not in tmp[us]:
-				tmp[us].add(ut)
+			tmp[us] = {ut: 1}
+
 	rls, rlt = [], []
-	if max_remove:
-		for tus, tlt in tmp.items():
-			_rs = []
-			_maxf = 0
-			for key, value in tlt.items():
-				if value > _maxf:
-					_maxf = value
-					_rs = [key]
-				elif value == _maxf:
-					_rs.append(key)
-			for tut in _rs:
-				rls.append(tus)
-				rlt.append(tut)
-	else:
-		for tus, tlt in tmp.items():
-			for tut in tlt:
-				rls.append(tus)
-				rlt.append(tut)
+	for tus, tlt in tmp.items():
+		_rs = []
+		_maxf = 0
+		for key, value in tlt.items():
+			if value > _maxf:
+				_maxf = value
+				_rs = [key]
+			elif value == _maxf:
+				_rs.append(key)
+		for tut in _rs:
+			rls.append(tus)
+			rlt.append(tut)
 
 	return rls, rlt
+
+def maxfreq_filter(*inputs):
+
+	if len(inputs) > 2:
+		# here we assume that we only have one target and it is at the last position
+		rsh, rst = maxfreq_filter_core(tuple(zip(*inputs[0:-1])), inputs[-1])
+		return *zip(*rsh), rst
+	else:
+		return maxfreq_filter_core(*inputs)
 
 def shuffle_pair(*inputs):
 
@@ -311,13 +346,46 @@ def legal_vocab(sent, ilgset, ratio):
 
 	return False if rt > ratio else True
 
-def all_in(lin, sin):
+def iter_check_func(lin, func=None, ri=False):
+
+	if func is None:
+		for lu in lin:
+			if lu:
+				return ri
+	else:
+		for lu in lin:
+			if func(lu):
+				return ri
+
+	return not ri
+
+def all_true(lin):
+
+	return iter_check_func(lin, func=lambda x: not x, ri=False)
+
+def any_true(lin):
+
+	return iter_check_func(lin, func=None, ri=True)
+
+def iter_cmp_func(lin, v, func, ri=False):
 
 	for lu in lin:
-		if not lu in sin:
-			return False
+		if func(lu, v):
+			return ri
 
-	return True
+	return not ri
+
+def all_in(lin, sin):
+
+	return iter_cmp_func(lin, sin, lambda x, y: not x in y, ri=False)
+
+def all_le(lin, value):
+
+	return iter_cmp_func(lin, value, lambda x, y: x > y, ri=False)
+
+def all_gt(lin, value):
+
+	return iter_cmp_func(lin, value, lambda x, y: x <= y, ri=False)
 
 def get_char_ratio(strin):
 
@@ -379,3 +447,18 @@ def parse_double_value_tuple(vin):
 		return vin[0], vin[-1]
 	else:
 		return vin, vin
+
+class FileList(list):
+
+	def __init__(self, files, *inputs, **kwargs):
+
+		super(FileList, self).__init__(open(fname, *inputs, **kwargs) for fname in files)
+
+	def __enter__(self):
+
+		return self
+
+	def __exit__(self, *inputs, **kwargs):
+
+		for _f in self:
+			_f.close()

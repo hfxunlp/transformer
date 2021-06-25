@@ -2,30 +2,31 @@
 
 import sys
 
-from utils.fmt.base import clean_str
+# WARNING: all_true might be too strict in some cases which may use any_true
+from utils.fmt.base import clean_str, all_true, FileList
 
-def handle(srcfs, srtsf, srttf, tgtf):
+# srtfl: (k - 1) source + 1 target
+def handle(srcfl, srtfl, tgtf):
 
 	data = {}
 
-	with open(srtsf, "rb") as fs, open(srttf, "rb") as ft:
-		for sl, tl in zip(fs, ft):
-			_sl, _tl = sl.strip(), tl.strip()
-			if _sl and _tl:
-				_sl = clean_str(_sl.decode("utf-8"))
-				_tl = clean_str(_tl.decode("utf-8"))
-				data[_sl] = _tl
+	with FileList(srtfl, "rb") as fs:
+		for lines in zip(*fs):
+			lines = tuple(line.strip() for line in lines)
+			if all_true(lines):
+				lines = tuple(clean_str(line.decode("utf-8")) for line in lines)
+				data[lines[:-1]] = lines[-1].encode("utf-8")
 
 	ens = "\n".encode("utf-8")
-
-	with open(srcfs, "rb") as fs, open(tgtf, "wb") as ft:
-		for line in fs:
-			tmp = line.strip()
-			if tmp:
-				tmp = clean_str(tmp.decode("utf-8"))
-				tmp = data.get(tmp, "")
-				ft.write(tmp.encode("utf-8"))
+	with FileList(srcfl, "rb") as fs, open(tgtf, "wb") as ft:
+		for lines in zip(*fs):
+			lines = tuple(line.strip() for line in lines)
+			if all_true(lines):
+				lines = tuple(clean_str(line.decode("utf-8")) for line in lines)
+				if lines in data:
+					ft.write(data[lines])
 			ft.write(ens)
 
 if __name__ == "__main__":
-	handle(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4])
+	_ind = (len(sys.argv) - 1) // 2
+	handle(sys.argv[1:_ind], sys.argv[_ind:-1], sys.argv[-1])

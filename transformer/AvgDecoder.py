@@ -179,7 +179,7 @@ class Decoder(DecoderBase):
 
 		out = sos_emb * sqrt_isize
 		if self.pemb is not None:
-			 out = out + self.pemb.get_pos(0)
+			out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -258,7 +258,7 @@ class Decoder(DecoderBase):
 
 		out = sos_emb * sqrt_isize
 		if self.pemb is not None:
-			 out = out + self.pemb.get_pos(0)
+			out = out + self.pemb.get_pos(0)
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -306,7 +306,7 @@ class Decoder(DecoderBase):
 
 			out = self.wemb(wds) * sqrt_isize
 			if self.pemb is not None:
-				 out = out + self.pemb.get_pos(step - 1)
+				out = out + self.pemb.get_pos(step - 1)
 
 			if self.drop is not None:
 				out = self.drop(out)

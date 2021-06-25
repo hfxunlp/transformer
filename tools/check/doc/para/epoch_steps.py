@@ -19,7 +19,7 @@ def handle(h5f, bsize, shuf=True):
 	tgt_grp = td["tgt"]
 	ntoken = 0
 	nstep = 0
-	for nsent, i_d in tqdm(tl):
+	for nsent, i_d in tqdm(tl, mininterval=tqdm_mininterval):
 		seq_batch = torch.from_numpy(tgt_grp[nsent][i_d][:])
 		ot = seq_batch.narrow(-1, 1, seq_batch.size(-1) - 1)
 		ntoken += ot.ne(0).int().sum().item()

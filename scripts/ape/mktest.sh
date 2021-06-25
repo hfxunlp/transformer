@@ -35,7 +35,7 @@ mkdir -p $rsd
 python tools/sort.py $srcd/$srctf $srcd/$srcmf $tgtd/$srctf.srt $tgtd/$srcmf.srt 1048576
 python tools/mkiodata.py $tgtd/$srctf.srt $tgtd/$srcmf.srt $src_vcb $tgt_vcb $tgtd/test.h5 $ngpu
 python predict_ape.py $tgtd/$bpef.srt $tgt_vcb $modelf
-python tools/ape/restore.py $srcd/$srctf $srcd/$srcmf $tgtd/$srctf.srt $tgtd/$srcmf.srt $tgtd/$bpef.srt $tgtd/$bpef
+python tools/restore.py $srcd/$srctf $srcd/$srcmf $tgtd/$srctf.srt $tgtd/$srcmf.srt $tgtd/$bpef.srt $tgtd/$bpef
 if $debpe; then
 	sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/$bpef > $rsf
 	rm $tgtd/$bpef

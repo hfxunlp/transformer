@@ -52,3 +52,5 @@ h5modelwargs = {} if hdf5_model_compression is None else {"compression": hdf5_mo
 h5zipargs = {"compression": "gzip", "compression_opts": 9, "shuffle":True}
 
 list_key_func = str
+
+tqdm_mininterval = 1.0

@@ -31,7 +31,7 @@ fi
 
 mkdir -p $rsd
 
-python tools/sorti.py $srcd/$srctf $tgtd/$srctf.srt
+python tools/sort.py $srcd/$srctf $tgtd/$srctf.srt 1048576
 python tools/mktest.py $tgtd/$srctf.srt $src_vcb $tgtd/test.h5 $ngpu
 python predict.py $tgtd/$bpef.srt $tgt_vcb $modelf
 python tools/restore.py $srcd/$srctf $tgtd/$srctf.srt $tgtd/$bpef.srt $tgtd/$bpef

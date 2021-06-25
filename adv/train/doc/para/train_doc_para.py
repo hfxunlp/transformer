@@ -37,12 +37,12 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 
 	sum_loss = part_loss = 0.0
 	sum_wd = part_wd = 0
-	_done_tokens, _cur_checkid, _cur_rstep, _use_amp, ndata = done_tokens, cur_checkid, remain_steps, scaler is not None, len(tl)
+	_done_tokens, _cur_checkid, _cur_rstep, _use_amp = done_tokens, cur_checkid, remain_steps, scaler is not None
 	model.train()
 	cur_b, _ls = 1, {} if save_loss else None
 
 	src_grp, tgt_grp = td["src"], td["tgt"]
-	for nsent, i_d in tqdm(tl):
+	for nsent, i_d in tqdm(tl, mininterval=tqdm_mininterval):
 		seq_batch = torch.from_numpy(src_grp[nsent][i_d][:])
 		seq_o = torch.from_numpy(tgt_grp[nsent][i_d][:])
 		lo = seq_o.size(-1) - 1
@@ -141,7 +141,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 
 	src_grp, tgt_grp = ed["src"], ed["tgt"]
 	with torch.no_grad():
-		for nsent, i_d in tqdm(nd):
+		for nsent, i_d in tqdm(nd, mininterval=tqdm_mininterval):
 			seq_batch = torch.from_numpy(src_grp[nsent][i_d][:])
 			seq_o = torch.from_numpy(tgt_grp[nsent][i_d][:])
 			lo = seq_o.size(-1) - 1
@@ -176,6 +176,11 @@ def init_fixing(module):
 
 	if hasattr(module, "fix_init"):
 		module.fix_init()
+
+def load_fixing(module):
+
+	if hasattr(module, "fix_load"):
+		module.fix_load()
 
 rid = cnfg.run_id
 

@@ -4,7 +4,6 @@
 
 Build hdf5 format cache for training data, this process including: sorting of the training data, building vocabulary, converting text to tensor and saving them into `.h5` files. Configure the following variables:
 
-
 ```
 # the cache path of datasets
 export cachedir=cache
@@ -76,7 +75,6 @@ export debpe=true
 ## `bpe/`
 
 Scripts to perform sub-word segmentation.
-
 
 ## `doc/`
 

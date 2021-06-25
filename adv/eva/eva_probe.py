@@ -39,7 +39,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	model.eval()
 	src_grp, tgt_grp = ed["src"], ed["tgt"]
 	with torch.no_grad():
-		for i in tqdm(range(nd)):
+		for i in tqdm(range(nd), mininterval=tqdm_mininterval):
 			bid = str(i)
 			seq_batch = torch.from_numpy(src_grp[bid][:])
 			seq_o = torch.from_numpy(tgt_grp[bid][:])

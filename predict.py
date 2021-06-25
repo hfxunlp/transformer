@@ -69,31 +69,30 @@ length_penalty = cnfg.length_penalty
 ens = "\n".encode("utf-8")
 
 src_grp = td["src"]
-with open(sys.argv[1], "wb") as f:
-	with torch.no_grad():
-		for i in tqdm(range(ntest)):
-			seq_batch = torch.from_numpy(src_grp[str(i)][:])
-			if cuda_device:
-				seq_batch = seq_batch.to(cuda_device)
-			seq_batch = seq_batch.long()
-			with autocast(enabled=use_amp):
-				output = mymodel.decode(seq_batch, beam_size, None, length_penalty)
+with open(sys.argv[1], "wb") as f, torch.no_grad():
+	for i in tqdm(range(ntest), mininterval=tqdm_mininterval):
+		seq_batch = torch.from_numpy(src_grp[str(i)][:])
+		if cuda_device:
+			seq_batch = seq_batch.to(cuda_device)
+		seq_batch = seq_batch.long()
+		with autocast(enabled=use_amp):
+			output = mymodel.decode(seq_batch, beam_size, None, length_penalty)
 			#output = mymodel.train_decode(seq_batch, beam_size, None, length_penalty)
-			if multi_gpu:
-				tmp = []
-				for ou in output:
-					tmp.extend(ou.tolist())
-				output = tmp
-			else:
-				output = output.tolist()
-			for tran in output:
-				tmp = []
-				for tmpu in tran:
-					if tmpu == eos_id:
-						break
-					else:
-						tmp.append(vcbt[tmpu])
-				f.write(" ".join(tmp).encode("utf-8"))
-				f.write(ens)
+		if multi_gpu:
+			tmp = []
+			for ou in output:
+				tmp.extend(ou.tolist())
+			output = tmp
+		else:
+			output = output.tolist()
+		for tran in output:
+			tmp = []
+			for tmpu in tran:
+				if tmpu == eos_id:
+					break
+				else:
+					tmp.append(vcbt[tmpu])
+			f.write(" ".join(tmp).encode("utf-8"))
+			f.write(ens)
 
 td.close()

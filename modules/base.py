@@ -282,9 +282,10 @@ class AverageAttn(nn.Module):
 	# isize: input size of Feed-forward NN
 	# hsize: hidden size of Feed-forward NN
 	# dropout: dropout rate for Feed-forward NN
+	# enable_ffn: using FFN to process the average bag-of-words representation
 	# num_pos: maximum length of sentence cached, extended length will be generated while needed and droped immediately after that
 
-	def __init__(self, isize, hsize=None, dropout=0.0, num_pos=cache_len_default, custom_act=use_adv_act_default):
+	def __init__(self, isize, hsize=None, dropout=0.0, enable_ffn=False, num_pos=cache_len_default, custom_act=use_adv_act_default):
 
 		super(AverageAttn, self).__init__()
 
@@ -293,7 +294,10 @@ class AverageAttn(nn.Module):
 		self.num_pos = num_pos
 		self.register_buffer('w', torch.Tensor(num_pos, 1))
 
-		self.ffn = nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_Custom_Act), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize))
+		if enable_ffn:
+			self.ffn = nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_Custom_Act), Linear(_hsize, isize), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize))
+		else:
+			self.ffn = None
 
 		self.gw = Linear(isize * 2, isize * 2)
 
@@ -313,7 +317,8 @@ class AverageAttn(nn.Module):
 			# avg: (bsize, seql, vsize)
 			avg = iV.cumsum(dim=1) * (self.get_ext(seql) if seql > self.num_pos else self.w.narrow(0, 0, seql))
 
-		avg = self.ffn(avg)
+		if self.ffn is not None:
+			avg = self.ffn(avg)
 
 		igate, fgate = self.gw(torch.cat((iQ, avg), -1)).sigmoid().chunk(2, -1)
 
@@ -556,6 +561,23 @@ class Scorer(nn.Module):
 		rsize[-1] = 1
 
 		return out.view(rsize)
+
+class NDWrapper(nn.Module):
+
+	def __init__(self, module, num_dim):
+
+		super(NDWrapper, self).__init__()
+
+		self.net = module
+		self.num_dim = num_dim
+
+	def forward(self, x, *inputs, **kwargs):
+
+		ndim = x.dim()
+		if ndim == self.num_dim:
+			return self.net(x, *inputs, **kwargs)
+		else:
+			return self.net(x.view(-1, *x.size()[1 - self.num_dim:]), *inputs, **kwargs).view(*x.size()[:-1], -1)
 
 class GradientReversalFunction(Function):
 

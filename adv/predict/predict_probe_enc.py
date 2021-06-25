@@ -57,20 +57,19 @@ ignore_ids = set(init_vocab.values())
 
 src_grp = td["src"]
 ens = "\n".encode("utf-8")
-with open(sys.argv[4], "wb") as fwrt:
-	with torch.no_grad():
-		for i in tqdm(range(ntest)):
-			bid = str(i)
-			seq_batch = torch.from_numpy(src_grp[bid][:])
-			if cuda_device:
-				seq_batch = seq_batch.to(cuda_device)
-			seq_batch = seq_batch.long()
-			_mask = seq_batch.eq(0)
-			with autocast(enabled=use_amp):
+with open(sys.argv[4], "wb") as fwrt, torch.no_grad():
+	for i in tqdm(range(ntest), mininterval=tqdm_mininterval):
+		bid = str(i)
+		seq_batch = torch.from_numpy(src_grp[bid][:])
+		if cuda_device:
+			seq_batch = seq_batch.to(cuda_device)
+		seq_batch = seq_batch.long()
+		_mask = seq_batch.eq(0)
+		with autocast(enabled=use_amp):
 			# mask pad/sos/eos_id in output
-				output = classifier(trans(enc(seq_batch, mask=_mask.unsqueeze(1), no_std_out=True))).argmax(-1).masked_fill(_mask | seq_batch.eq(sos_id) | seq_batch.eq(eos_id), 0).tolist()
-			for tran in output:
-				fwrt.write(" ".join([vcbt[tmpu] for tmpu in tran[1:] if tmpu not in ignore_ids]).encode("utf-8"))
-				fwrt.write(ens)
+			output = classifier(trans(enc(seq_batch, mask=_mask.unsqueeze(1), no_std_out=True))).argmax(-1).masked_fill(_mask | seq_batch.eq(sos_id) | seq_batch.eq(eos_id), 0).tolist()
+		for tran in output:
+			fwrt.write(" ".join([vcbt[tmpu] for tmpu in tran[1:] if tmpu not in ignore_ids]).encode("utf-8"))
+			fwrt.write(ens)
 
 td.close()

@@ -126,7 +126,7 @@ fine_tune_state = None
 
 # saving the optimizer state or not.
 save_optm_state = False
-# saving shuffled sequence of training set or not 
+# saving shuffled sequence of training set or not
 save_train_state = False
 ```
 
@@ -138,7 +138,7 @@ Configuration of following variables:
 # reducing the optimization difficulty of models
 ease_optimization = True
 
-# using lipschitz constraint parameter initialization
+# using lipschitz constraint parameter initialization in [Lipschitz Constrained Parameter Initialization for Deep Transformers](https://www.aclweb.org/anthology/2020.acl-main.38/)
 lipschitz_initialization = True
 
 # using advanced activation function, choices: None, "GeLU", "Swish", "Sigmoid", "NormSwish"
@@ -222,4 +222,3 @@ unfreeze_weight = False
 # number of layers for context encoding
 num_layer_context = 1
 ```
-

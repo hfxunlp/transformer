@@ -17,6 +17,7 @@ def handle(srcfs, srcfm, srcft, tgtfs, tgtfm, tgtft, max_len=256):
 				ls, slen = clean_liststr_lentok(ls.decode("utf-8").split())
 				lm, mlen = clean_liststr_lentok(lm.decode("utf-8").split())
 				lt, tlen = clean_liststr_lentok(lt.decode("utf-8").split())
+				ls, lm, lt = ls.encode("utf-8"), lm.encode("utf-8"), lt.encode("utf-8")
 				if (slen <= _max_len) and (mlen <= _max_len) and (tlen <= _max_len):
 					if ls in data:
 						data[ls][(lm, lt,)] = data[ls].get((lm, lt,), 0) + 1
@@ -47,9 +48,7 @@ def handle(srcfs, srcfm, srcft, tgtfs, tgtfm, tgtft, max_len=256):
 				_clean[lt] = {ls: 1}
 
 	data = _clean
-
 	ens = "\n".encode("utf-8")
-
 	with open(tgtfs, "wb") as fs, open(tgtfm, "wb") as fm, open(tgtft, "wb") as ft:
 		for (lm, lt,), v in data.items():
 			if len(v) > 1:
@@ -61,18 +60,18 @@ def handle(srcfs, srcfm, srcft, tgtfs, tgtfm, tgtft, max_len=256):
 						rls = [key]
 					elif value == _maxf:
 						rls.append(key)
-				rlm = "\n".join([lm for i in range(len(rls))])
-				rlt = "\n".join([lt for i in range(len(rls))])
-				rls = "\n".join(rls)
+				rlm = ens.join([lm for i in range(len(rls))])
+				rlt = ens.join([lt for i in range(len(rls))])
+				rls = ens.join(rls)
 			else:
 				rlm = lm
 				rlt = lt
 				rls = list(v.keys())[0]
-			fs.write(rls.encode("utf-8"))
+			fs.write(rls)
 			fs.write(ens)
-			fm.write(rlm.encode("utf-8"))
+			fm.write(rlm)
 			fm.write(ens)
-			ft.write(rlt.encode("utf-8"))
+			ft.write(rlt)
 			ft.write(ens)
 
 if __name__ == "__main__":

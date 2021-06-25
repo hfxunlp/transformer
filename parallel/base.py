@@ -7,6 +7,7 @@ from utils.comm import secure_broadcast_coalesced
 
 from torch.jit import ScriptModule
 from torch._C import ScriptMethod
+from collections import OrderedDict
 
 from torch.nn import DataParallel
 
@@ -262,8 +263,8 @@ def replicate(network, devices, no_gradient=False):
 	buffers_rg = []
 	buffers_not_rg = []
 	for buf in buffers:
-		if buf.requires_grad and not detach:
-			buffers_rg.append(clear_gradient(buf) if no_gradient else buf)
+		if buf.requires_grad and no_gradient:
+			buffers_rg.append(clear_gradient(buf))
 		else:
 			buffers_not_rg.append(buf)
 

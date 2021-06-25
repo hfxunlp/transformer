@@ -21,24 +21,24 @@ def handle(srcfs, srcft, tgtfs, tgtft, max_len=256):
 					cache_s.append(ls)
 					cache_t.append(lt)
 				elif cache_s and cache_t:
-					tmp_s = "\n".join(cache_s)
-					tmp_t = "\n".join(cache_t)
+					tmp_s = "\n".join(cache_s).encode("utf-8")
+					tmp_t = "\n".join(cache_t).encode("utf-8")
 					if tmp_s in data:
 						data[tmp_s][tmp_t] = data[tmp_s].get(tmp_t, 0) + 1
 					else:
 						data[tmp_s] = {tmp_t: 1}
 					cache_s, cache_t = [], []
 			elif cache_s and cache_t:
-				tmp_s = "\n".join(cache_s)
-				tmp_t = "\n".join(cache_t)
+				tmp_s = "\n".join(cache_s).encode("utf-8")
+				tmp_t = "\n".join(cache_t).encode("utf-8")
 				if tmp_s in data:
 					data[tmp_s][tmp_t] = data[tmp_s].get(tmp_t, 0) + 1
 				else:
 					data[tmp_s] = {tmp_t: 1}
 				cache_s, cache_t = [], []
 		if cache_s and cache_t:
-			tmp_s = "\n".join(cache_s)
-			tmp_t = "\n".join(cache_t)
+			tmp_s = "\n".join(cache_s).encode("utf-8")
+			tmp_t = "\n".join(cache_t).encode("utf-8")
 			if tmp_s in data:
 				data[tmp_s][tmp_t] = data[tmp_s].get(tmp_t, 0) + 1
 			else:
@@ -69,9 +69,7 @@ def handle(srcfs, srcft, tgtfs, tgtft, max_len=256):
 				_clean[lt] = {ls: 1}
 
 	data = _clean
-
 	ens = "\n\n".encode("utf-8")
-
 	with open(tgtfs, "wb") as fs, open(tgtft, "wb") as ft:
 		for lt, v in data.items():
 			if len(v) > 1:
@@ -83,14 +81,14 @@ def handle(srcfs, srcft, tgtfs, tgtft, max_len=256):
 						rls = [key]
 					elif value == _maxf:
 						rls.append(key)
-				rlt = "\n\n".join([lt for i in range(len(rls))])
-				rls = "\n\n".join(rls)
+				rlt = ens.join([lt for i in range(len(rls))])
+				rls = ens.join(rls)
 			else:
 				rlt = lt
 				rls = list(v.keys())[0]
-			fs.write(rls.encode("utf-8"))
+			fs.write(rls)
 			fs.write(ens)
-			ft.write(rlt.encode("utf-8"))
+			ft.write(rlt)
 			ft.write(ens)
 
 if __name__ == "__main__":

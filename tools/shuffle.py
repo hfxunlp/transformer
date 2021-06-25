@@ -5,23 +5,22 @@ import sys
 from random import seed as rpyseed
 from random import shuffle
 
-from utils.fmt.base import clean_str
+from utils.fmt.base import clean_str, FileList
 
 def handle(srcfl, rsfl):
 
-	files = [open(srcf, "rb") for srcf in srcfl]
 	data = []
-	for lines in zip(*files):
-		data.append([clean_str(tmpu.strip().decode("utf-8")) for tmpu in lines])
-	for frd in files:
-		frd.close()
+	with FileList(srcfl, "rb") as files:
+		for lines in zip(*files):
+			data.append([clean_str(tmpu.strip().decode("utf-8")) for tmpu in lines])
+
 	shuffle(data)
-	files = [open(rsf, "wb") for rsf in rsfl]
+
 	ens = "\n".encode("utf-8")
-	for du, fwrt in zip(zip(*data), files):
-		fwrt.write("\n".join(du).encode("utf-8"))
-		fwrt.write(ens)
-		fwrt.close()
+	for du, rsf in zip(zip(*data), rsfl):
+		with open(rsf, "wb") as fwrt:
+			fwrt.write("\n".join(du).encode("utf-8"))
+			fwrt.write(ens)
 
 if __name__ == "__main__":
 	rpyseed(666666)

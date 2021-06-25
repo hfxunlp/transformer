@@ -6,8 +6,8 @@ Implementations of `DataParallelModel` and `DataParallelCriterion` which support
 
 ## `parallelMT.py`
 
-Implementation of `DataParallelMT` which supports parallel decoding over multiple GPUs. 
+Implementation of `DataParallelMT` which supports parallel decoding over multiple GPUs.
 
 ## `optm.py`
 
-Implementation of `MultiGPUOptimizer` which performs optimization steps in parallel across multiple GPUs and `MultiGPUGradScaler`. 
+Implementation of `MultiGPUOptimizer` which performs optimization steps in parallel across multiple GPUs and `MultiGPUGradScaler`.

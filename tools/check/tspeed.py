@@ -82,7 +82,7 @@ length_penalty = cnfg.length_penalty
 
 src_grp = td["src"]
 with torch.no_grad():
-	for i in tqdm(range(ntest)):
+	for i in tqdm(range(ntest), mininterval=tqdm_mininterval):
 		seq_batch = torch.from_numpy(src_grp[str(i)][:])
 		if cuda_device:
 			seq_batch = seq_batch.to(cuda_device)

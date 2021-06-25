@@ -17,11 +17,11 @@ We provide scripts to apply Byte-Pair Encoding (BPE) under `scripts/bpe/`.
 
 ### convert plain text to tensors for training
 
-Generate training data for `train.py` with `bash scripts/mktrain.sh`, [configure variables](https://github.com/anoidgit/transformer/blob/master/scripts/README.md#mktrainsh) in `scripts/mktrain.sh` for your usage (the other variables shall comply with those in `scripts/mkbpe.sh`):
+Generate training data for `train.py` with `bash scripts/mktrain.sh`, [configure variables](scripts/README.md#mktrainsh) in `scripts/mktrain.sh` for your usage (the other variables shall comply with those in `scripts/mkbpe.sh`).
 
 ## Configuration for training and testing
 
-Most [configurations](https://github.com/anoidgit/transformer/blob/master/cnfg/README.md#basepy) are managed in `cnfg/base.py`. [Configure advanced details](https://github.com/anoidgit/transformer/blob/master/cnfg/README.md#hyppy) with `cnfg/hyp.py`.
+Most [configurations](cnfg/README.md#basepy) are managed in `cnfg/base.py`. [Configure advanced details](cnfg/README.md#hyppy) with `cnfg/hyp.py`.
 
 ## Training
 
@@ -31,11 +31,11 @@ Just execute the following command to launch the training:
 
 ## Generation
 
-`bash scripts/mktest.sh`, [configure variables](https://github.com/anoidgit/transformer/blob/master/scripts/README.md#mktestsh) in `scripts/mktest.sh` for your usage (while keep the other settings consistent with those in `scripts/mkbpe.sh` and `scripts/mktrain.sh`):
+`bash scripts/mktest.sh`, [configure variables](scripts/README.md#mktestsh) in `scripts/mktest.sh` for your usage (while keep the other settings consistent with those in `scripts/mkbpe.sh` and `scripts/mktrain.sh`).
 
 ## Exporting python files to C libraries
 
-You can convert python classes into C libraries with `python mkcy.py build_ext --inplace`, and codes will be checked before compiling, which can serve as a simple to way to find typo and bugs as well. This function is supported by [Cython](https://cython.org/). These files can be removed by commands like `rm -fr *.c *.so parallel/*.c parallel/*.so transformer/*.c transformer/*.so  transformer/AGG/*.c transformer/AGG/*.so build/`. Loading modules from compiled C libraries may also accelerate, but not significantly.
+You can convert python classes into C libraries with `python mkcy.py build_ext --inplace`, and codes will be checked before compiling, which can serve as a simple to way to find typo and bugs as well. This function is supported by [Cython](https://cython.org/). These files can be removed by commands `tools/clean/cython.py .` and `rm -fr build/`. Loading modules from compiled C libraries may also accelerate, but not significantly.
 
 ## Ranking
 
@@ -69,7 +69,7 @@ Provide an encapsulation for the whole translation procedure with which you can 
 
 ### `server.py`
 
-An example depends on Flask to provide simple Web service and REST API about how to use the `translator`, configure [those variables](https://github.com/anoidgit/transformer/blob/master/server.py#L13-L23) before you use it.
+An example depends on Flask to provide simple Web service and REST API about how to use the `translator`, configure [those variables](server.py#L13-L23) before you use it.
 
 ### `transformer/`
 
@@ -96,7 +96,7 @@ Tokenized case-sensitive BLEU measured with [multi-bleu.perl](https://github.com
 | | BLEU | Training Speed | Decoding Speed |
 | :------| ------: | ------: | ------: |
 | Attention is all you need | 27.3 | | |
-| Neutron | 28.07 | 22424.63 | 150.15  |
+| Neutron | 28.07 | 23213.65 | 150.15 |
 
 ## Acknowledgments
 
@@ -106,18 +106,18 @@ Details of this project can be found [here](https://arxiv.org/abs/1903.07402), a
 
 ```
 @article{xu2019neutron,
-  author          = {Xu, Hongfei and Liu, Qiuhui},
-  title           = "{Neutron: An Implementation of the Transformer Translation Model and its Variants}",
-  journal         = {arXiv preprint arXiv:1903.07402},
-  archivePrefix   = "arXiv",
-  eprinttype      = {arxiv},
-  eprint          = {1903.07402},
-  primaryClass    = "cs.CL",
-  keywords        = {Computer Science - Computation and Language},
-  year            = 2019,
-  month           = "March",
-  url             = {https://arxiv.org/abs/1903.07402},
-  pdf             = {https://arxiv.org/pdf/1903.07402}
+  author = {Xu, Hongfei and Liu, Qiuhui},
+  title = "{Neutron: An Implementation of the Transformer Translation Model and its Variants}",
+  journal = {arXiv preprint arXiv:1903.07402},
+  archivePrefix = "arXiv",
+  eprinttype = {arxiv},
+  eprint = {1903.07402},
+  primaryClass = "cs.CL",
+  keywords = {Computer Science - Computation and Language},
+  year = 2019,
+  month = "March",
+  url = {https://arxiv.org/abs/1903.07402},
+  pdf = {https://arxiv.org/pdf/1903.07402}
 }
 ```
 

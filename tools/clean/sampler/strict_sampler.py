@@ -7,17 +7,15 @@ import sys
 from random import shuffle
 from random import seed as rpyseed
 
+from utils.fmt.base import FileList
+
 def handle(srcfl, tgtfl, ratio):
 
-	fl = [open(srcf, "rb") for srcf in srcfl]
-
 	rs = []
-	for srcl in zip(*fl):
-		tmp = [tl.strip().decode("utf-8") for tl in srcl]
-		rs.append(tmp)
-
-	for f in fl:
-		f.close()
+	with FileList(srcfl, "rb") as fl:
+		for srcl in zip(*fl):
+			tmp = [tl.strip().decode("utf-8") for tl in srcl]
+			rs.append(tmp)
 
 	shuffle(rs)
 	ntotal = len(rs)

@@ -31,7 +31,7 @@ fi
 
 mkdir -p $rsd
 
-python tools/doc/mono/sort.py $srcd/$srctf $tgtd/$srctf.srt
+python tools/doc/sort.py $srcd/$srctf $tgtd/$srctf.srt 1048576
 python tools/doc/para/mktest.py $tgtd/$srctf.srt $src_vcb $tgtd/test.h5 $ngpu
 python predict_doc_para.py $tgtd/$bpef.srt $tgt_vcb $modelf
 python tools/doc/para/restore.py $srcd/$srctf w19ed/test.en.w19ed w19edtrs/base_avg.tbrs $tgtd/$srctf.srt $tgtd/$bpef.srt $tgtd/$bpef

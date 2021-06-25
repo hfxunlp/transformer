@@ -35,9 +35,9 @@ class FirstLayer(nn.Module):
 	# inputo: embedding of decoded translation (bsize, nquery, isize)
 	# query_unit: single query to decode, used to support decoding for given step
 
-	def forward(self, inputo, state=None, first_step=False):
+	def forward(self, inputo, states=None, first_step=False):
 
-		if state is None:
+		if states is None:
 			hx, cx = prepare_initState(self.init_hx, self.init_cx, inputo.size(0))
 			outs = []
 
@@ -52,7 +52,7 @@ class FirstLayer(nn.Module):
 
 			return outs
 		else:
-			hx, cx = self.net(inputo, prepare_initState(self.init_hx, self.init_cx, inputo.size(0)) if first_step else state)
+			hx, cx = self.net(inputo, prepare_initState(self.init_hx, self.init_cx, inputo.size(0)) if first_step else states)
 
 			out = hx if self.drop is None else self.drop(hx)
 
@@ -79,9 +79,9 @@ class DecoderLayer(nn.Module):
 	# inputo: embedding of decoded translation (bsize, nquery, isize)
 	# query_unit: single query to decode, used to support decoding for given step
 
-	def forward(self, inputo, attn, state=None, first_step=False):
+	def forward(self, inputo, attn, states=None, first_step=False):
 
-		if state is None:
+		if states is None:
 			hx, cx = prepare_initState(self.init_hx, self.init_cx, inputo.size(0))
 			outs = []
 
@@ -99,7 +99,7 @@ class DecoderLayer(nn.Module):
 			return outs + inputo if self.residual else outs
 		else:
 
-			hx, cx = self.net(torch.cat((inputo, attn), -1), prepare_initState(self.init_hx, self.init_cx, inputo.size(0)) if first_step else state)
+			hx, cx = self.net(torch.cat((inputo, attn), -1), prepare_initState(self.init_hx, self.init_cx, inputo.size(0)) if first_step else states)
 
 			out = hx if self.drop is None else self.drop(hx)
 

@@ -2,7 +2,7 @@
 
 ## `NMT.py`
 
-The transformer model encapsulates encoder and decoder. Set [these lines](https://github.com/anoidgit/transformer/blob/master/transformer/NMT.py#L10-L14) to make a choice between the standard encoder / decoder and the others.
+The transformer model encapsulates encoder and decoder. Set [these lines](NMT.py#L10-L14) to make a choice between the standard encoder / decoder and the others.
 
 ## `Encoder.py`
 
@@ -18,7 +18,7 @@ The average decoder of transformer proposed by [Accelerating Neural Transformer 
 
 ## `EnsembleNMT.py`
 
-A model encapsulates several NMT models to do ensemble decoding. Configure [these lines](https://github.com/anoidgit/transformer/blob/master/transformer/EnsembleNMT.py#L8-L12) to make a choice between the standard decoder and the average decoder.
+A model encapsulates several NMT models to do ensemble decoding. Configure [these lines](EnsembleNMT.py#L8-L12) to make a choice between the standard decoder and the average decoder.
 
 ## `EnsembleEncoder.py`
 
@@ -51,6 +51,10 @@ Implementation of sentential context proposed in [Exploiting Sentential Context 
 ## `RealFormer/`
 
 Implementation of [RealFormer: Transformer Likes Residual Attention](https://arxiv.org/abs/2012.11747) for machine translation.
+
+## `LD/`
+
+Implementation of NMT with phrase representations proposed in [Learning Source Phrase Representations for Neural Machine Translation](https://www.aclweb.org/anthology/2020.acl-main.37/).
 
 ## `Doc/`
 

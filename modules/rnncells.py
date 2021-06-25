@@ -48,7 +48,7 @@ class LSTMCell4RNMT(nn.Module):
 		if self.drop is not None:
 			hidden = self.drop(hidden)
 
-		_cell = fg * _cell + ig * hidden
+		_cell = (fg * _cell).addcmul_(ig, hidden)
 		_out = og * _cell
 
 		return _out, _cell
@@ -64,10 +64,11 @@ class GRUCell4RNMT(nn.Module):
 		_osize = isize if osize is None else osize
 
 		self.trans = Linear(isize + _osize, _osize * 2, bias=enable_bias)
-		self.transi = Linear(isize, _osize)
-		self.transh = Linear(_osize, _osize)
+		self.transi = Linear(isize, _osize, bias=enable_bias)
+		self.transh = Linear(_osize, _osize, bias=enable_bias)
 
-		self.normer = nn.LayerNorm((2, _osize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		self.normer1 = nn.LayerNorm((2, _osize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		self.normer2 = nn.LayerNorm(_osize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.act = Custom_Act() if custom_act else nn.Tanh()
 		self.drop = Dropout(dropout, inplace=inplace_after_Custom_Act) if dropout > 0.0 else None
@@ -79,16 +80,17 @@ class GRUCell4RNMT(nn.Module):
 		osize = list(state.size())
 		osize.insert(-1, 2)
 
-		_comb = self.normer(self.trans(torch.cat((inpute, state,), -1)).view(osize)).sigmoid()
+		_comb = self.normer1(self.trans(torch.cat((inpute, state,), -1)).view(osize)).sigmoid()
 
 		ig, fg = _comb.unbind(-2)
 
-		hidden = self.act(self.transi(inpute) + ig * self.transh(state))
+		hidden = self.transi(inpute).addcmul_(ig, self.transh(state))
+		hidden = self.act(self.normer2(hidden))
 
 		if self.drop is not None:
 			hidden = self.drop(hidden)
 
-		_out = (1.0 - fg) * hidden + fg * state
+		_out = (1.0 - fg).mul_(hidden).addcmul_(fg, state)
 
 		return _out
 
@@ -113,4 +115,4 @@ class ATRCell(nn.Module):
 
 		igate, fgate = (p + q).sigmoid(), (p - q).sigmoid()
 
-		return igate * p + fgate * q
+		return p.mul_(igate).addcmul_(fgate, q)

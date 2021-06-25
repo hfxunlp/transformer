@@ -1,4 +1,4 @@
-Cython>=0.29.21
+Cython>=0.29.23
 subword-nmt>=0.3.7
 sacremoses>=0.0.43
 Flask>=1.1.2

@@ -30,8 +30,8 @@ def handle(srcfs, srtsf_base, srttf_base, srtsf, srttf, tgtf):
 			tmp = line.strip()
 			if tmp:
 				tmp = clean_str(tmp.decode("utf-8"))
-				tmp = data.get(tmp, "")
-				ft.write(tmp.encode("utf-8"))
+				if tmp in data:
+					ft.write(data[tmp].encode("utf-8"))
 			ft.write(ens)
 
 if __name__ == "__main__":

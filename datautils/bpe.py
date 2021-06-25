@@ -2,6 +2,7 @@
 
 import codecs
 import re
+from random import random
 
 class BPE(object):
 
@@ -65,16 +66,7 @@ class BPE(object):
 			# eliminate double spaces
 			if not word:
 				continue
-			new_word = [out for segment in self._isolate_glossaries(word)
-						for out in encode(segment,
-										  self.bpe_codes,
-										  self.bpe_codes_reverse,
-										  self.vocab,
-										  self.separator,
-										  self.version,
-										  self.cache,
-										  self.glossaries_regex,
-										  dropout)]
+			new_word = [out for segment in self._isolate_glossaries(word) for out in encode(segment, self.bpe_codes, self.bpe_codes_reverse, self.vocab, self.separator, self.version, self.cache, self.glossaries_regex, dropout)]
 
 			for item in new_word[:-1]:
 				output.append(item + self.separator)
@@ -85,8 +77,7 @@ class BPE(object):
 	def _isolate_glossaries(self, word):
 		word_segments = [word]
 		for gloss in self.glossaries:
-			word_segments = [out_segments for segment in word_segments
-								 for out_segments in isolate_glossary(segment, gloss)]
+			word_segments = [out_segments for segment in word_segments for out_segments in isolate_glossary(segment, gloss)]
 		return word_segments
 
 def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache, glossaries_regex=None, dropout=0):
@@ -113,7 +104,7 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
 	while len(word) > 1:
 
 		# get list of symbol pairs; optionally apply dropout
-		pairs = [(bpe_codes[pair],i,pair) for (i,pair) in enumerate(zip(word, word[1:])) if (not dropout or random.random() > dropout) and pair in bpe_codes]
+		pairs = [(bpe_codes[pair],i,pair) for (i,pair) in enumerate(zip(word, word[1:])) if (not dropout or random() > dropout) and pair in bpe_codes]
 
 		if not pairs:
 			break
@@ -239,7 +230,7 @@ class BPERemover:
 				rs.append(inputu.replace("@@ ", ""))
 			return rs
 		else:
-			return inputu.replace("@@ ", "")
+			return input.replace("@@ ", "")
 
 class BPEApplier:
 
@@ -261,4 +252,4 @@ class BPEApplier:
 				rs.append(self.bpe.process_line(inputu))
 			return rs
 		else:
-			return self.bpe.process_line(inputu)
+			return self.bpe.process_line(input)
