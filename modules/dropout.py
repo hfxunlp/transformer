@@ -4,7 +4,7 @@ from torch import nn
 from random import random
 from math import ceil
 
-from utils.base import mask_tensor_type
+from utils.base import mask_tensor_type, reduce_model_list
 
 Dropout = nn.Dropout
 

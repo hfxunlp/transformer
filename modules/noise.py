@@ -2,7 +2,6 @@
 
 import torch
 from torch import nn
-from utils.torch import randint_t_core
 
 from modules.base import PositionwiseFF as PositionwiseFFBase
 
