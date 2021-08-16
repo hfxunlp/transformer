@@ -26,7 +26,7 @@ class DataParallelMT(DataParallelModel):
 			replicas = self.replicate(self.module, devices)
 		else:
 			replicas = self.nets[:ngpu]
-		outputs = parallel_apply_decode(replicas, inputs, devices, kwargs)
+		outputs = parallel_apply_decode(replicas, inputs, devices, kwargs, lock=self.lock)
 		return self.gather(pad_tensors(outputs), self.output_device) if self.gather_output else outputs
 
 	def train_decode(self, *inputs, **kwargs):
@@ -43,17 +43,17 @@ class DataParallelMT(DataParallelModel):
 			replicas = self.replicate(self.module, devices)
 		else:
 			replicas = self.nets[:ngpu]
-		outputs = parallel_apply_train_decode(replicas, inputs, devices, kwargs)
+		outputs = parallel_apply_train_decode(replicas, inputs, devices, kwargs, lock=self.lock)
 		return self.gather(pad_tensors(outputs), self.output_device) if self.gather_output else outputs
 
 # update these two functions with the update of parallel_apply(https://github.com/pytorch/pytorch/blob/master/torch/nn/parallel/parallel_apply.py)
 
-def parallel_apply_decode(modules, inputs, devices, kwargs_tup=None):
+def parallel_apply_decode(modules, inputs, devices, kwargs_tup=None, lock=None):
 
 	if kwargs_tup is None:
 		kwargs_tup = ({},) * len(modules)
 
-	lock = Lock()
+	lock = Lock() if lock is None else lock
 	results = {}
 	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
 
@@ -77,14 +77,15 @@ def parallel_apply_decode(modules, inputs, devices, kwargs_tup=None):
 	for i in range(len(inputs)):
 		output = results[i]
 		outputs.append(output)
+
 	return outputs
 
-def parallel_apply_train_decode(modules, inputs, devices, kwargs_tup=None):
+def parallel_apply_train_decode(modules, inputs, devices, kwargs_tup=None, lock=None):
 
 	if kwargs_tup is None:
 		kwargs_tup = ({},) * len(modules)
 
-	lock = Lock()
+	lock = Lock() if lock is None else lock
 	results = {}
 	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
 
@@ -108,4 +109,5 @@ def parallel_apply_train_decode(modules, inputs, devices, kwargs_tup=None):
 	for i in range(len(inputs)):
 		output = results[i]
 		outputs.append(output)
+
 	return outputs

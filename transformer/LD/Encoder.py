@@ -6,8 +6,7 @@ from modules.base import CrossAttn, Dropout, ResidueCombiner
 
 from math import sqrt, ceil
 
-from transformer.TA.Encoder import EncoderLayer as EncoderLayerBase
-from transformer.TA.Encoder import Encoder as EncoderBase
+from transformer.TA.Encoder import EncoderLayer as EncoderLayerBase, Encoder as EncoderBase
 
 from cnfg.ihyp import *
 
@@ -31,11 +30,6 @@ class EncoderLayer(EncoderLayerBase):
 		inputs = self.scff(inputs, self.cattn(inputs, sumr, rmask))
 
 		context = self.attn(inputs, mask=mask)
-
-		if self.drop is not None:
-			context = self.drop(context)
-
-		context = self.layer_normer(context + inputs)
 
 		context = self.ff(context)
 

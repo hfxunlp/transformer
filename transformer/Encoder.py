@@ -34,17 +34,37 @@ class EncoderLayer(nn.Module):
 		_ahsize = isize if ahsize is None else ahsize
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos)
+		self.attn = ResSelfAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual, k_rel_pos=k_rel_pos)
 
 		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
 
-		self.layer_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
-
-		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
-
-		self.norm_residual = norm_residual
-
 	# inputs: input of this layer (bsize, seql, isize)
+
+	def forward(self, inputs, mask=None):
+
+		context = self.attn(inputs, mask=mask)
+
+		context = self.ff(context)
+
+		return context
+
+# Not used, keep this class to remind the EncoderLayer implementation before v0.3.5.
+class NAWEncoderLayer(EncoderLayer):
+
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_encoder):
+
+		_ahsize = isize if ahsize is None else ahsize
+		_fhsize = _ahsize * 4 if fhsize is None else fhsize
+
+		super(NAWEncoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, norm_residual=norm_residual, k_rel_pos=k_rel_pos)
+
+		#self.attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos)
+		#self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
+		self.layer_normer, self.drop, self.norm_residual = self.attn.normer, self.attn.drop, self.attn.norm_residual
+		self.attn = self.attn.net
+		#self.layer_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		#self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		#self.norm_residual = norm_residual
 
 	def forward(self, inputs, mask=None):
 
@@ -128,7 +148,7 @@ class Encoder(nn.Module):
 
 	def update_vocab(self, indices):
 
-		_wemb = nn.Embedding(len(indices), self.wemb.weight.size(-1), padding_idx=pad_id)
+		_wemb = nn.Embedding(len(indices), self.wemb.weight.size(-1), padding_idx=self.wemb.padding_idx)
 		with torch.no_grad():
 			_wemb.weight.copy_(self.wemb.weight.index_select(0, indices))
 		self.wemb = _wemb

@@ -2,7 +2,7 @@
 
 import sys
 
-from utils.fmt.base import clean_list, all_true, all_gt, FileList
+from utils.fmt.base import clean_list, all_gt, FileList
 
 def handle(srcfl, tgtfl, r=0.4):
 
@@ -10,7 +10,7 @@ def handle(srcfl, tgtfl, r=0.4):
 	with FileList(srcfl, "rb") as rfl, FileList(tgtfl, "wb") as wfl:
 		for lines in zip(*rfl):
 			lines = [line.strip() for line in lines]
-			if all_true(lines):
+			if all(lines):
 				lines = [clean_list(line.decode("utf-8").split()) for line in lines]
 				ratios = [float(len(set(line))) / float(len(line)) for line in lines]
 				if all_gt(ratios, r):

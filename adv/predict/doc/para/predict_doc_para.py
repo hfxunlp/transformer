@@ -63,9 +63,7 @@ if cuda_device:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 
 #num_prev_sent = cnfg.num_prev_sent
-
 beam_size = cnfg.beam_size
-
 length_penalty = cnfg.length_penalty
 
 ens = "\n".encode("utf-8")

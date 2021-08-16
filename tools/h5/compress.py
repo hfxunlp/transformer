@@ -3,7 +3,7 @@
 import sys
 
 import h5py
-from utils.h5serial import h5save, h5load
+from utils.h5serial import h5save, h5load, h5File
 
 from cnfg.ihyp import *
 
@@ -21,10 +21,8 @@ def handle(srcf, rsf, h5args=h5zipargs):
 	if srcf == rsf:
 		h5save(h5load(srcf, restore_list=False), rsf, h5args=h5args)
 	else:
-		sfg, rfg = h5py.File(srcf, "r"), h5py.File(rsf, 'w')
-		handle_group(sfg, rfg, h5args=h5args)
-		sfg.close()
-		rfg.close()
+		with h5File(srcf, "r") as sfg, h5File(rsf, 'w') as rfg:
+			handle_group(sfg, rfg, h5args=h5args)
 
 if __name__ == "__main__":
 	handle(sys.argv[1], sys.argv[-1])

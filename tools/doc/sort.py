@@ -3,7 +3,7 @@
 import sys
 from random import seed as rpyseed
 
-from utils.fmt.base import clean_liststr_lentok, all_true, all_le, maxfreq_filter, shuffle_pair, iter_dict_sort, dict_insert_list, dict_insert_set, FileList
+from utils.fmt.base import clean_liststr_lentok, all_le, maxfreq_filter, shuffle_pair, iter_dict_sort, dict_insert_list, dict_insert_set, FileList
 
 # remove_same: reduce same data in the corpus
 # shuf: shuffle the data of same source/target length
@@ -20,7 +20,7 @@ def handle(srcfl, tgtfl, max_len=256, remove_same=False, shuf=True, max_remove=F
 	with FileList(srcfl, "rb") as fl:
 		for lines in zip(*fl):
 			lines = [line.strip() for line in lines]
-			if all_true(lines):
+			if all(lines):
 				lines, lens = zip(*[clean_liststr_lentok(line.decode("utf-8").split()) for line in lines])
 				if all_le(lens, max_len):
 					lgth = sum(lens)

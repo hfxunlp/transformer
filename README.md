@@ -17,7 +17,7 @@ We provide scripts to apply Byte-Pair Encoding (BPE) under `scripts/bpe/`.
 
 ### convert plain text to tensors for training
 
-Generate training data for `train.py` with `bash scripts/mktrain.sh`, [configure variables](scripts/README.md#mktrainsh) in `scripts/mktrain.sh` for your usage (the other variables shall comply with those in `scripts/mkbpe.sh`).
+Generate training data for `train.py` with `bash scripts/mktrain.sh`, [configure variables](scripts/README.md#mktrainsh) in `scripts/mktrain.sh` for your usage (the other variables shall comply with those in `scripts/bpe/mk.sh`).
 
 ## Configuration for training and testing
 
@@ -120,9 +120,3 @@ Details of this project can be found [here](https://arxiv.org/abs/1903.07402), a
   pdf = {https://arxiv.org/pdf/1903.07402}
 }
 ```
-
-## Contributor(s)
-
-## Need more?
-
-Every details are in those codes, just explore them and make commits ;-)

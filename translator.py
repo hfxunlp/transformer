@@ -89,9 +89,7 @@ class TranslatorCore:
 			if self.multi_gpu:
 				model = DataParallelMT(model, device_ids=cuda_devices, output_device=self.cuda_device.index, host_replicate=True, gather_output=False)
 		self.use_amp = cnfg.use_amp and self.use_cuda
-
 		self.beam_size = cnfg.beam_size
-
 		self.length_penalty = cnfg.length_penalty
 		self.net = model
 

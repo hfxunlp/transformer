@@ -4,8 +4,7 @@
 #	python tools/clean/sampler/strict_sampler.py srcf1 ... srcfn tgtf1 ... tgtfn keep_ratio
 
 import sys
-from random import shuffle
-from random import seed as rpyseed
+from random import shuffle, seed as rpyseed
 
 from utils.fmt.base import FileList
 
@@ -14,7 +13,7 @@ def handle(srcfl, tgtfl, ratio):
 	rs = []
 	with FileList(srcfl, "rb") as fl:
 		for srcl in zip(*fl):
-			tmp = [tl.strip().decode("utf-8") for tl in srcl]
+			tmp = [tl.strip().decode("utf-8").encode("utf-8") for tl in srcl]
 			rs.append(tmp)
 
 	shuffle(rs)
@@ -27,10 +26,10 @@ def handle(srcfl, tgtfl, ratio):
 		with open(tgtf, "wb") as f:
 			# following 3 lines for memory
 			#for line in data:
-				#f.write(line.encode("utf-8"))
+				#f.write(line)
 				#f.write(ens)
 			# use following lines for efficiency
-			f.write("\n".join(data).encode("utf-8"))
+			f.write(ens.join(data))
 			f.write(ens)
 
 	print("%d in %d data keeped with ratio %.2f" % (nkeep, ntotal, float(nkeep) / float(ntotal) * 100.0 if ntotal > 0 else 0.0))

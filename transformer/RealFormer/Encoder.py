@@ -3,10 +3,9 @@
 from torch import nn
 from math import sqrt
 
-from modules.attn.res import SelfAttn
+from modules.attn.res import ResSelfAttn
 
-from transformer.Encoder import EncoderLayer as EncoderLayerBase
-from transformer.Encoder import Encoder as EncoderBase
+from transformer.Encoder import EncoderLayer as EncoderLayerBase, Encoder as EncoderBase
 
 from cnfg.ihyp import *
 
@@ -19,17 +18,11 @@ class EncoderLayer(EncoderLayerBase):
 
 		super(EncoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, norm_residual=norm_residual, k_rel_pos=k_rel_pos, **kwargs)
 
-		self.attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos)
+		self.attn = ResSelfAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos)
 
 	def forward(self, inputs, mask=None, resin=None):
 
-		_inputs = self.layer_normer(inputs)
-		context, resout = self.attn(_inputs, mask=mask, resin=resin)
-
-		if self.drop is not None:
-			context = self.drop(context)
-
-		context = context + (_inputs if self.norm_residual else inputs)
+		context, resout = self.attn(inputs, mask=mask, resin=resin)
 
 		context = self.ff(context)
 

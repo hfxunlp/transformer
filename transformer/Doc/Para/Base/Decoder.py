@@ -10,8 +10,7 @@ from math import sqrt
 
 from utils.fmt.base import pad_id
 
-from transformer.Decoder import DecoderLayer as DecoderLayerBase
-from transformer.Decoder import Decoder as DecoderBase
+from transformer.Decoder import DecoderLayer as DecoderLayerBase, Decoder as DecoderBase
 
 from cnfg.ihyp import *
 
@@ -26,36 +25,17 @@ class DecoderLayer(DecoderLayerBase):
 		self.cattns = nn.ModuleList([CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop) for i in range(ncross)])
 		self.cattn_ln = nn.ModuleList([nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) for i in range(ncross)])
 		self.grs = nn.ModuleList([GateResidual(isize) for i in range(ncross)])
+		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		self.norm_residual = self.cross_attn.norm_residual
 
 	def forward(self, inpute, inputo, inputc, src_pad_mask=None, tgt_pad_mask=None, context_mask=None, query_unit=None):
 
 		if query_unit is None:
-			_inputo = self.layer_normer1(inputo)
-
-			context = self.self_attn(_inputo, mask=tgt_pad_mask)
-
-			if self.drop is not None:
-				context = self.drop(context)
-
-			context = context + (_inputo if self.norm_residual else inputo)
-
+			context = self.self_attn(inputo, mask=tgt_pad_mask)
 		else:
-			_query_unit = self.layer_normer1(query_unit)
+			context, states_return = self.self_attn(query_unit, states=inputo)
 
-			context, states_return = self.self_attn(_query_unit, states=inputo)
-
-			if self.drop is not None:
-				context = self.drop(context)
-
-			context = context + (_query_unit if self.norm_residual else query_unit)
-
-		_context = self.layer_normer2(context)
-		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
-
-		if self.drop is not None:
-			_context_new = self.drop(_context_new)
-
-		context = _context_new + (_context if self.norm_residual else context)
+		context = self.cross_attn(context, inpute, mask=src_pad_mask)
 
 		for _ln, _cattn, _gr, _inputc, _maskc in zip(self.cattn_ln, self.cattns, self.grs, inputc, [None for i in range(len(inputc))] if context_mask is None else context_mask):
 			_inputs = _ln(context)

@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 
-from modules.base import PositionwiseFF as PositionwiseFFBase
+from modules.base import ResSelfAttn as ResSelfAttnBase, ResCrossAttn as ResCrossAttnBase, PositionwiseFF as PositionwiseFFBase
 
 from cnfg.ihyp import *
 
@@ -68,6 +68,70 @@ class UniNoiserVec(GausNoiserVec):
 		return _noise.mul_(base_p)
 
 Noiser = UniNoiserVec
+
+class ResSelfAttn(ResSelfAttnBase):
+
+	def __init__(self, isize, hsize, num_head=8, dropout=0.0, norm_residual=norm_residual_default, power=None, custom_noiser=None, **kwargs):
+
+		super(ResSelfAttn, self).__init__(isize, hsize, num_head=num_head, dropout=dropout, norm_residual=norm_residual, **kwargs)
+
+		_noiser = Noiser if custom_noiser is None else custom_noiser
+		self.noiser = None if power is None else _noiser(power, inplace=True)
+
+	def forward(self, iQ, *inputs, noise_mask=None, **kwargs):
+
+		_iQ = self.normer(iQ)
+
+		if self.noiser is not None:
+			_iQ = self.noiser(_iQ, noise_mask)
+
+		outs = self.net(_iQ, *inputs, **kwargs)
+
+		if isinstance(outs, tuple):
+			_out = outs[0]
+
+			if self.drop is not None:
+				_out = self.drop(_out)
+
+			return _out + (_iQ if self.norm_residual else iQ), *outs[1:]
+
+		else:
+			if self.drop is not None:
+				outs = self.drop(outs)
+
+			return outs + (_iQ if self.norm_residual else iQ)
+
+class ResCrossAttn(ResCrossAttnBase):
+
+	def __init__(self, isize, hsize, num_head=8, dropout=0.0, norm_residual=norm_residual_default, power=None, custom_noiser=None, **kwargs):
+
+		super(ResCrossAttn, self).__init__(isize, hsize, num_head=num_head, dropout=dropout, norm_residual=norm_residual, **kwargs)
+
+		_noiser = Noiser if custom_noiser is None else custom_noiser
+		self.noiser = None if power is None else _noiser(power, inplace=True)
+
+	def forward(self, iQ, iK, *inputs, noise_mask=None, **kwargs):
+
+		_iQ = self.normer(iQ)
+
+		if self.noiser is not None:
+			_iQ = self.noiser(_iQ, noise_mask)
+
+		outs = self.net(_iQ, iK, *inputs, **kwargs)
+
+		if isinstance(outs, tuple):
+			_out = outs[0]
+
+			if self.drop is not None:
+				_out = self.drop(_out)
+
+			return _out + (_iQ if self.norm_residual else iQ), *outs[1:]
+
+		else:
+			if self.drop is not None:
+				outs = self.drop(outs)
+
+			return outs + (_iQ if self.norm_residual else iQ)
 
 class PositionwiseFF(PositionwiseFFBase):
 

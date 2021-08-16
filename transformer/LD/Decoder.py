@@ -12,8 +12,7 @@ from math import sqrt
 
 from utils.fmt.base import pad_id
 
-from transformer.Decoder import DecoderLayer as DecoderLayerBase
-from transformer.Decoder import Decoder as DecoderBase
+from transformer.Decoder import DecoderLayer as DecoderLayerBase, Decoder as DecoderBase
 
 from cnfg.ihyp import *
 
@@ -35,33 +34,15 @@ class DecoderLayer(DecoderLayerBase):
 	def forward(self, inpute, inputh, inputo, src_pad_mask=None, chk_pad_mask=None, tgt_pad_mask=None, query_unit=None):
 
 		if query_unit is None:
-
 			context = self.self_attn(inputo, mask=tgt_pad_mask)
-
-			if self.drop is not None:
-				context = self.drop(context)
-
-			context = context + inputo
-
 		else:
-
 			context, states_return = self.self_attn(query_unit, states=inputo)
-
-			if self.drop is not None:
-				context = self.drop(context)
-
-			context = context + query_unit
 
 		_context = self.layer_normer1(context)
 
 		_context = self.scff(_context, self.cattn(_context, inputh, mask=chk_pad_mask))
 
-		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
-
-		if self.drop is not None:
-			_context_new = self.drop(_context_new)
-
-		context = self.layer_normer2(_context_new + _context)
+		context = self.cross_attn(_context, inpute, mask=src_pad_mask)
 
 		context = self.ff(context)
 

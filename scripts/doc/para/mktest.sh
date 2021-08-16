@@ -15,7 +15,9 @@ export dataid=w19edoc
 
 export ngpu=1
 
+export sort_decode=true
 export debpe=true
+export spm_bpe=false
 
 export tgtd=$cachedir/$dataid
 
@@ -31,14 +33,31 @@ fi
 
 mkdir -p $rsd
 
-python tools/doc/sort.py $srcd/$srctf $tgtd/$srctf.srt 1048576
-python tools/doc/para/mktest.py $tgtd/$srctf.srt $src_vcb $tgtd/test.h5 $ngpu
+if $sort_decode; then
+	export srt_input_f=$tgtd/$srctf.srt
+	python tools/doc/sort.py $srcd/$srctf $srt_input_f 1048576
+else
+	export srt_input_f=$srcd/$srctf
+fi
+
+python tools/doc/para/mktest.py $srt_input_f $src_vcb $tgtd/test.h5 $ngpu
 python predict_doc_para.py $tgtd/$bpef.srt $tgt_vcb $modelf
-python tools/doc/para/restore.py $srcd/$srctf w19ed/test.en.w19ed w19edtrs/base_avg.tbrs $tgtd/$srctf.srt $tgtd/$bpef.srt $tgtd/$bpef
+
+if $sort_decode; then
+	python tools/doc/para/restore.py $srcd/$srctf w19ed/test.en.w19ed w19edtrs/base_avg.tbrs $srt_input_f $tgtd/$bpef.srt $tgtd/$bpef
+	rm $srt_input_f $tgtd/$bpef.srt
+else
+	mv $tgtd/$bpef.srt $tgtd/$bpef
+fi
+
 if $debpe; then
-	sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/$bpef > $rsf
+	if $spm_bpe; then
+		python tools/spm/decode.py --model $tgtd/bpe.model --input_format piece --input $tgtd/$bpef > $rsf
+
+	else
+		sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/$bpef > $rsf
+	fi
 	rm $tgtd/$bpef
 else
 	mv $tgtd/$bpef $rsf
 fi
-rm $tgtd/$srctf.srt $tgtd/$bpef.srt

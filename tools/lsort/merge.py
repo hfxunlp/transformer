@@ -2,10 +2,11 @@
 
 import sys
 
-from utils.fmt.base import clean_liststr_lentok, all_true, all_le, maxfreq_filter, shuffle_pair, iter_dict_sort, dict_insert_list, dict_insert_set, FileList
+from utils.fmt.base import clean_liststr_lentok, all_le, maxfreq_filter, shuffle_pair, iter_dict_sort, dict_insert_list, dict_insert_set, FileList
 
 from random import seed as rpyseed
-from os import walk, path
+from os import walk
+from os.path import join as pjoin
 
 # remove_same: reduce same data in the corpus
 # shuf: shuffle the data of same source/target length
@@ -13,12 +14,12 @@ from os import walk, path
 
 def handle(cached, tgtfl, remove_same=False, shuf=True, max_remove=True):
 
-	def paral_reader(fl):
+	def paral_reader(srcfl):
 
 		with FileList(srcfl, "rb") as fl:
 			for lines in zip(*fl):
 				lines = [line.strip() for line in lines]
-				if all_true(lines):
+				if all(lines):
 					lines, lens = zip(*[clean_liststr_lentok(line.decode("utf-8").split()) for line in lines])
 					lgth = sum(lens)
 					yield tuple(line.encode("utf-8") for line in lines), lgth, *reversed(lens[1:])
@@ -32,7 +33,7 @@ def handle(cached, tgtfl, remove_same=False, shuf=True, max_remove=True):
 			for file in files:
 				curfid = file.split(".")[1]
 				if curfid not in opened:
-					pg = paral_reader([path.join(cache_dir, "%d.%s.txt" % (i, curfid,)) for i in range(num_files)])
+					pg = paral_reader([pjoin(cache_dir, "%d.%s.txt" % (i, curfid,)) for i in range(num_files)])
 					opened.add(curfid)
 					try:
 						prd = next(pg)

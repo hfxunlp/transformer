@@ -3,8 +3,7 @@
 from torch import nn
 from modules.base import *
 
-from transformer.Encoder import EncoderLayer as EncoderLayerBase
-from transformer.Encoder import Encoder as EncoderBase
+from transformer.Encoder import EncoderLayer as EncoderLayerBase, Encoder as EncoderBase
 
 from utils.base import align_modules_by_type
 

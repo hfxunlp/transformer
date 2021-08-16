@@ -1,12 +1,22 @@
 #encoding: utf-8
 
-import torch, h5py
-
+import torch
+from h5py import File as h5FileBase, Dataset
 from collections.abc import Iterator
 
 from utils.fmt.base import list2dict, dict_is_list
 
 from cnfg.ihyp import *
+
+class h5File(h5FileBase):
+
+	def __enter__(self):
+
+		return self
+
+	def __exit__(self, *inputs, **kwargs):
+
+		self.close()
 
 def h5write_dict(gwrt, dtw, h5args=h5modelwargs):
 
@@ -30,15 +40,14 @@ def h5write_list(gwrt, ltw, h5args=h5modelwargs):
 
 def h5save(obj_save, fname, h5args=h5modelwargs):
 
-	h5f = h5py.File(fname, 'w')
-	_obj_save = tuple(obj_save) if isinstance(obj_save, Iterator) else obj_save
-	if isinstance(_obj_save, dict):
-		h5write_dict(h5f, _obj_save, h5args=h5args)
-	elif isinstance(_obj_save, (list, tuple,)):
-		h5write_list(h5f, _obj_save, h5args=h5args)
-	else:
-		h5write_list(h5f, [_obj_save], h5args=h5args)
-	h5f.close()
+	with h5File(fname, 'w') as h5f:
+		_obj_save = tuple(obj_save) if isinstance(obj_save, Iterator) else obj_save
+		if isinstance(_obj_save, dict):
+			h5write_dict(h5f, _obj_save, h5args=h5args)
+		elif isinstance(_obj_save, (list, tuple,)):
+			h5write_list(h5f, _obj_save, h5args=h5args)
+		else:
+			h5write_list(h5f, [_obj_save], h5args=h5args)
 
 def restore_list_in_dict(din):
 
@@ -55,17 +64,18 @@ def h5load_group(grd):
 
 	rsd = {}
 	for k, v in grd.items():
-		if isinstance(v, h5py.Dataset):
+		if isinstance(v, Dataset):
 			rsd[k] = torch.from_numpy(v[:])
 		else:
 			rsd[k] = h5load_group(v)
+
 	return rsd
 
 def h5load(fname, restore_list=True):
 
-	f = h5py.File(fname, "r")
-	rsd = h5load_group(f)
-	f.close()
+	with h5File(fname, "r") as f:
+		rsd = h5load_group(f)
 	if restore_list:
 		rsd = restore_list_in_dict(rsd)
+
 	return rsd

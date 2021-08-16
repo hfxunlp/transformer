@@ -346,46 +346,17 @@ def legal_vocab(sent, ilgset, ratio):
 
 	return False if rt > ratio else True
 
-def iter_check_func(lin, func=None, ri=False):
+def all_in(lin, setin):
 
-	if func is None:
-		for lu in lin:
-			if lu:
-				return ri
-	else:
-		for lu in lin:
-			if func(lu):
-				return ri
-
-	return not ri
-
-def all_true(lin):
-
-	return iter_check_func(lin, func=lambda x: not x, ri=False)
-
-def any_true(lin):
-
-	return iter_check_func(lin, func=None, ri=True)
-
-def iter_cmp_func(lin, v, func, ri=False):
-
-	for lu in lin:
-		if func(lu, v):
-			return ri
-
-	return not ri
-
-def all_in(lin, sin):
-
-	return iter_cmp_func(lin, sin, lambda x, y: not x in y, ri=False)
+	return all(lu in setin for lu in lin)
 
 def all_le(lin, value):
 
-	return iter_cmp_func(lin, value, lambda x, y: x > y, ri=False)
+	return all(lu <= value for lu in lin)
 
 def all_gt(lin, value):
 
-	return iter_cmp_func(lin, value, lambda x, y: x <= y, ri=False)
+	return all(lu > value for lu in lin)
 
 def get_char_ratio(strin):
 

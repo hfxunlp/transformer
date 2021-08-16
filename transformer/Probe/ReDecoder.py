@@ -7,8 +7,7 @@ from math import sqrt
 
 from modules.base import Linear
 
-from transformer.Decoder import DecoderLayer as DecoderLayerBase
-from transformer.Decoder import Decoder as DecoderBase
+from transformer.Decoder import DecoderLayer as DecoderLayerBase, Decoder as DecoderBase
 
 from cnfg.ihyp import *
 
@@ -25,31 +24,18 @@ class DecoderLayer(DecoderLayerBase):
 
 		if query_unit is None:
 			if self.perform_self_attn:
-				_inputo = self.layer_normer1(inputo)
-
-				context = self.self_attn(_inputo, mask=tgt_pad_mask)
-				if self.drop is not None:
-					context = self.drop(context)
-				context = context + (_inputo if self.norm_residual else inputo)
+				context = self.self_attn(inputo, mask=tgt_pad_mask)
 			else:
 				context, states_return = inputo, None
 
 		else:
 			if self.perform_self_attn:
-				_query_unit = self.layer_normer1(query_unit)
-				context, states_return = self.self_attn(_query_unit, states=inputo)
-				if self.drop is not None:
-					context = self.drop(context)
-				context = context + (_query_unit if self.norm_residual else query_unit)
+				context, states_return = self.self_attn(query_unit, states=inputo)
 			else:
 				context, states_return = query_unit, query_unit if inputo is None else torch.cat((inputo, query_unit,), 1)
 
 		if self.perform_cross_attn:
-			_context = self.layer_normer2(context)
-			_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
-			if self.drop is not None:
-				_context_new = self.drop(_context_new)
-			context = _context_new + (_context if self.norm_residual else context)
+			context = self.cross_attn(context, inpute, mask=src_pad_mask)
 
 		context = self.ff(context)
 

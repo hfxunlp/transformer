@@ -3,10 +3,9 @@
 import torch
 from torch import nn
 
-from modules.attn.res import SelfAttn, CrossAttn
+from modules.attn.res import ResSelfAttn, ResCrossAttn
 
-from transformer.Decoder import DecoderLayer as DecoderLayerBase
-from transformer.Decoder import Decoder as DecoderBase
+from transformer.Decoder import DecoderLayer as DecoderLayerBase, Decoder as DecoderBase
 
 from utils.sampler import SampleMax
 from utils.base import all_done, index_tensors, expand_bsize_for_beam
@@ -25,8 +24,8 @@ class DecoderLayer(DecoderLayerBase):
 
 		super(DecoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, norm_residual=norm_residual, k_rel_pos=k_rel_pos, **kwargs)
 
-		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos, uni_direction_reduction=True)
-		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop)
+		self.self_attn = ResSelfAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual, k_rel_pos=k_rel_pos, uni_direction_reduction=True)
+		self.cross_attn = ResCrossAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual)
 
 	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, resin=None):
 
@@ -36,32 +35,11 @@ class DecoderLayer(DecoderLayerBase):
 			sresin, cresin = resin
 
 		if query_unit is None:
-			_inputo = self.layer_normer1(inputo)
-
-			context, sresout = self.self_attn(_inputo, mask=tgt_pad_mask, resin=sresin)
-
-			if self.drop is not None:
-				context = self.drop(context)
-
-			context = context + (_inputo if self.norm_residual else inputo)
-
+			context, sresout = self.self_attn(inputo, mask=tgt_pad_mask, resin=sresin)
 		else:
-			_query_unit = self.layer_normer1(query_unit)
+			context, states_return, sresout = self.self_attn(query_unit, states=inputo, resin=sresin)
 
-			context, states_return, sresout = self.self_attn(_query_unit, states=inputo, resin=sresin)
-
-			if self.drop is not None:
-				context = self.drop(context)
-
-			context = context + (_query_unit if self.norm_residual else query_unit)
-
-		_context = self.layer_normer2(context)
-		_context_new, cresout = self.cross_attn(_context, inpute, mask=src_pad_mask, resin=cresin)
-
-		if self.drop is not None:
-			_context_new = self.drop(_context_new)
-
-		context = _context_new + (_context if self.norm_residual else context)
+		context, cresout = self.cross_attn(context, inpute, mask=src_pad_mask, resin=cresin)
 
 		context = self.ff(context)
 

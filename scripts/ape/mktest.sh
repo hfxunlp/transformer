@@ -16,7 +16,9 @@ export dataid=w19ape
 
 export ngpu=1
 
+export sort_decode=true
 export debpe=true
+export spm_bpe=false
 
 export tgtd=$cachedir/$dataid
 
@@ -32,14 +34,33 @@ fi
 
 mkdir -p $rsd
 
-python tools/sort.py $srcd/$srctf $srcd/$srcmf $tgtd/$srctf.srt $tgtd/$srcmf.srt 1048576
-python tools/mkiodata.py $tgtd/$srctf.srt $tgtd/$srcmf.srt $src_vcb $tgt_vcb $tgtd/test.h5 $ngpu
+if $sort_decode; then
+	export srt_input_f=$tgtd/$srctf.srt
+	export srt_input_fm=$tgtd/$srcmf.srt
+	python tools/sort.py $srcd/$srctf $srcd/$srcmf $srt_input_f $srt_input_fm 1048576
+else
+	export srt_input_f=$srcd/$srctf
+	export srt_input_fm=$srcd/$srcmf
+fi
+
+python tools/mkiodata.py $srt_input_f $srt_input_fm $src_vcb $tgt_vcb $tgtd/test.h5 $ngpu
 python predict_ape.py $tgtd/$bpef.srt $tgt_vcb $modelf
-python tools/restore.py $srcd/$srctf $srcd/$srcmf $tgtd/$srctf.srt $tgtd/$srcmf.srt $tgtd/$bpef.srt $tgtd/$bpef
+
+if $sort_decode; then
+	python tools/restore.py $srcd/$srctf $srcd/$srcmf $srt_input_f $srt_input_fm $tgtd/$bpef.srt $tgtd/$bpef
+	rm $srt_input_f $srt_input_fm $tgtd/$bpef.srt
+else
+	mv $tgtd/$bpef.srt $tgtd/$bpef
+fi
+
 if $debpe; then
-	sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/$bpef > $rsf
+	if $spm_bpe; then
+		python tools/spm/decode.py --model $tgtd/bpe.model --input_format piece --input $tgtd/$bpef > $rsf
+
+	else
+		sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/$bpef > $rsf
+	fi
 	rm $tgtd/$bpef
 else
 	mv $tgtd/$bpef $rsf
 fi
-rm $tgtd/$srctf.srt $tgtd/$srcmf.srt $tgtd/$bpef.srt

@@ -1,7 +1,7 @@
 #encoding: utf-8
 
 from torch.nn import ModuleList
-from modules.base import AverageAttn
+from modules.aan import AverageAttn
 
 def share_aan_cache(netin):
 

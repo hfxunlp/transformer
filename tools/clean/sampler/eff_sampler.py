@@ -4,8 +4,7 @@
 #	python tools/clean/sampler/eff_sampler.py srcf1 ... srcfn tgtf1 ... tgtfn keep_ratio
 
 import sys
-from random import random
-from random import seed as rpyseed
+from random import random, seed as rpyseed
 
 from utils.fmt.base import FileList
 
@@ -17,9 +16,9 @@ def handle(srcfl, tgtfl, ratio):
 	with FileList(srcfl, "rb") as sfl, FileList(tgtfl, "rb") as tfl:
 		for srcl in zip(*sfl):
 			if random() <=ratio:
-				tmp = [tl.strip().decode("utf-8") for tl in srcl]
+				tmp = [tl.strip().decode("utf-8").encode("utf-8") for tl in srcl]
 				for line, wrtf in zip(tmp, tfl):
-					wrtf.write(line.encode("utf-8"))
+					wrtf.write(line)
 					wrtf.write(ens)
 					nkeep += 1
 			ntotal += 1

@@ -4,6 +4,8 @@ from math import sqrt
 import torch
 from torch import nn
 
+from cnfg.ihyp import use_c_backend_group, bind_c_forward
+
 class GroupLinear(nn.Module):
 
 	# isize: input dimension (dimension per group * ngroup)
@@ -30,6 +32,9 @@ class GroupLinear(nn.Module):
 		else:
 			self.bias = None
 
+		if self.c_available():
+			self.c_init()
+
 	# inputu: (..., isize)
 
 	def forward(self, inputu, weight=None, bias=None):
@@ -53,6 +58,49 @@ class GroupLinear(nn.Module):
 			del _size[-2]
 
 		return out.contiguous().view(_size)
+
+	def c_available(self):
+
+		return use_c_backend_group and (type(self) == GroupLinear)
+
+	def c_init(self, bind=bind_c_forward):
+
+		try:
+			try:
+				import group_cpp
+			except Exception as e:
+				from torch.utils.cpp_extension import load
+				group_cpp = load(name="group_cpp", sources=["modules/cpp/group/group.cpp", "modules/cpp/group/group_func.cpp"])
+			self.c_forward_func = group_cpp.forward
+		except:
+			self.c_forward_func = None
+		if self.c_forward_func is not None:
+			self.c_build_cache()
+			if bind:
+				GroupLinear.forward = GroupLinear.c_forward
+
+	def c_forward(self, inputu, weight=None, bias=None):
+
+		return self.c_forward_func(*self.c_build_inputs(inputu, weight=weight, bias=bias))
+
+	def c_build_cache(self):
+
+		self.aargs = ({"isize": self.isize, "ngroup": self.ngroup}, {"trans_input": self.trans_input, "shuffle": self.shuffle, "i_gdim": self.i_gdim, "del_gdim": self.del_gdim},)
+		self.targs = dict(self.named_parameters())
+
+	def c_build_inputs(self, inputu, weight=None, bias=None):
+
+		i_d = self.targs.copy()
+		i_d["inputu"] = inputu
+		if weight is not None:
+			i_d["weight"] = weight
+		if bias is not None:
+			i_d["bias"] = bias
+
+		return i_d, *self.aargs
+
+	def extra_repr(self):
+		return 'groups={}, in_features={}, out_features={}, bias={}'.format(self.ngroup, self.ngroup * self.isize, self.ngroup * self.osize, self.bias is not None)
 
 	def fix_init(self):
 

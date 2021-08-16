@@ -1,8 +1,7 @@
 #encoding: utf-8
 
 import torch
-from torch.nn.modules.loss import _Loss
-from torch.nn.modules.loss import NLLLoss as NLLLossBase
+from torch.nn.modules.loss import _Loss, NLLLoss as NLLLossBase
 
 from torch.nn.functional import kl_div, nll_loss
 
@@ -27,10 +26,11 @@ class FastLabelSmoothingLoss(_Loss):
 		smooth_loss = -input.sum(dim=-1, keepdim=True)
 		if isinstance(self.ignore_index, (list, tuple)):
 			pad_mask = eq_indexes(_target, self.ignore_index)
-			nll_loss.masked_fill_(pad_mask, 0.0)
-			smooth_loss.masked_fill_(pad_mask, 0.0)
 		elif self.ignore_index >= 0:
 			pad_mask = (_target == self.ignore_index)
+		else:
+			pad_mask = None
+		if pad_mask is not None:
 			nll_loss.masked_fill_(pad_mask, 0.0)
 			smooth_loss.masked_fill_(pad_mask, 0.0)
 		if self.reduction != "none":

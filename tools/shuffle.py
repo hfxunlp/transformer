@@ -2,8 +2,7 @@
 
 import sys
 
-from random import seed as rpyseed
-from random import shuffle
+from random import seed as rpyseed, shuffle
 
 from utils.fmt.base import clean_str, FileList
 

@@ -4,8 +4,7 @@ import torch
 from torch.nn import functional as nnFunc
 from math import sqrt
 
-from modules.base import SelfAttn as SelfAttnBase
-from modules.base import CrossAttn as CrossAttnBase
+from modules.base import SelfAttn as SelfAttnBase, CrossAttn as CrossAttnBase, ResSelfAttn as ResSelfAttnBase, ResCrossAttn as ResCrossAttnBase
 
 from cnfg.ihyp import *
 
@@ -94,3 +93,19 @@ class CrossAttn(CrossAttnBase):
 			scores = self.drop(scores)
 
 		return self.outer(scores.matmul(real_iV).transpose(1, 2).contiguous().view(bsize, nquery, self.hsize)), resout
+
+class ResSelfAttn(ResSelfAttnBase):
+
+	def __init__(self, isize, hsize, num_head=8, dropout=0.0, norm_residual=norm_residual_default, **kwargs):
+
+		super(ResSelfAttn, self).__init__(isize, hsize, num_head=num_head, dropout=dropout, norm_residual=norm_residual, **kwargs)
+
+		self.net = SelfAttn(isize, hsize, isize, num_head=num_head, dropout=dropout, **kwargs)
+
+class ResCrossAttn(ResCrossAttnBase):
+
+	def __init__(self, isize, hsize, num_head=8, dropout=0.0, norm_residual=norm_residual_default, **kwargs):
+
+		super(ResCrossAttn, self).__init__(isize, hsize, num_head=num_head, dropout=dropout, norm_residual=norm_residual, **kwargs)
+
+		self.net = CrossAttn(isize, hsize, isize, num_head=num_head, dropout=dropout, **kwargs)

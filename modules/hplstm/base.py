@@ -6,6 +6,7 @@ from modules.base import Linear, Dropout
 from modules.group.base import GroupLinear
 from modules.act import Custom_Act
 from modules.hplstm.LGate import LGateFunc
+from utils.base import float2odd
 from cnfg.ihyp import *
 
 class MHPLSTMCore(nn.Module):
@@ -16,18 +17,20 @@ class MHPLSTMCore(nn.Module):
 
 		_osize = isize if osize is None else osize
 
-		head_dim = isize // num_head
-		hsize = head_dim * num_head
+		i_head_dim = float2odd(float(isize) / num_head)
+		i_hsize = i_head_dim * num_head
+		o_head_dim = float2odd(float(_osize) / num_head)
+		o_hsize = o_head_dim * num_head
 
-		self.trans_hid = GroupLinear(hsize + hsize, hsize * 3, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False)
-		self.trans_og = nn.Sequential(GroupLinear(hsize + hsize, hsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters))
+		self.trans_hid = GroupLinear(i_hsize + i_hsize, o_hsize * 3, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False)
+		self.trans_og = nn.Sequential(GroupLinear(i_hsize + o_hsize, o_hsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, o_head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters))
 
-		self.normer_csum = nn.LayerNorm((num_head, head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
-		self.normer_hid = nn.LayerNorm((num_head, 3, head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		self.normer_csum = nn.LayerNorm((num_head, i_head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		self.normer_hid = nn.LayerNorm((num_head, 3, o_head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.act = Custom_Act() if custom_act else nn.ReLU()#Tanh()
 		self.drop = Dropout(dropout, inplace=inplace_after_Custom_Act) if dropout > 0.0 else None
-		self.init_cx = nn.Parameter(torch.zeros(1, num_head, head_dim))
+		self.init_cx = nn.Parameter(torch.zeros(1, num_head, o_head_dim))
 
 	# heads_input: (bsize, seql, nheads, adim)
 	# states: ((bsize, 1, num_head, head_dim), (bsize, 1, num_head, head_dim),)
@@ -47,7 +50,7 @@ class MHPLSTMCore(nn.Module):
 				_csum_state = states[0]
 				csum = self.normer_csum(_csum_state)
 				csum_state_return = _csum_state + heads_input
-		igate, fgate, hidden = self.normer_hid(self.trans_hid(torch.cat((heads_input, csum,), dim=-1)).view(bsize, seql, nheads, 3, adim)).unbind(-2)
+		igate, fgate, hidden = self.normer_hid(self.trans_hid(torch.cat((heads_input, csum,), dim=-1)).view(bsize, seql, nheads, 3, -1)).unbind(-2)
 		fgate = fgate.sigmoid()
 		hidden = self.act(hidden)
 
@@ -78,14 +81,15 @@ class HPLSTM(nn.Module):
 		super(HPLSTM, self).__init__()
 
 		_osize = isize if osize is None else osize
+		o_hsize = float2odd(float(_osize) / num_head) * num_head
 
-		self.head_dim = isize // num_head
-		self.hsize = self.head_dim * num_head
+		self.head_dim = float2odd(float(isize) / num_head)
+		i_hsize = self.head_dim * num_head
 		self.num_head = num_head
 
-		self.trans_input = Linear(isize, self.hsize, bias=enable_proj_bias)
-		self.net = MHPLSTMCore(isize, num_head=self.num_head, osize=_osize, dropout=dropout)
-		self.trans_output = Linear(self.hsize, _osize, bias=enable_proj_bias)
+		self.trans_input = Linear(isize, i_hsize, bias=enable_proj_bias)
+		self.net = MHPLSTMCore(i_hsize, num_head=self.num_head, osize=o_hsize, dropout=dropout)
+		self.trans_output = Linear(o_hsize, _osize, bias=enable_proj_bias)
 
 	def forward(self, inpute, states=None, head_mask=None):
 
@@ -97,7 +101,7 @@ class HPLSTM(nn.Module):
 		else:
 			out, states_return = self.net(heads_input, states=states, head_mask=head_mask)
 
-		out = self.trans_output(out.view(bsize, seql, self.hsize))
+		out = self.trans_output(out.view(bsize, seql, -1))
 
 		if states is None:
 			return out
@@ -111,26 +115,27 @@ class BiHPLSTM(nn.Module):
 		super(BiHPLSTM, self).__init__()
 
 		_osize = isize if osize is None else osize
+		o_hsize = float2odd(float(_osize) / num_head) * num_head
 
-		self.head_dim = isize // num_head
-		self.hsize = self.head_dim * num_head
+		self.head_dim = float2odd(float(isize) / num_head)
+		i_hsize = self.head_dim * num_head
 		self.num_head = num_head
 
-		self.trans_input = Linear(isize, self.hsize + self.hsize, bias=enable_proj_bias)
-		self.net = MHPLSTMCore(isize + isize, num_head=self.num_head + self.num_head, osize=_osize + _osize, dropout=dropout)
-		self.trans_output = Linear(self.hsize + self.hsize, _osize, bias=enable_proj_bias)
+		self.trans_input = Linear(isize, i_hsize + i_hsize, bias=enable_proj_bias)
+		self.net = MHPLSTMCore(i_hsize + i_hsize, num_head=self.num_head + self.num_head, osize=o_hsize + o_hsize, dropout=dropout)
+		self.trans_output = Linear(o_hsize + o_hsize, _osize, bias=enable_proj_bias)
 
 	# inpute: (bsize, seql, isize)
-	# reversed_mask: (bsize, seql, 1, 1) input.eq(0).view(bsize, seql, 1, 1).flip(1)
+	# reversed_mask: (bsize, seql, 1, 1), generated by input.eq(0).view(bsize, seql, 1, 1).flip(1)
 
 	def forward(self, inpute, reversed_mask=None):
 
 		bsize, seql = inpute.size()[:2]
-		nheads, adim = self.num_head, self.head_dim
-		heads_input_fwd, heads_input_bwd = self.trans_input(inpute).view(bsize, seql, 2, nheads, adim).unbind(2)
+		nheads = self.num_head
+		heads_input_fwd, heads_input_bwd = self.trans_input(inpute).view(bsize, seql, 2, nheads, self.head_dim).unbind(2)
 		heads_input_bwd_rvs = heads_input_bwd.flip(1)
 		_r_mask = None if reversed_mask is None else torch.cat((reversed_mask.new_zeros(bsize, seql, nheads, 1), reversed_mask.expand(bsize, seql, nheads, 1)), dim=2)
 		o_fwd, o_bwd_rvs = self.net(torch.cat((heads_input_fwd, heads_input_bwd_rvs,), dim=2), head_mask=_r_mask).chunk(2, dim=-2)
 		o_bwd = o_bwd_rvs.flip(1)
 
-		return self.trans_output(torch.cat((o_fwd.view(bsize, seql, self.hsize), o_bwd.view(bsize, seql, self.hsize),), dim=-1))
+		return self.trans_output(torch.cat((o_fwd.view(bsize, seql, -1), o_bwd.view(bsize, seql, -1),), dim=-1))

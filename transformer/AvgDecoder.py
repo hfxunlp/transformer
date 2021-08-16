@@ -2,7 +2,7 @@
 
 import torch
 from torch import nn
-from modules.base import *
+from modules.aan import AverageAttn
 from utils.sampler import SampleMax
 from utils.base import all_done, index_tensors, expand_bsize_for_beam
 from utils.aan import share_aan_cache
@@ -10,12 +10,11 @@ from math import sqrt
 
 from utils.fmt.base import pad_id
 
-from transformer.Decoder import DecoderLayer as DecoderLayerBase
-from transformer.Decoder import Decoder as DecoderBase
-
-# Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network (https://www.aclweb.org/anthology/P18-1166/)
+from transformer.Decoder import DecoderLayer as DecoderLayerBase, Decoder as DecoderBase
 
 from cnfg.ihyp import *
+
+# Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network (https://www.aclweb.org/anthology/P18-1166/)
 
 class DecoderLayer(DecoderLayerBase):
 
@@ -32,6 +31,7 @@ class DecoderLayer(DecoderLayerBase):
 
 		super(DecoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, **kwargs)
 
+		self.drop, self.layer_normer1, self.norm_residual = self.self_attn.drop, self.self_attn.normer, self.self_attn.norm_residual
 		self.self_attn = AverageAttn(isize, _fhsize, dropout)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
@@ -69,13 +69,7 @@ class DecoderLayer(DecoderLayerBase):
 
 			context = context + (_query_unit if self.norm_residual else query_unit)
 
-		_context = self.layer_normer2(context)
-		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
-
-		if self.drop is not None:
-			_context_new = self.drop(_context_new)
-
-		context = _context_new + (_context if self.norm_residual else context)
+		context = self.cross_attn(context, inpute, mask=src_pad_mask)
 
 		context = self.ff(context)
 

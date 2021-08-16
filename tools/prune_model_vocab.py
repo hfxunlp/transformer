@@ -34,7 +34,7 @@ def handle(common, src, tgt, srcm, rsm, minfreq=False, vsize=False):
 	mymodel = NMT(cnfg.isize, nwordf, nwordf, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 	mymodel = load_model_cpu(srcm, mymodel)
 	mymodel.update_vocab(src_indices=src_indices, tgt_indices=tgt_indices)
-	save_model(mymodel, rsm, sub_module=False, logger=None, h5args=h5zipargs)
+	save_model(mymodel, rsm, sub_module=False, h5args=h5zipargs)
 
 if __name__ == "__main__":
 	handle(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5])

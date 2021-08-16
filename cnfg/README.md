@@ -27,6 +27,10 @@ fine_tune_m = None
 # add 3 to forbidden_indexes if there are <unk> tokens in data
 forbidden_indexes = [0, 1]
 
+# automatically remove the previous best train/validation model when saving the new best.
+save_auto_clean = True
+# allow the best performing model on the training set to overwrite the best performing model on the development set.
+overwrite_eva=False
 # after how much step save a checkpoint which you can fine tune with.
 save_every = 1500
 # maximum number of checkpoint models saved, useful for average or ensemble.

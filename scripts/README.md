@@ -68,6 +68,8 @@ export dataid=w14ende
 # number of GPU(s) plan to use for decoding.
 export ngpu=1
 
+# gather sentences of similar lengths together for decoding.
+export sort_decode=true
 # merge sub-words
 export debpe=true
 ```

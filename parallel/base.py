@@ -1,9 +1,11 @@
 #encoding: utf-8
 
 import torch
+from torch import nn
 import torch.cuda.comm as comm
 from torch.cuda.amp import autocast
 from utils.comm import secure_broadcast_coalesced
+from utils.contpara import get_contiguous_parameters_m, get_all_contiguous_parameters_m, get_contiguous_parameters_p
 
 from torch.jit import ScriptModule
 from torch._C import ScriptMethod
@@ -18,13 +20,18 @@ from utils.fmt.base import clean_list
 
 from parallel.optm import MultiGPUOptimizer
 
-"""	Example::
+"""	Example:
 
 		>>> net = DataParallelModel(model, device_ids=[0, 1, 2])
 		>>> criterion = DataParallelCriterion(criterion, device_ids=[0, 1, 2])
 		>>> y = net(x)
 		>>> loss = criterion(y, target)
 """
+
+def replicate_fixing(module):
+
+	if hasattr(module, "c_available") and hasattr(module, "c_build_cache") and module.c_available():
+		module.c_build_cache()
 
 class DataParallelModel(DataParallel):
 
@@ -33,13 +40,14 @@ class DataParallelModel(DataParallel):
 
 		super(DataParallelModel, self).__init__(module, device_ids=device_ids, output_device=output_device, dim=dim)
 
+		self.is_contiguous_parameters = False
 		if host_replicate and self.device_ids and (len(self.device_ids) > 1):
 			self.make_replicas()
 		else:
 			self.nets = None
-
-		self.optm_splt = None
 		self.gather_output = gather_output
+		self.lock = Lock()
+		self.optm_splt = None
 		self.ngradev = 0
 
 	def forward(self, *inputs, **kwargs):
@@ -60,54 +68,94 @@ class DataParallelModel(DataParallel):
 		else:
 			devices = self.device_ids[:ngpu]
 			replicas = self.replicate(self.module, devices) if self.nets is None else self.nets[:ngpu]
-			outputs = parallel_apply(replicas, inputs, devices, kwargs)
+			outputs = parallel_apply(replicas, inputs, devices, kwargs, lock=self.lock)
 			if self.gather_output:
 				return self.gather(outputs, self.output_device)
 			else:
 				return tuple(zip(*outputs)) if isinstance(outputs[0], tuple) else outputs
 
-	def train(self, mode=True):
+	def zero_grad(self, set_to_none=True):
 
-		super(DataParallelModel, self).train(mode)
+		if self.is_contiguous_parameters:
+			with torch.no_grad():
+				for para in get_all_contiguous_parameters_m(self.module):
+					para.grad.zero_()
+				if self.nets is not None and self.ngradev > 1:
+					for net in self.nets[1:self.ngradev]:
+						for para in get_all_contiguous_parameters_m(net):
+							para.grad.zero_()
+		else:
+			for para in filter_para_grad(self.module.parameters()):
+				para.grad = None
+			if self.nets is not None and self.ngradev > 1:
+				for net in self.nets[1:self.ngradev]:
+					for para in filter_para_grad(net.parameters()):
+						para.grad = None
+		self.ngradev = 0
 
-		if self.nets is not None:
-			for net in self.nets[1:]:
-				net.train(mode)
+	# below 2 functions support direct access to the wrapped module parameters/modules, but exclude direct access to copies (self.nets)
+	def named_parameters(self, prefix='', recurse=True):
 
-		return self
+		return self.module.named_parameters(prefix=prefix, recurse=recurse)
+
+	def named_modules(self, memo=None, prefix='', remove_duplicate=True):
+
+		return self.module.named_modules(memo=memo, prefix=prefix, remove_duplicate=remove_duplicate)
 
 	def make_replicas(self):
 
-		self.nets = replicate(self.module, self.device_ids, True)
+		self.nets = nn.ModuleList(replicate(self.module, self.device_ids, True))
+		for net in self.nets[1:]:
+			net.apply(replicate_fixing)
 		self.ngradev = 0
 
 	def collect_gradients(self):
 
 		if self.optm_splt is not None:
-			grads = [[p.grad for p in filter_para_grad(net.parameters())] for net in self.nets[:self.ngradev]]
-			for i, (net, device, (lind, rind,),) in enumerate(zip(self.nets, self.device_ids, self.optm_splt)):
-				_dev_grads = [gradu[lind:rind] for gradu in grads]
-				if i > 0:
-					_dev_grads.insert(0, _dev_grads.pop(i) if i < self.ngradev else [_pg.new_zeros(_pg.size(), device=device) for _pg in _dev_grads[0]])
-				_dev_grads = comm.reduce_add_coalesced(_dev_grads, device)
-				for mp, grad in zip(range_parameter_iter(net, lind, rind, func=filter_para_grad_iter), _dev_grads):
-					mp.grad = grad
+			if self.is_contiguous_parameters:
+				for i, (net, device,) in enumerate(zip(self.nets, self.device_ids)):
+					_dev_grads = [[para.grad for para in get_contiguous_parameters_m(_net, index=i)] for _net in self.nets[:self.ngradev]]
+					if i > 0:
+						_dev_grads.insert(0, _dev_grads.pop(i) if i < self.ngradev else [para.grad for para in get_contiguous_parameters_m(net, index=i)])
+					_dev_grads = comm.reduce_add_coalesced(_dev_grads, device)
+					for mp, grad in zip(get_contiguous_parameters_m(net, index=i), _dev_grads):
+						mp.grad.copy_(grad)
+			else:
+				grads = [[para.grad for para in filter_para_grad(net.parameters())] for net in self.nets[:self.ngradev]]
+				for i, (net, device, (lind, rind,),) in enumerate(zip(self.nets, self.device_ids, self.optm_splt)):
+					_dev_grads = [gradu[lind:rind] for gradu in grads]
+					if i > 0:
+						_dev_grads.insert(0, _dev_grads.pop(i) if i < self.ngradev else [_pg.new_zeros(_pg.size(), device=device) for _pg in _dev_grads[0]])
+					_dev_grads = comm.reduce_add_coalesced(_dev_grads, device)
+					for mp, grad in zip(range_parameter_iter(net, lind, rind, func=filter_para_grad_iter), _dev_grads):
+						mp.grad = grad
 		elif self.ngradev > 1:
-			# in case some parameters might not be used during the forward propagation on some GPUs: p.data.new_zeros(p.data.size()) if p.grad is None else p.grad instead of p.grad, but in most cases, this can warn you in case you miss the use of some parameters in the forward computation.
-			grads = comm.reduce_add_coalesced([[p.grad for p in filter_para_grad(net.parameters())] for net in self.nets[:self.ngradev]], self.output_device)# if self.ngradev > 1 else [p.grad for p in filter_para_grad(self.nets[0].parameters())]
-			for mp, grad in zip(filter_para_grad(self.module.parameters()), grads):
-				mp.grad = grad
+			if self.is_contiguous_parameters:
+				grads = comm.reduce_add_coalesced([[para.grad for para in get_all_contiguous_parameters_m(net)] for net in self.nets[:self.ngradev]], self.output_device)
+				for mp, grad in zip(get_all_contiguous_parameters_m(self.module), grads):
+					mp.grad.copy_(grad)
+			else:
+				# in case some parameters might not be used during the forward propagation on some GPUs: p.data.new_zeros(p.data.size()) if p.grad is None else p.grad instead of p.grad, but in most cases, this can warn you in case you miss the use of some parameters in the forward computation.
+				grads = comm.reduce_add_coalesced([[para.grad for para in filter_para_grad(net.parameters())] for net in self.nets[:self.ngradev]], self.output_device)# if self.ngradev > 1 else [p.grad for p in filter_para_grad(self.nets[0].parameters())]
+				for mp, grad in zip(filter_para_grad(self.module.parameters()), grads):
+					mp.grad = grad
 
 # the parallelization of the update of parameters can be supported, but not adviced, since the cost of multi threads is much higher and thus slower than the loop unless you are running on lots of GPUs.
 # Note that gradients will be cleared every time this function was called
 	def update_replicas(self):
 
 		if self.optm_splt is None:
-			params = [para.data for para in filter_para_grad(self.module.parameters())]
-
-			if len(params) > 0:
+			if self.is_contiguous_parameters:
+				params = [para.data for para in get_all_contiguous_parameters_m(self.module)]
 				param_copies = comm.broadcast_coalesced(params, self.device_ids)
-
+				with torch.no_grad():
+					for module, param_copy in zip(self.nets[1:], param_copies[1:]):
+						for mp, para in zip(get_all_contiguous_parameters_m(module), param_copy):
+							mp.data.copy_(para)
+							mp.grad.zero_()
+			else:
+				params = [para.data for para in filter_para_grad(self.module.parameters())]
+				param_copies = comm.broadcast_coalesced(params, self.device_ids)
 				# currently, pytorch broadcast binds parameters between self.nets[0] and self.module, so the following line ensures correctness but less efficient
 				#for module, param_copy in zip(self.nets, param_copies):
 				for module, param_copy in zip(self.nets[1:], param_copies[1:]):
@@ -115,7 +163,7 @@ class DataParallelModel(DataParallel):
 						mp.data, mp.grad = para, None
 		else:
 			for i, (net, (lind, rind,),) in enumerate(zip(self.nets, self.optm_splt)):
-				_dev_params = [para.data for para in range_parameter_iter(net, lind, rind, func=filter_para_grad_iter)]
+				_dev_params = [para.data for para in get_contiguous_parameters_m(net, index=i)] if self.is_contiguous_parameters else [para.data for para in range_parameter_iter(net, lind, rind, func=filter_para_grad_iter)]
 				if i > 0:
 					_devices = self.device_ids[:]
 					_devices.insert(0, _devices.pop(i))
@@ -128,26 +176,38 @@ class DataParallelModel(DataParallel):
 						pc.extend(_dpc)
 				else:
 					param_copies = _dev_param_copies
-			for module, param_copy in zip(self.nets, param_copies):
-				for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
-					mp.data, mp.grad = para, None
+			if self.is_contiguous_parameters:
+				with torch.no_grad():
+					for module, param_copy in zip(self.nets, param_copies):
+						for mp, para in zip(get_all_contiguous_parameters_m(module), param_copy):
+							mp.data.copy_(para)
+							mp.grad.zero_()
+			else:
+				for module, param_copy in zip(self.nets, param_copies):
+					for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
+						mp.data, mp.grad = para, None
 
 		self.ngradev = 0
 
 	def update_replicas_para(self):
 
 		if self.optm_splt is None:
-			params = [para.data for para in filter_para_grad(self.module.parameters())]
-
-			if len(params) > 0:
+			if self.is_contiguous_parameters:
+				params = [para.data for para in get_all_contiguous_parameters_m(self.module)]
 				param_copies = comm.broadcast_coalesced(params, self.device_ids)
-
+				with torch.no_grad():
+					for module, param_copy in zip(self.nets[1:], param_copies[1:]):
+						for mp, para in zip(get_all_contiguous_parameters_m(module), param_copy):
+							mp.data.copy_(para)
+			else:
+				params = [para.data for para in filter_para_grad(self.module.parameters())]
+				param_copies = comm.broadcast_coalesced(params, self.device_ids)
 				for module, param_copy in zip(self.nets[1:], param_copies[1:]):
 					for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
 						mp.data = para
 		else:
 			for i, (net, (lind, rind,),) in enumerate(zip(self.nets, self.optm_splt)):
-				_dev_params = [para.data for para in range_parameter_iter(net, lind, rind, func=filter_para_grad_iter)]
+				_dev_params = [para.data for para in get_contiguous_parameters_m(net, index=i)] if self.is_contiguous_parameters else [para.data for para in range_parameter_iter(net, lind, rind, func=filter_para_grad_iter)]
 				if i > 0:
 					_devices = self.device_ids[:]
 					_devices.insert(0, _devices.pop(i))
@@ -160,59 +220,72 @@ class DataParallelModel(DataParallel):
 						pc.extend(_dpc)
 				else:
 					param_copies = _dev_param_copies
-			for module, param_copy in zip(self.nets, param_copies):
-				for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
-					mp.data = para
+				if self.is_contiguous_parameters:
+					with torch.no_grad():
+						for module, param_copy in zip(self.nets, param_copies):
+							for mp, para in zip(get_all_contiguous_parameters_m(module), param_copy):
+								mp.data.copy_(para)
+				else:
+					for module, param_copy in zip(self.nets, param_copies):
+						for mp, para in zip(filter_para_grad(module.parameters()), param_copy):
+							mp.data = para
 
-		self.ngradev = 0
-
-	def zero_grad(self, set_to_none=True):
-
-		self.module.zero_grad(set_to_none=set_to_none)
-		if self.nets is not None and self.ngradev > 1:
-			# currently, pytorch broadcast binds parameters between self.nets[0] and self.module, so the following line ensures correctness but less efficient
-			#for net in self.nets:
-			for net in self.nets[1:]:
-				net.zero_grad(set_to_none=set_to_none)
 		self.ngradev = 0
 
 	def collect_gradients_func(self, func):
 
 		if self.ngradev > 1:
 			grads = comm.reduce_add_coalesced([[p.grad for p in filter_para_grad(func(net).parameters())] for net in self.nets[:self.ngradev]], self.output_device)
-			for mp, grad in zip(filter_para_grad(func(self.module).parameters()), grads):
-				mp.grad = grad
+			if self.is_contiguous_parameters:
+				for mp, grad in zip(filter_para_grad(func(self.module).parameters()), grads):
+					mp.grad.copy_(grad)
+			else:
+				for mp, grad in zip(filter_para_grad(func(self.module).parameters()), grads):
+					mp.grad = grad
 
 	def zero_replicas_grad(self, func=None):
 
 		if self.nets is not None and self.ngradev > 1:
 			if func is None:
-				for net in self.nets[1:self.ngradev]:
-					for para in filter_para_grad(net.parameters()):
-						para.grad = None
+				if self.is_contiguous_parameters:
+					for net in self.nets[1:self.ngradev]:
+						for para in get_all_contiguous_parameters_m(net):
+							para.grad.zero_()
+				else:
+					for net in self.nets[1:self.ngradev]:
+						for para in filter_para_grad(net.parameters()):
+							para.grad = None
 			else:
-				for net in self.nets[1:self.ngradev]:
-					for para in filter_para_grad(func(net).parameters()):
-						para.grad = None
+				if self.is_contiguous_parameters:
+					for net in self.nets[1:self.ngradev]:
+						for para in filter_para_grad(func(net).parameters()):
+							para.grad.zero_()
+				else:
+					for net in self.nets[1:self.ngradev]:
+						for para in filter_para_grad(func(net).parameters()):
+							para.grad = None
 
-	def reset_grad(self):
+	def build_optimizer(self, optm_func, *optm_args, multi_gpu_optimizer=False, contiguous_parameters=False, **optm_kwargs):
 
-		for para in filter_para_grad(self.module.parameters()):
-			para.grad = None
-		if self.nets is not None and self.ngradev > 1:
-			for net in self.nets[1:self.ngradev]:
-				for para in filter_para_grad(net.parameters()):
-					para.grad = None
-		self.ngradev = 0
-
-	def build_optimizer(self, optm_func, *optm_args, **optm_kwargs):
-
+		self.is_contiguous_parameters = contiguous_parameters
 		paras = filter_para_grad(self.module.parameters())
-		if self.nets is None or (len(paras) < 2):
-			return optm_func(self.module.parameters(), *optm_args, **optm_kwargs)
+		if (not multi_gpu_optimizer) or self.nets is None or (len(paras) < 2):
+			if contiguous_parameters:
+				if self.nets is not None:
+					for net in self.nets[1:]:
+						get_contiguous_parameters_m(net)
+				_mp = get_contiguous_parameters_m(self.module)
+			else:
+				_mp = self.module.parameters()
+			return optm_func(_mp, *optm_args, **optm_kwargs)
 		else:
 			self.optm_splt, _np = divide_para_ind(paras, len(self.device_ids), return_np=True)
-			optml = [optm_func(range_parameter_iter(net, lind, rind, func=filter_para_grad_iter), *optm_args, **optm_kwargs) for net, (lind, rind,) in zip(self.nets, self.optm_splt)]
+			if contiguous_parameters:
+				for net in self.nets:
+					get_contiguous_parameters_p([list(range_parameter_iter(net, lind, rind, func=filter_para_grad_iter)) for lind, rind in self.optm_splt], model=net)
+				optml = [optm_func(get_contiguous_parameters_m(net, index=i), *optm_args, **optm_kwargs) for i, net in enumerate(self.nets)]
+			else:
+				optml = [optm_func(range_parameter_iter(net, lind, rind, func=filter_para_grad_iter), *optm_args, **optm_kwargs) for net, (lind, rind,) in zip(self.nets, self.optm_splt)]
 			# sort the optimizers with slightly more parameters ahead to start their optimization steps earlier
 			optml, _device_ids = reorder_by_sort(_np, optml, self.device_ids[:len(optml)], reverse=True)
 			return MultiGPUOptimizer(optml, device_ids=_device_ids)
@@ -225,9 +298,10 @@ class DataParallelCriterion(DataParallel):
 		super(DataParallelCriterion, self).__init__(module, device_ids=device_ids, output_device=output_device, dim=dim)
 
 		if replicate_once and self.device_ids and (len(self.device_ids) > 1):
-			self.nets = replicate(self.module, self.device_ids, True)
+			self.nets = nn.ModuleList(replicate(self.module, self.device_ids, True))
 		else:
 			self.nets = None
+		self.lock = Lock()
 
 	def forward(self, inputs, *targets, **kwargs):
 		# input should be already scatterd
@@ -241,7 +315,7 @@ class DataParallelCriterion(DataParallel):
 			return self.module(inputs[0], *targets[0], **kwargs[0])
 		devices = self.device_ids[:ngpu]
 		replicas = self.replicate(self.module, devices) if self.nets is None else self.nets[:ngpu]
-		outputs = criterion_parallel_apply(replicas, inputs, targets, devices, kwargs)
+		outputs = criterion_parallel_apply(replicas, inputs, targets, devices, kwargs, lock=self.lock)
 
 		return self.gather(outputs, self.output_device)
 
@@ -283,8 +357,7 @@ def replicate(network, devices, no_gradient=False):
 		module_indices[module] = i
 		for j in range(num_replicas):
 			if isinstance(module, ScriptModule):
-				# we have to initialize ScriptModule properly so that
-				# it works with pybind11
+				# we have to initialize ScriptModule properly so that it works with pybind11
 				replica = module._replicate_for_data_parallel()
 				replica._former_parameters = OrderedDict()
 				'''replica = ScriptModule()
@@ -351,12 +424,12 @@ def replicate(network, devices, no_gradient=False):
 
 # update these two functions with the update of parallel_apply(https://github.com/pytorch/pytorch/blob/master/torch/nn/parallel/parallel_apply.py)
 
-def parallel_apply(modules, inputs, devices, kwargs_tup=None):
+def parallel_apply(modules, inputs, devices, kwargs_tup=None, lock=None):
 
 	if kwargs_tup is None:
 		kwargs_tup = ({},) * len(modules)
 
-	lock = Lock()
+	lock = Lock() if lock is None else lock
 	results = {}
 	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
 
@@ -381,14 +454,15 @@ def parallel_apply(modules, inputs, devices, kwargs_tup=None):
 	for i in range(len(inputs)):
 		output = results[i]
 		outputs.append(output)
+
 	return outputs
 
-def criterion_parallel_apply(modules, inputs, targets, devices, kwargs_tup=None):
+def criterion_parallel_apply(modules, inputs, targets, devices, kwargs_tup=None, lock=None):
 
 	if kwargs_tup is None:
 		kwargs_tup = ({},) * len(modules)
 
-	lock = Lock()
+	lock = Lock() if lock is None else lock
 	results = {}
 	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
 
@@ -414,4 +488,5 @@ def criterion_parallel_apply(modules, inputs, targets, devices, kwargs_tup=None)
 	for i in range(len(inputs)):
 		output = results[i]
 		outputs.append(output)
+
 	return outputs

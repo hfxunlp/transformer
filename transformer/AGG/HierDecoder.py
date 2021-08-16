@@ -4,8 +4,7 @@ import torch
 from torch import nn
 from modules.base import *
 
-from transformer.Decoder import DecoderLayer as DecoderLayerBase
-from transformer.Decoder import Decoder as DecoderBase
+from transformer.Decoder import DecoderLayer as DecoderLayerBase, Decoder as DecoderBase
 
 from utils.base import align_modules_by_type
 

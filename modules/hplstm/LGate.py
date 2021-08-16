@@ -6,7 +6,7 @@ try:
 	import lgate_cpp
 except Exception as e:
 	from torch.utils.cpp_extension import load
-	lgate_cpp = load(name="lgate_cpp", sources=["modules/hplstm/cpp/lgate.cpp"])
+	lgate_cpp = load(name="lgate_cpp", sources=["modules/cpp/hplstm/lgate.cpp"])
 
 class LGateFunction(Function):
 
@@ -22,8 +22,12 @@ class LGateFunction(Function):
 	@staticmethod
 	def backward(ctx, grad_cell):
 
-		cell, fgate, init_cell = ctx.saved_variables
-		grad_fgate, grad_igh, grad_init_cell = lgate_cpp.backward(grad_cell, cell, fgate, init_cell, ctx.dim)
-		return grad_fgate, grad_igh, grad_init_cell, None, None
+		needs_grad_fgate, needs_grad_igh, needs_grad_init_cell = ctx.needs_input_grad[0:3]
+		if needs_grad_fgate or needs_grad_igh or needs_grad_init_cell:
+			cell, fgate, init_cell = ctx.saved_variables
+			grad_fgate, grad_igh, grad_init_cell = lgate_cpp.backward(grad_cell, cell, fgate, init_cell, ctx.dim)
+			return grad_fgate if needs_grad_fgate else None, grad_igh if needs_grad_igh else None, grad_init_cell if needs_grad_init_cell else None, None, None
+		else:
+			return None, None, None, None, None
 
 LGateFunc = LGateFunction.apply

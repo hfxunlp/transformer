@@ -28,17 +28,10 @@ class DecoderLayer(nn.Module):
 		_ahsize = isize if ahsize is None else ahsize
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.self_attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos, uni_direction_reduction=True)
-		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop)
+		self.self_attn = ResSelfAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual, k_rel_pos=k_rel_pos, uni_direction_reduction=True)
+		self.cross_attn = ResCrossAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual)
 
 		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
-
-		self.layer_normer1 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
-		self.layer_normer2 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
-
-		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
-
-		self.norm_residual = norm_residual
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: embedding of decoded translation (bsize, nquery, isize)
@@ -46,6 +39,44 @@ class DecoderLayer(nn.Module):
 	#	src_pad_mask = input.eq(0).unsqueeze(1)
 	# tgt_pad_mask: mask to hide the future input
 	# query_unit: single query to decode, used to support decoding for given step
+
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None):
+
+		if query_unit is None:
+			context = self.self_attn(inputo, mask=tgt_pad_mask)
+		else:
+			context, states_return = self.self_attn(query_unit, states=inputo)
+
+		context = self.cross_attn(context, inpute, mask=src_pad_mask)
+
+		context = self.ff(context)
+
+		if query_unit is None:
+			return context
+		else:
+			return context, states_return
+
+# Not used, keep this class to remind the DecoderLayer implementation before v0.3.5.
+class NAWDecoderLayer(DecoderLayer):
+
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_decoder):
+
+		_ahsize = isize if ahsize is None else ahsize
+		_fhsize = _ahsize * 4 if fhsize is None else fhsize
+
+		super(NAWDecoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, norm_residual=norm_residual, k_rel_pos=k_rel_pos)
+
+		self.layer_normer1, self.drop, self.norm_residual = self.self_attn.normer, self.self_attn.drop, self.self_attn.norm_residual
+		self.self_attn = self.self_attn.net
+		self.layer_normer2 = self.cross_attn.normer
+		self.cross_attn = self.cross_attn.net
+		#self.self_attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos, uni_direction_reduction=True)
+		#self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop)
+		#self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
+		#self.layer_normer1 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		#self.layer_normer2 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		#self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
+		#self.norm_residual = norm_residual
 
 	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None):
 
@@ -483,7 +514,7 @@ class Decoder(nn.Module):
 	def update_vocab(self, indices):
 
 		_nwd = len(indices)
-		_wemb = nn.Embedding(_nwd, self.wemb.weight.size(-1), padding_idx=pad_id)
+		_wemb = nn.Embedding(_nwd, self.wemb.weight.size(-1), padding_idx=self.wemb.padding_idx)
 		_classifier = Linear(self.classifier.weight.size(-1), _nwd)
 		with torch.no_grad():
 			_wemb.weight.copy_(self.wemb.weight.index_select(0, indices))

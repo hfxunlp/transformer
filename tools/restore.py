@@ -2,8 +2,8 @@
 
 import sys
 
-# WARNING: all_true might be too strict in some cases which may use any_true
-from utils.fmt.base import clean_str, all_true, FileList
+# WARNING: all() might be too strict in some cases which may use any()
+from utils.fmt.base import clean_str, FileList
 
 # srtfl: (k - 1) source + 1 target
 def handle(srcfl, srtfl, tgtf):
@@ -13,7 +13,7 @@ def handle(srcfl, srtfl, tgtf):
 	with FileList(srtfl, "rb") as fs:
 		for lines in zip(*fs):
 			lines = tuple(line.strip() for line in lines)
-			if all_true(lines):
+			if all(lines):
 				lines = tuple(clean_str(line.decode("utf-8")) for line in lines)
 				data[lines[:-1]] = lines[-1].encode("utf-8")
 
@@ -21,7 +21,7 @@ def handle(srcfl, srtfl, tgtf):
 	with FileList(srcfl, "rb") as fs, open(tgtf, "wb") as ft:
 		for lines in zip(*fs):
 			lines = tuple(line.strip() for line in lines)
-			if all_true(lines):
+			if all(lines):
 				lines = tuple(clean_str(line.decode("utf-8")) for line in lines)
 				if lines in data:
 					ft.write(data[lines])

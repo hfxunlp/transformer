@@ -6,8 +6,7 @@ import torch
 from torch import nn
 from torch.autograd import Function
 
-from modules.base import CrossAttn as CrossAttnBase
-from modules.base import SelfAttn as SelfAttnBase
+from modules.base import CrossAttn as CrossAttnBase, SelfAttn as SelfAttnBase, ResSelfAttn as ResSelfAttnBase, ResCrossAttn as ResCrossAttnBase
 
 from cnfg.ihyp import *
 
@@ -119,3 +118,19 @@ class CrossAttn(CrossAttnBase):
 		self.normer = base_module.normer
 
 		self.drop = base_module.drop
+
+class ResSelfAttn(ResSelfAttnBase):
+
+	def __init__(self, isize, hsize, num_head=8, dropout=0.0, norm_residual=norm_residual_default, **kwargs):
+
+		super(ResSelfAttn, self).__init__(isize, hsize, num_head=num_head, dropout=dropout, norm_residual=norm_residual, **kwargs)
+
+		self.net = SelfAttn(isize, hsize, isize, num_head=num_head, dropout=dropout, **kwargs)
+
+class ResCrossAttn(ResCrossAttnBase):
+
+	def __init__(self, isize, hsize, num_head=8, dropout=0.0, norm_residual=norm_residual_default, **kwargs):
+
+		super(ResCrossAttn, self).__init__(isize, hsize, num_head=num_head, dropout=dropout, norm_residual=norm_residual, **kwargs)
+
+		self.net = CrossAttn(isize, hsize, isize, num_head=num_head, dropout=dropout, **kwargs)

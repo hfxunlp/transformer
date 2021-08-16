@@ -3,21 +3,18 @@
 import torch
 from torch import Tensor
 from torch.nn import ModuleDict
-
+from os import makedirs, remove
+from os.path import exists as fs_check
 from threading import Thread
-
 from functools import wraps
-
-from random import sample
-from random import seed as rpyseed
-
+from random import sample, seed as rpyseed
 from math import ceil
 
 import logging
 
 from utils.h5serial import h5save, h5load
 
-from cnfg.ihyp import h5modelwargs
+from cnfg.ihyp import h5modelwargs, optm_step_zero_grad_set_none
 
 secure_type_map = {torch.float16: torch.float64, torch.float32: torch.float64, torch.uint8: torch.int64, torch.int8: torch.int64, torch.int16: torch.int64, torch.int32: torch.int64}
 
@@ -193,39 +190,49 @@ def load_model_cpu_old(modf, base_model):
 
 	return base_model
 
-def save_model(model, fname, sub_module=False, logger=None, h5args=h5modelwargs):
+_save_model_cleaner_holder = {}
+def save_model_cleaner(fname, typename, holder=_save_model_cleaner_holder):
+
+	if typename in holder:
+		holder[typename].update(fname)
+	else:
+		holder[typename] = bestfkeeper(fname)
+
+def save_model(model, fname, sub_module=False, print_func=print, mtyp=None, h5args=h5modelwargs):
 
 	_msave = model.module if sub_module else model
 	try:
 		h5save([t.data for t in _msave.parameters()], fname, h5args=h5args)
+		if mtyp is not None:
+			save_model_cleaner(fname, mtyp)
 	except Exception as e:
-		if logger is None:
-			print(e)
-		else:
-			logger.info(str(e))
+		if print_func is not None:
+			print_func(str(e))
 
-def async_save_model(model, fname, sub_module=False, logger=None, h5args=h5modelwargs, para_lock=None, log_success=None):
+def async_save_model(model, fname, sub_module=False, print_func=print, mtyp=None, h5args=h5modelwargs, para_lock=None, log_success=None):
 
-	def _worker(model, fname, sub_module=False, logger=None, para_lock=None, log_success=None):
+	def _worker(model, fname, sub_module=False, print_func=print, mtyp=None, para_lock=None, log_success=None):
 
 		success = True
 		_msave = model.module if sub_module else model
 		try:
 			if para_lock is None:
 				h5save([t.data for t in _msave.parameters()], fname, h5args=h5args)
+				if mtyp is not None:
+					save_model_cleaner(fname, mtyp)
 			else:
 				with para_lock:
 					h5save([t.data for t in _msave.parameters()], fname, h5args=h5args)
+					if mtyp is not None:
+						save_model_cleaner(fname, mtyp)
 		except Exception as e:
-			if logger is None:
-				print(e)
-			else:
-				logger.info(str(e))
+			if print_func is not None:
+				print_func(str(e))
 			success = False
-		if success and (logger is not None) and (log_success is not None):
-			logger.info(log_success)
+		if success and (print_func is not None) and (log_success is not None):
+			print_func(str(log_success))
 
-	Thread(target=_worker, args=(model, fname, sub_module, logger, para_lock, log_success)).start()
+	Thread(target=_worker, args=(model, fname, sub_module, print_func, mtyp, para_lock, log_success)).start()
 
 def get_logger(fname):
 
@@ -416,7 +423,7 @@ def iternext(iterin):
 
 	return rs
 
-def optm_step(optm, model=None, scaler=None, closure=None, multi_gpu=False, multi_gpu_optimizer=False):
+def optm_step(optm, model=None, scaler=None, closure=None, multi_gpu=False, multi_gpu_optimizer=False, zero_grad_none=optm_step_zero_grad_set_none):
 
 	if multi_gpu:
 		model.collect_gradients()
@@ -426,7 +433,7 @@ def optm_step(optm, model=None, scaler=None, closure=None, multi_gpu=False, mult
 		scaler.step(optm, closure=closure)
 		scaler.update()
 	if not multi_gpu_optimizer:
-		optm.zero_grad(set_to_none=True)
+		optm.zero_grad(set_to_none=zero_grad_none)
 	if multi_gpu:
 		model.update_replicas()
 
@@ -512,3 +519,38 @@ def range_parameter_iter_func(model, lind, rind, func=None):
 					break
 
 	return iter_func
+
+def mkdir(pth):
+
+	if not fs_check(pth):
+		makedirs(pth)
+
+class holder(dict):
+
+	def __enter__(self):
+
+		return self
+
+	def get_hold(self, k, sv=None):
+
+		if k in self:
+			return self[k]
+		else:
+			self[k] = sv
+			return sv
+
+	def __exit__(self, *inputs, **kwargs):
+
+		pass
+
+class bestfkeeper:
+
+	def __init__(self, fname=None):
+
+		self.prev_fname = fname
+
+	def update(self, fname=None):
+
+		if self.prev_fname is not None and fs_check(self.prev_fname):
+			remove(self.prev_fname)
+		self.prev_fname = fname

@@ -13,7 +13,7 @@ export srcvf=dev.tc.en
 export tgtvf=dev.tc.de
 
 export vratio=0.2
-export rratio=0.4
+export rratio=0.6
 export maxtokens=256
 
 export bpeops=32000

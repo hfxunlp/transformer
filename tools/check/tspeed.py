@@ -77,7 +77,6 @@ if cuda_device:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 
 beam_size = cnfg.beam_size
-
 length_penalty = cnfg.length_penalty
 
 src_grp = td["src"]

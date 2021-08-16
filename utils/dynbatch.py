@@ -5,6 +5,7 @@ import torch
 from math import log2, exp, pi, acos
 from random import random
 from utils.angle import prep_cos, cos_acc_pg
+from utils.random import multinomial
 
 # comment the following line and uncomment the 4 lines following it to load para_group_select_alpha from cnfg.dynb
 para_group_select_alpha = 3.0
@@ -162,27 +163,11 @@ def select_gumble_max(lin):
 
 def sample_norm_softmax(lin):
 
-	_p = random()
-	rs_ind = len(lin) - 1
-	for i, lu in enumerate(softmax(lin)):
-		_p -= lu
-		if _p < 0.0:
-			rs_ind = i
-			break
-
-	return rs_ind
+	return multinomial(softmax(lin), s=1.0)
 
 def sample_norm(lin, alpha=1.0):
 
-	_p = random()
-	rs_ind = len(lin) - 1
-	for i, lu in enumerate(pos_norm(lin, alpha)):
-		_p -= lu
-		if _p < 0.0:
-			rs_ind = i
-			break
-
-	return rs_ind
+	return multinomial(pos_norm(lin, alpha), s=1.0)
 
 def sample_gumble_norm(lin, alpha=para_group_select_alpha):
 

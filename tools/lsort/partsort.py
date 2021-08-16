@@ -1,9 +1,9 @@
 #encoding: utf-8
 
 import sys
-from os import path
+from os.path import join as pjoin
 
-from utils.fmt.base import clean_liststr_lentok, all_true, all_le, iter_dict_sort, dict_insert_list, dict_insert_set, FileList
+from utils.fmt.base import clean_liststr_lentok, all_le, iter_dict_sort, dict_insert_list, dict_insert_set, FileList
 
 def handle(srcfl, tgtd, max_len=256, remove_same=False, cache_token=500000000):
 
@@ -27,19 +27,19 @@ def handle(srcfl, tgtd, max_len=256, remove_same=False, cache_token=500000000):
 	with FileList(srcfl, "rb") as fl:
 		for lines in zip(*fl):
 			lines = [line.strip() for line in lines]
-			if all_true(lines):
+			if all(lines):
 				lines, lens = zip(*[clean_liststr_lentok(line.decode("utf-8").split()) for line in lines])
 				if all_le(lens, max_len):
 					lgth = sum(lens)
 					data = _insert_func(data, tuple(line.encode("utf-8") for line in lines), lgth, *reversed(lens[1:]))
 					mem_token += lgth
 					if mem_token >= cache_token:
-						save_cache(data, [path.join(tgtd, "%d.%d.txt" % (i, curf,)) for i in range(num_files)])
+						save_cache(data, [pjoin(tgtd, "%d.%d.txt" % (i, curf,)) for i in range(num_files)])
 						data = {}
 						mem_token = 0
 						curf += 1
 	if data:
-		save_cache(data, [path.join(tgtd, "%d.%d.txt" % (i, curf,)) for i in range(num_files)])
+		save_cache(data, [pjoin(tgtd, "%d.%d.txt" % (i, curf,)) for i in range(num_files)])
 
 if __name__ == "__main__":
 	handle(sys.argv[1:-2], sys.argv[-2], int(sys.argv[-1]))

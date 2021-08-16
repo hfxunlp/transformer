@@ -2,7 +2,7 @@
 
 import torch
 from torch import nn
-from modules.base import CrossAttn, Dropout
+from modules.base import ResCrossAttn, Dropout
 from modules.hplstm.hfn import HPLSTM
 from utils.sampler import SampleMax
 from utils.base import all_done, index_tensors, expand_bsize_for_beam
@@ -26,13 +26,11 @@ class DecoderLayer(nn.Module):
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.net = HPLSTM(isize, num_head=num_head, osize=isize, fhsize=_fhsize, dropout=dropout)
-		self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop)
+		self.cross_attn = ResCrossAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual)
 
 		self.layer_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
-
-		self.norm_residual = norm_residual
 
 	def forward(self, inpute, inputo, src_pad_mask=None, query_unit=None):
 
@@ -53,13 +51,7 @@ class DecoderLayer(nn.Module):
 
 			context = context + query_unit
 
-		_context = self.layer_normer(context)
-		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
-
-		if self.drop is not None:
-			_context_new = self.drop(_context_new)
-
-		context = _context_new + (_context if self.norm_residual else context)
+		context = self.cross_attn(context, inpute, mask=src_pad_mask)
 
 		if query_unit is None:
 			return context

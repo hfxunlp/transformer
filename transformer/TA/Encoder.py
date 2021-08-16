@@ -3,11 +3,10 @@
 import torch
 from torch import nn
 from modules.base import Dropout
-from modules.TA import PositionwiseFF
+from modules.TA import ResSelfAttn, PositionwiseFF
 from math import sqrt
 
-from transformer.Encoder import EncoderLayer as EncoderLayerBase
-from transformer.Encoder import Encoder as EncoderBase
+from transformer.Encoder import EncoderLayer as EncoderLayerBase, Encoder as EncoderBase
 
 from cnfg.ihyp import *
 
@@ -26,6 +25,7 @@ class EncoderLayer(EncoderLayerBase):
 
 		super(EncoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, **kwargs)
 
+		self.attn = ResSelfAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop)
 		self.ff = PositionwiseFF(isize, _fhsize, dropout)
 
 	# inputs: input of this layer (bsize, seql, isize)
@@ -33,11 +33,6 @@ class EncoderLayer(EncoderLayerBase):
 	def forward(self, inputs, mask=None):
 
 		context = self.attn(inputs, mask=mask)
-
-		if self.drop is not None:
-			context = self.drop(context)
-
-		context = self.layer_normer(context + inputs)
 
 		context = self.ff(context)
 

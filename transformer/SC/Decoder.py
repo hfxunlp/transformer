@@ -5,15 +5,14 @@ from torch import nn
 
 from modules.base import ResidueCombiner
 from utils.sampler import SampleMax
-from modules.TA import PositionwiseFF
+from modules.TA import ResCrossAttn, PositionwiseFF
 
 from utils.base import all_done, index_tensors, expand_bsize_for_beam, repeat_bsize_for_beam_tensor
 from math import sqrt
 
 from utils.fmt.base import pad_id
 
-from transformer.Decoder import DecoderLayer as DecoderLayerBase
-from transformer.Decoder import Decoder as DecoderBase
+from transformer.Decoder import DecoderLayer as DecoderLayerBase, Decoder as DecoderBase
 
 from cnfg.ihyp import *
 
@@ -26,8 +25,11 @@ class DecoderLayer(DecoderLayerBase):
 
 		super(DecoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, **kwargs)
 
+		self.cross_attn = ResCrossAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=self.cross_attn.norm_residual)
 		self.ff = PositionwiseFF(isize, _fhsize, dropout)
 		self.scff = ResidueCombiner(isize, 2, _fhsize)
+		self.drop, self.layer_normer1 = self.self_attn.drop, self.self_attn.drop.normer
+		self.self_attn = self.self_attn.net
 
 	def forward(self, inpute, inputh, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None):
 
@@ -55,12 +57,7 @@ class DecoderLayer(DecoderLayerBase):
 
 		_context = self.layer_normer1(context)
 
-		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
-
-		if self.drop is not None:
-			_context_new = self.drop(_context_new)
-
-		context = self.layer_normer2(_context_new + _context)
+		context = self.cross_attn(_context, inpute, mask=src_pad_mask)
 
 		context = self.ff(context)
 

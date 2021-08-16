@@ -8,8 +8,7 @@ from math import sqrt
 
 from utils.base import mask_tensor_type
 
-from transformer.Encoder import EncoderLayer as EncoderLayerBase
-from transformer.Encoder import Encoder as EncoderBase
+from transformer.Encoder import EncoderLayer as EncoderLayerBase, Encoder as EncoderBase
 
 from cnfg.ihyp import *
 

@@ -2,10 +2,9 @@
 
 import sys
 
-import h5py
-
 from utils.base import *
 from utils.init import init_model_params
+from utils.h5serial import h5File
 
 import cnfg.probe as cnfg
 from cnfg.ihyp import *
@@ -15,9 +14,8 @@ from transformer.Probe.NMT import NMT
 
 def handle(cnfg, srcmtf, decf, rsf):
 
-	tdf = h5py.File(cnfg.dev_data, "r")
-	nwordi, nwordt = tdf["nword"][:].tolist()
-	tdf.close()
+	with h5File(cnfg.dev_data, "r") as tdf:
+		nwordi, nwordt = tdf["nword"][:].tolist()
 
 	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_layer_fwd)
 	init_model_params(mymodel)
@@ -32,7 +30,7 @@ def handle(cnfg, srcmtf, decf, rsf):
 		mymodel.dec.classifier.weight = mymodel.dec.wemb.weight
 	_tmpm = None
 
-	save_model(mymodel, rsf, sub_module=False, logger=None, h5args=h5zipargs)
+	save_model(mymodel, rsf, sub_module=False, h5args=h5zipargs)
 
 if __name__ == "__main__":
 	handle(cnfg, sys.argv[1], sys.argv[2], sys.argv[3])

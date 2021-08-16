@@ -6,9 +6,9 @@ from modules.base import Linear, Dropout
 from modules.group.base import GroupLinear
 from modules.act import Custom_Act
 from modules.hplstm.LGate import LGateFunc
+from utils.base import float2odd
 
-from modules.hplstm.base import HPLSTM as HPLSTMBase
-from modules.hplstm.base import BiHPLSTM as BiHPLSTMBase
+from modules.hplstm.base import HPLSTM as HPLSTMBase, BiHPLSTM as BiHPLSTMBase
 
 from cnfg.ihyp import *
 
@@ -19,21 +19,22 @@ class MHPLSTMCore(nn.Module):
 		super(MHPLSTMCore, self).__init__()
 
 		_osize = isize if osize is None else osize
-		_fhsize = _osize * 4 if fhsize is None else fhsize
-		_head_fhsize = _fhsize // num_head
+
+		i_head_dim = float2odd(float(isize) / num_head)
+		i_hsize = i_head_dim * num_head
+		o_head_dim = float2odd(float(_osize) / num_head)
+		o_hsize = o_head_dim * num_head
+		_head_fhsize = float2odd(float(o_hsize * 4 if fhsize is None else fhsize) / num_head)
 		_fhsize = _head_fhsize * num_head
 
-		head_dim = isize // num_head
-		hsize = head_dim * num_head
+		self.trans_hid = nn.Sequential(GroupLinear(i_hsize + i_hsize, _fhsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, _head_fhsize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters), Custom_Act() if custom_act else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_Custom_Act), GroupLinear(_fhsize, o_hsize, num_head, bias=enable_proj_bias, shuffle=False, trans_input=False, flatten_output=False), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(GroupLinear(i_hsize + i_hsize, _fhsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, _head_fhsize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters), Custom_Act() if custom_act else nn.ReLU(inplace=True), GroupLinear(_fhsize, o_hsize, num_head, bias=enable_proj_bias, shuffle=False, trans_input=False, flatten_output=False))
+		self.trans_ifg = GroupLinear(i_hsize + i_hsize, o_hsize + o_hsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False)
+		self.trans_og = nn.Sequential(GroupLinear(i_hsize + o_hsize, o_hsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, o_head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters))
 
-		self.trans_hid = nn.Sequential(GroupLinear(hsize + hsize, _fhsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, _head_fhsize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters), Custom_Act() if custom_act else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_Custom_Act), GroupLinear(_fhsize, hsize, num_head, bias=enable_proj_bias, shuffle=False, trans_input=False, flatten_output=False), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(GroupLinear(hsize + hsize, _fhsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, _head_fhsize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters), Custom_Act() if custom_act else nn.ReLU(inplace=True), GroupLinear(_fhsize, hsize, num_head, bias=enable_proj_bias, shuffle=False, trans_input=False, flatten_output=False))
-		self.trans_ifg = GroupLinear(hsize + hsize, hsize + hsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False)
-		self.trans_og = nn.Sequential(GroupLinear(hsize + hsize, hsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters))
+		self.normer_csum = nn.LayerNorm((num_head, i_head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+		self.normer_ifg = nn.LayerNorm((num_head, 2, o_head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
-		self.normer_csum = nn.LayerNorm((num_head, head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
-		self.normer_ifg = nn.LayerNorm((num_head, 2, head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
-
-		self.init_cx = nn.Parameter(torch.zeros(1, num_head, head_dim))
+		self.init_cx = nn.Parameter(torch.zeros(1, num_head, o_head_dim))
 
 	def forward(self, heads_input, states=None, head_mask=None):
 
@@ -50,7 +51,7 @@ class MHPLSTMCore(nn.Module):
 				csum = self.normer_csum(_csum_state)
 				csum_state_return = _csum_state + heads_input
 		gh_input = torch.cat((heads_input, csum,), dim=-1)
-		(igate, fgate,), hidden = self.normer_ifg(self.trans_ifg(gh_input).view(bsize, seql, nheads, 2, adim)).unbind(-2), self.trans_hid(gh_input)
+		(igate, fgate,), hidden = self.normer_ifg(self.trans_ifg(gh_input).view(bsize, seql, nheads, 2, -1)).unbind(-2), self.trans_hid(gh_input)
 		fgate = fgate.sigmoid()
 		igh = igate.sigmoid() * hidden
 		if head_mask is not None:
@@ -75,19 +76,25 @@ class HPLSTM(HPLSTMBase):
 	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, **kwargs):
 
 		_osize = isize if osize is None else osize
-		_fhsize = _osize * 4 if fhsize is None else fhsize
 
 		super(HPLSTM, self).__init__(isize, num_head=num_head, osize=_osize, dropout=dropout, **kwargs)
 
-		self.net = MHPLSTMCore(isize, num_head=self.num_head, osize=_osize, fhsize=_fhsize, dropout=dropout)
+		i_hsize = float2odd(float(isize) / num_head) * num_head
+		o_hsize = float2odd(float(_osize) / num_head) * num_head
+		_fhsize = float2odd(float(o_hsize * 4 if fhsize is None else fhsize) / num_head) * num_head
+
+		self.net = MHPLSTMCore(i_hsize, num_head=self.num_head, osize=o_hsize, fhsize=_fhsize, dropout=dropout)
 
 class BiHPLSTM(BiHPLSTMBase):
 
 	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, **kwargs):
 
 		_osize = isize if osize is None else osize
-		_fhsize = _osize * 4 if fhsize is None else fhsize
 
 		super(BiHPLSTM, self).__init__(isize, num_head=num_head, osize=_osize, dropout=dropout, **kwargs)
 
-		self.net = MHPLSTMCore(isize + isize, num_head=self.num_head + self.num_head, osize=_osize + _osize, fhsize=_fhsize + _fhsize, dropout=dropout)
+		i_hsize = float2odd(float(isize) / num_head) * num_head
+		o_hsize = float2odd(float(_osize) / num_head) * num_head
+		_fhsize = float2odd(float(o_hsize * 4 if fhsize is None else fhsize) / num_head) * num_head
+
+		self.net = MHPLSTMCore(i_hsize + i_hsize, num_head=self.num_head + self.num_head, osize=o_hsize + o_hsize, fhsize=_fhsize + _fhsize, dropout=dropout)

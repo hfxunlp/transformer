@@ -16,22 +16,9 @@ class MSEncoderLayer(MSEncoderLayerBase):
 
 	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None):
 
-		_inputo = self.layer_normer1(inputo)
+		context = self.self_attn(inputo, mask=tgt_pad_mask)
 
-		context = self.self_attn(_inputo, mask=tgt_pad_mask)
-
-		if self.drop is not None:
-			context = self.drop(context)
-
-		context = context + (_inputo if self.norm_residual else inputo)
-
-		_context = self.layer_normer2(context)
-		_context_new = self.cross_attn(_context, inpute, mask=src_pad_mask)
-
-		if self.drop is not None:
-			_context_new = self.drop(_context_new)
-
-		context = _context_new + (_context if self.norm_residual else context)
+		context = self.cross_attn(context, inpute, mask=src_pad_mask)
 
 		context = self.ff(context)
 

@@ -20,6 +20,8 @@ fine_tune_m = None
 # add 3 to forbidden_indexes if there are <unk> tokens in data
 forbidden_indexes = [0, 1]
 
+save_auto_clean = True
+overwrite_eva = False
 save_every = 1500
 num_checkpoint = 4
 epoch_start_checkpoint_save = 3

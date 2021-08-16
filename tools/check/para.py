@@ -6,7 +6,7 @@
 
 import sys
 
-import h5py
+from utils.h5serial import h5File
 
 def handle_group(srcg):
 
@@ -21,9 +21,8 @@ def handle_group(srcg):
 
 def handle(srcf):
 
-	sfg = h5py.File(srcf, "r")
-	rs = handle_group(sfg)
-	sfg.close()
+	with h5File(srcf, "r") as sfg:
+		rs = handle_group(sfg)
 	print(rs)
 
 if __name__ == "__main__":

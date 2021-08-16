@@ -3,8 +3,8 @@
 import sys
 
 import numpy
-import h5py
 
+from utils.h5serial import h5File
 from utils.fmt.base import ldvocab, dict2pairs
 from utils.fmt.doc.para.dual import batch_padder
 
@@ -19,27 +19,26 @@ def handle(finput, ftarget, fvocab_i, fvocab_t, frs, minbsize=1, expand_for_mulg
 	else:
 		_bsize = bsize
 		_maxtoken = maxtoken
-	rsf = h5py.File(frs, 'w')
-	src_grp = rsf.create_group("src")
-	tgt_grp = rsf.create_group("tgt")
-	curd = {}
-	for i_d, td, nsent in batch_padder(finput, ftarget, vcbi, vcbt, _bsize, maxpad, maxpart, _maxtoken, minbsize):
-		rid = numpy.array(i_d, dtype=numpy.int32)
-		rtd = numpy.array(td, dtype=numpy.int32)
-		_nsentgid = str(nsent)
-		_curd = curd.get(nsent, 0)
-		if _curd == 0:
-			src_grp.create_group(_nsentgid)
-			tgt_grp.create_group(_nsentgid)
-		_curid = str(_curd)
-		src_grp[_nsentgid].create_dataset(_curid, data=rid, **h5datawargs)
-		tgt_grp[_nsentgid].create_dataset(_curid, data=rtd, **h5datawargs)
-		curd[nsent] = _curd + 1
-	sents, ndl = dict2pairs(curd)
-	rsf["nsent"] = numpy.array(sents, dtype=numpy.int32)
-	rsf["ndata"] = numpy.array(ndl, dtype=numpy.int32)
-	rsf["nword"] = numpy.array([nwordi, nwordt], dtype=numpy.int32)
-	rsf.close()
+	with h5File(frs, 'w') as rsf:
+		src_grp = rsf.create_group("src")
+		tgt_grp = rsf.create_group("tgt")
+		curd = {}
+		for i_d, td, nsent in batch_padder(finput, ftarget, vcbi, vcbt, _bsize, maxpad, maxpart, _maxtoken, minbsize):
+			rid = numpy.array(i_d, dtype=numpy.int32)
+			rtd = numpy.array(td, dtype=numpy.int32)
+			_nsentgid = str(nsent)
+			_curd = curd.get(nsent, 0)
+			if _curd == 0:
+				src_grp.create_group(_nsentgid)
+				tgt_grp.create_group(_nsentgid)
+			_curid = str(_curd)
+			src_grp[_nsentgid].create_dataset(_curid, data=rid, **h5datawargs)
+			tgt_grp[_nsentgid].create_dataset(_curid, data=rtd, **h5datawargs)
+			curd[nsent] = _curd + 1
+		sents, ndl = dict2pairs(curd)
+		rsf["nsent"] = numpy.array(sents, dtype=numpy.int32)
+		rsf["ndata"] = numpy.array(ndl, dtype=numpy.int32)
+		rsf["nword"] = numpy.array([nwordi, nwordt], dtype=numpy.int32)
 	print("Number of batches: %d\nSource Vocabulary Size: %d\nTarget Vocabulary Size: %d" % (sum(ndl), nwordi, nwordt,))
 
 if __name__ == "__main__":

@@ -46,7 +46,7 @@ except Exception as e:
 # GELU is nonmonotonic function that has a shape similar to Swish with beta = 1.4 (https://arxiv.org/abs/1710.05941).
 class Swish(nn.Module):
 
-	def __init__(self, beta=1.0, freeze_beta=True, isize=None, dim=-1 if use_norm_Swish else None, eps=ieps_default):
+	def __init__(self, beta=1.0, freeze_beta=True, isize=None, dim=-1 if adv_act == "normswish" else None, eps=ieps_default):
 
 		super(Swish, self).__init__()
 
@@ -80,14 +80,7 @@ class Mish(nn.Module):
 
 		return x * nnFunc.softplus(x).tanh()
 
-if custom_act_Swish:
-	Custom_Act = Swish
-elif custom_act_Sigmoid:
-	Custom_Act = nn.Sigmoid
-elif custom_act_Mish:
-	Custom_Act = Mish
-else:
-	Custom_Act = GELU
+Custom_Act = {"swish": Swish, "normswish": Swish, "sigmoid": nn.Sigmoid, "mish": Mish}.get(adv_act, GELU)
 
 # SparseMax (https://arxiv.org/pdf/1602.02068) borrowed form OpenNMT-py( https://github.com/OpenNMT/OpenNMT-py/blob/master/onmt/modules/sparse_activations.py)
 class SparsemaxFunction(Function):

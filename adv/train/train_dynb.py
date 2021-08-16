@@ -11,6 +11,7 @@ from parallel.optm import MultiGPUGradScaler
 
 from utils.base import *
 from utils.init import init_model_params
+from utils.contpara import get_model_parameters
 from utils.dynbatch import GradientMonitor
 from utils.h5serial import h5save, h5load
 from utils.fmt.base import tostr, save_states, load_states, pad_id, parse_double_value_tuple
@@ -23,9 +24,6 @@ from loss.base import LabelSmoothingLoss
 from random import shuffle
 
 from tqdm import tqdm
-
-from os import makedirs
-from os.path import exists as p_check
 
 import h5py
 
@@ -96,8 +94,8 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			if _do_optm_step:
 				if multi_gpu:
 					model.collect_gradients()
-				optm_step(optm, scaler)
-				optm.zero_grad(set_to_none=True)
+				optm_step(optm, scaler, zero_grad_none=optm_step_zero_grad_set_none)
+				optm.zero_grad(set_to_none=optm_step_zero_grad_set_none)
 				if multi_gpu:
 					model.update_replicas()
 				lrsch.step()
@@ -105,7 +103,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				if multi_gpu:
 					model.reset_grad()
 				else:
-					optm.zero_grad(set_to_none=True)
+					optm.zero_grad(set_to_none=optm_step_zero_grad_set_none)
 			_done_tokens = 0
 			if _cur_rstep is not None:
 				if save_checkp_epoch and (save_every is not None) and (_cur_rstep % save_every == 0) and (chkpf is not None) and (_cur_rstep > 0):
@@ -118,7 +116,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 					else:
 						_chkpf = chkpf
 						_chkpof = chkpof
-					save_model(model, _chkpf, multi_gpu, logger)
+					save_model(model, _chkpf, multi_gpu, print_func=logger.info)
 					if chkpof is not None:
 						h5save(optm.state_dict(), _chkpof)
 					if statesf is not None:
@@ -152,7 +150,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 			else:
 				_chkpf = chkpf
 				_chkpof = chkpof
-			save_model(model, _chkpf, multi_gpu, logger)
+			save_model(model, _chkpf, multi_gpu, print_func=logger.info)
 			if chkpof is not None:
 				h5save(optm.state_dict(), _chkpof)
 			if statesf is not None:
@@ -207,32 +205,23 @@ def load_fixing(module):
 		module.fix_load()
 
 rid = cnfg.run_id
-
 earlystop = cnfg.earlystop
-
 maxrun = cnfg.maxrun
-
 tokens_optm = cnfg.tokens_optm
-
 done_tokens = 0
-
 batch_report = cnfg.batch_report
 report_eva = cnfg.report_eva
-
 use_ams = cnfg.use_ams
-
 save_optm_state = cnfg.save_optm_state
-
+save_auto_clean = cnfg.save_auto_clean
+overwrite_eva = cnfg.overwrite_eva
 save_every = cnfg.save_every
 start_chkp_save = cnfg.epoch_start_checkpoint_save
-
 epoch_save = cnfg.epoch_save
-
 remain_steps = cnfg.training_steps
 
 wkdir = "".join((cnfg.exp_dir, cnfg.data_id, "/", cnfg.group_id, "/", rid, "/"))
-if not p_check(wkdir):
-	makedirs(wkdir)
+mkdir(wkdir)
 
 chkpf = None
 chkpof = None
@@ -293,12 +282,11 @@ if multi_gpu:
 	mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 	lossf = DataParallelCriterion(lossf, device_ids=cuda_devices, output_device=cuda_device.index, replicate_once=True)
 
-if multi_gpu_optimizer:
-	optimizer = mymodel.build_optimizer(Optimizer, lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
-	mymodel.zero_grad(set_to_none=True)
+if multi_gpu:
+	optimizer = mymodel.build_optimizer(Optimizer, lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams, multi_gpu_optimizer=multi_gpu_optimizer, contiguous_parameters=contiguous_parameters)
 else:
-	optimizer = Optimizer((mymodel.module if multi_gpu else mymodel).parameters(), lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
-	optimizer.zero_grad(set_to_none=True)
+	optimizer = Optimizer(get_model_parameters(mymodel, contiguous_parameters=contiguous_parameters), lr=init_lr, betas=adam_betas_default, eps=ieps_adam_default, weight_decay=cnfg.weight_decay, amsgrad=use_ams)
+optimizer.zero_grad(set_to_none=optm_step_zero_grad_set_none)
 
 fine_tune_state = cnfg.fine_tune_state
 if fine_tune_state is not None:
@@ -316,16 +304,16 @@ minloss, minerr = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu, use_am
 logger.info("".join(("Init lr: ", ",".join(tostr(getlr(optimizer))), ", Dev Loss/Error: %.3f %.2f" % (minloss, minerr))))
 
 if fine_tune_m is None:
-	save_model(mymodel, wkdir + "init.h5", multi_gpu, logger)
+	save_model(mymodel, wkdir + "init.h5", multi_gpu, print_func=logger.info)
 	logger.info("Initial model saved")
 else:
 	cnt_states = cnfg.train_statesf
-	if (cnt_states is not None) and p_check(cnt_states):
+	if cnt_states is not None:
 		logger.info("Continue last epoch")
 		tminerr, done_tokens, cur_checkid, remain_steps, _ = train(td, load_states(cnt_states), vd, nvalid, optimizer, lrsch, mymodel, lossf, cuda_device, logger, done_tokens, multi_gpu, multi_gpu_optimizer, tokens_optm, batch_report, save_every, chkpf, chkpof, statesf, num_checkpoint, cur_checkid, report_eva, remain_steps, False, False, scaler)
 		vloss, vprec = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu, use_amp)
 		logger.info("Epoch: 0, train loss: %.3f, valid loss/error: %.3f %.2f" % (tminerr, vloss, vprec))
-		save_model(mymodel, wkdir + "train_0_%.3f_%.3f_%.2f.h5" % (tminerr, vloss, vprec), multi_gpu, logger)
+		save_model(mymodel, wkdir + "train_0_%.3f_%.3f_%.2f.h5" % (tminerr, vloss, vprec), multi_gpu, print_func=logger.info, mtyp=("eva" if overwrite_eva else "train") if save_auto_clean else None)
 		if save_optm_state:
 			h5save(optimizer.state_dict(), wkdir + "train_0_%.3f_%.3f_%.2f.optm.h5" % (tminerr, vloss, vprec))
 		logger.info("New best model saved")
@@ -354,7 +342,7 @@ for i in range(1, maxrun + 1):
 	logger.info("Epoch: %d, train loss: %.3f, valid loss/error: %.3f %.2f" % (i, terr, vloss, vprec))
 
 	if (vprec <= minerr) or (vloss <= minloss):
-		save_model(mymodel, wkdir + "eva_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, logger)
+		save_model(mymodel, wkdir + "eva_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, print_func=logger.info, mtyp="eva" if save_auto_clean else None)
 		if save_optm_state:
 			h5save(optimizer.state_dict(), wkdir + "eva_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec))
 		logger.info("New best model saved")
@@ -369,11 +357,11 @@ for i in range(1, maxrun + 1):
 	else:
 		if terr < tminerr:
 			tminerr = terr
-			save_model(mymodel, wkdir + "train_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, logger)
+			save_model(mymodel, wkdir + "train_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, print_func=logger.info, mtyp=("eva" if overwrite_eva else "train") if save_auto_clean else None)
 			if save_optm_state:
 				h5save(optimizer.state_dict(), wkdir + "train_%d_%.3f_%.3f_%.2f.optm.h5" % (i, terr, vloss, vprec))
 		elif epoch_save:
-			save_model(mymodel, wkdir + "epoch_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, logger)
+			save_model(mymodel, wkdir + "epoch_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), multi_gpu, print_func=logger.info)
 
 		namin += 1
 		if namin >= earlystop:
@@ -399,7 +387,7 @@ for i in range(1, maxrun + 1):
 if done_tokens > 0:
 	optm_step(optimizer, model=mymodel, scaler=scaler, multi_gpu=multi_gpu, multi_gpu_optimizer=multi_gpu_optimizer)
 
-save_model(mymodel, wkdir + "last.h5", multi_gpu, logger)
+save_model(mymodel, wkdir + "last.h5", multi_gpu, print_func=logger.info)
 if save_optm_state:
 	h5save(optimizer.state_dict(), wkdir + "last.optm.h5")
 logger.info("model saved")

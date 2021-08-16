@@ -39,3 +39,9 @@ use_unk = True
 
 # prune with length penalty in each beam decoding step
 clip_beam_with_lp = True
+
+# use C backend. Disabling it leads to better performance.
+use_c_backend = False
+
+# accelerate optimizer by using contigous parameters and gradients. Disabling it leads to better performance.
+contiguous_parameters = False
