@@ -1,7 +1,6 @@
 #encoding: utf-8
 
 import torch
-from torch.cuda.amp import autocast, GradScaler
 
 from torch.optim import Adam as Optimizer
 
@@ -18,9 +17,9 @@ from utils.fmt.base4torch import parse_cuda, load_emb
 from utils.mulang import data_sampler
 
 from lrsch import GoogleLR as LRScheduler
-from loss.base import LabelSmoothingLoss
+from loss.base import MultiLabelSmoothingLoss as LabelSmoothingLoss
 
-from random import shuffle
+from random import shuffle, randint
 
 from tqdm import tqdm
 
@@ -29,7 +28,34 @@ import h5py
 import cnfg.mulang as cnfg
 from cnfg.ihyp import *
 
-from transformer.NMT import NMT
+from transformer.MuLang.NMT import NMT
+
+def back_translate(model, seq_in, taskid, beam_size, multi_gpu, enable_autocast=False, step_bsize=32, step_ntok=640, pivot_bt=True):
+
+	rs = []
+	bsize, seql = seq_in.size()
+	_step_bsize = min(step_bsize, step_ntok // seql)
+	_max_len = min(255, seql + 16)
+	if multi_gpu:
+		_g_out = model.gather_output
+		model.gather_output = True
+	sind = 0
+	with torch.no_grad(), autocast(enabled=enable_autocast):
+		while sind < bsize:
+			num_narrow = min(_step_bsize, bsize - sind)
+			if pivot_bt and (taskid != 0):
+				out = model.decode(seq_in.narrow(0, sind, num_narrow), taskid=0, beam_size=beam_size, max_len=_max_len).detach()
+				rs.append(model.decode(torch.cat((torch.ones(num_narrow, 1, dtype=out.dtype, device=out.device), out,), dim=1), taskid=taskid, beam_size=beam_size, max_len=_max_len).detach())
+				out = _tid = None
+			else:
+				rs.append(model.decode(seq_in.narrow(0, sind, num_narrow), taskid=taskid, beam_size=beam_size, max_len=_max_len).detach())
+			sind += num_narrow
+	if multi_gpu:
+		model.gather_output = _g_out
+	rs = torch.cat(pad_tensors(rs), dim=0)
+	rs = torch.cat((torch.ones(bsize, 1, dtype=rs.dtype, device=rs.device), rs,), dim=1)
+
+	return rs
 
 def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, multi_gpu_optimizer, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, chkpof=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False, scaler=None):
 
@@ -38,21 +64,24 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 	_done_tokens, _cur_checkid, _cur_rstep, _use_amp = done_tokens, cur_checkid, remain_steps, scaler is not None
 	model.train()
 	cur_b, _ls = 1, {} if save_loss else None
+	global ntask, ro_beam_size
+	t_sample_max_id = ntask - 2
 	for i_d, taskid in tqdm(tl, mininterval=tqdm_mininterval):
-		task_grp = td[str(taskid)]
-		seq_batch = torch.from_numpy(task_grp["src"][i_d][:])
-		seq_o = torch.from_numpy(task_grp["tgt"][i_d][:])
+		seq_o = torch.from_numpy(td[str(taskid)]["tgt"][i_d][:])
 		lo = seq_o.size(1) - 1
 		if mv_device:
-			seq_batch = seq_batch.to(mv_device)
 			seq_o = seq_o.to(mv_device)
-		seq_batch, seq_o = seq_batch.long(), seq_o.long()
+		seq_o = seq_o.long()
 
+		_bt_taskid = randint(0, t_sample_max_id)
+		if _bt_taskid >= taskid:
+			_bt_taskid += 1
+		seq_batch = back_translate(model, seq_o, _bt_taskid, ro_beam_size, multi_gpu, enable_autocast=_use_amp)
 		oi = seq_o.narrow(1, 0, lo)
 		ot = seq_o.narrow(1, 1, lo).contiguous()
 		with autocast(enabled=_use_amp):
-			output = model(seq_batch, oi)
-			loss = lossf(output, ot)
+			output = model(seq_batch, oi, taskid=taskid)
+			loss = lossf(output, ot, lang_id=taskid)
 			if multi_gpu:
 				loss = loss.sum()
 		loss_add = loss.data.item()
@@ -144,8 +173,8 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 			seq_batch, seq_o = seq_batch.long(), seq_o.long()
 			ot = seq_o.narrow(1, 1, lo).contiguous()
 			with autocast(enabled=use_amp):
-				output = model(seq_batch, seq_o.narrow(1, 0, lo))
-				loss = lossf(output, ot)
+				output = model(seq_batch, seq_o.narrow(1, 0, lo), taskid=taskid)
+				loss = lossf(output, ot, lang_id=taskid)
 				if multi_gpu:
 					loss = loss.sum()
 					trans = torch.cat([outu.argmax(-1).to(mv_device) for outu in output], 0)
@@ -189,6 +218,7 @@ save_every = cnfg.save_every
 start_chkp_save = cnfg.epoch_start_checkpoint_save
 epoch_save = cnfg.epoch_save
 remain_steps = cnfg.training_steps
+ro_beam_size = cnfg.robt_beam_size
 
 wkdir = "".join((cnfg.exp_dir, cnfg.data_id, "/", cnfg.group_id, "/", rid, "/"))
 mkdir(wkdir)
@@ -219,7 +249,7 @@ nword = td["nword"][:].tolist()
 nwordi, ntask, nwordt = nword[0], nword[1], nword[-1]
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
-mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
+mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask, ngroup=cnfg.ngroup)
 
 fine_tune_m = cnfg.fine_tune_m
 task_weight, task_weight_T = cnfg.task_weight, cnfg.task_weight_T

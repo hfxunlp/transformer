@@ -3,16 +3,15 @@
 import sys
 
 import torch
-from torch.cuda.amp import autocast
 
 from tqdm import tqdm
 
 import h5py
 
-import cnfg.docpara as cnfg
+import cnfg.mulang as cnfg
 from cnfg.ihyp import *
 
-from transformer.Doc.Para.Base.NMT import NMT
+from transformer.MuLang.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 
@@ -27,13 +26,13 @@ def load_fixing(module):
 
 td = h5py.File(cnfg.test_data, "r")
 
-tl = [(str(nsent), str(_curd),) for nsent, ndata in zip(td["nsent"][:].tolist(), td["ndata"][:].tolist()) for _curd in range(ndata)]
-nwordi = td["nword"][:].tolist()[0]
+ntest = td["ndata"][:].tolist()
+nwordi, ntask = td["nword"][:].tolist()
 vcbt, nwordt = ldvocab(sys.argv[2])
 vcbt = reverse_dict(vcbt)
 
 if len(sys.argv) == 4:
-	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
+	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask, ngroup=cnfg.ngroup)
 
 	mymodel = load_model_cpu(sys.argv[3], mymodel)
 	mymodel.apply(load_fixing)
@@ -41,7 +40,7 @@ if len(sys.argv) == 4:
 else:
 	models = []
 	for modelf in sys.argv[3:]:
-		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
+		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask, ngroup=cnfg.ngroup)
 
 		tmp = load_model_cpu(modelf, tmp)
 		tmp.apply(load_fixing)
@@ -54,7 +53,6 @@ mymodel.eval()
 use_cuda, cuda_device, cuda_devices, multi_gpu = parse_cuda_decode(cnfg.use_cuda, cnfg.gpuid, cnfg.multi_gpu_decoding)
 use_amp = cnfg.use_amp and use_cuda
 
-# Important to make cudnn methods deterministic
 set_random_seed(cnfg.seed, use_cuda)
 
 if cuda_device:
@@ -62,24 +60,21 @@ if cuda_device:
 	if multi_gpu:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 
-#num_prev_sent = cnfg.num_prev_sent
 beam_size = cnfg.beam_size
 length_penalty = cnfg.length_penalty
 
 ens = "\n".encode("utf-8")
-ens_skip = "\n".encode("utf-8")#.join(["\n" for i in range(num_prev_sent)])
 
-src_grp = td["src"]
+ntest = [(str(i), _task,) for _nd, _task in zip(ntest, td["taskorder"][:].tolist()) for i in range(_nd)]
+
 with open(sys.argv[1], "wb") as f, torch.no_grad():
-	for nsent, i_d in tqdm(tl, mininterval=tqdm_mininterval):
-		seq_batch = torch.from_numpy(src_grp[nsent][i_d][:])
+	for i_d, taskid in tqdm(ntest, mininterval=tqdm_mininterval):
+		seq_batch = torch.from_numpy(td[str(taskid)]["src"][i_d][:])
 		if cuda_device:
 			seq_batch = seq_batch.to(cuda_device)
 		seq_batch = seq_batch.long()
-		bsize, _nsent, seql = seq_batch.size()
-		_nsent_use = _nsent - 1
 		with autocast(enabled=use_amp):
-			output = mymodel.decode(seq_batch.narrow(1, 1, _nsent_use).contiguous(), seq_batch.narrow(1, 0, _nsent_use).contiguous(), beam_size, None, length_penalty).view(bsize, _nsent_use, -1)
+			output = mymodel.decode(seq_batch, taskid, beam_size, None, length_penalty)
 		if multi_gpu:
 			tmp = []
 			for ou in output:
@@ -87,17 +82,14 @@ with open(sys.argv[1], "wb") as f, torch.no_grad():
 			output = tmp
 		else:
 			output = output.tolist()
-		for doc in output:
-			f.write(ens_skip)
-			for tran in doc:
-				tmp = []
-				for tmpu in tran:
-					if tmpu == eos_id:
-						break
-					else:
-						tmp.append(vcbt[tmpu])
-				f.write(" ".join(tmp).encode("utf-8"))
-				f.write(ens)
+		for tran in output:
+			tmp = []
+			for tmpu in tran:
+				if tmpu == eos_id:
+					break
+				else:
+					tmp.append(vcbt[tmpu])
+			f.write(" ".join(tmp).encode("utf-8"))
 			f.write(ens)
 
 td.close()

@@ -2,7 +2,7 @@
 
 import sys
 
-import h5py
+from h5py import Dataset
 from utils.h5serial import h5save, h5load, h5File
 
 from cnfg.ihyp import *
@@ -10,7 +10,7 @@ from cnfg.ihyp import *
 def handle_group(srcg, rsg, h5args=h5zipargs):
 
 	for k, v in srcg.items():
-		if isinstance(v, h5py.Dataset):
+		if isinstance(v, Dataset):
 			rsg.create_dataset(k, data=v[:], **h5args)
 		else:
 			rsg.create_group(k)

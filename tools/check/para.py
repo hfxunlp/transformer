@@ -6,13 +6,14 @@
 
 import sys
 
+from h5py import Dataset
 from utils.h5serial import h5File
 
 def handle_group(srcg):
 
 	rs = 0
 	for k, v in srcg.items():
-		if isinstance(v, h5py.Dataset):
+		if isinstance(v, Dataset):
 			rs += v[:].size
 		else:
 			rs += handle_group(v)

@@ -3,7 +3,6 @@
 import torch
 from torch import nn
 import torch.cuda.comm as comm
-from torch.cuda.amp import autocast
 from utils.comm import secure_broadcast_coalesced
 from utils.contpara import get_contiguous_parameters_m, get_all_contiguous_parameters_m, get_contiguous_parameters_p
 
@@ -15,7 +14,7 @@ from torch.nn import DataParallel
 
 from threading import Lock, Thread
 
-from utils.base import filter_para_grad, divide_para_ind, reorder_by_sort, range_parameter_iter, filter_para_grad_iter
+from utils.base import autocast, is_autocast_enabled, filter_para_grad, divide_para_ind, reorder_by_sort, range_parameter_iter, filter_para_grad_iter
 from utils.fmt.base import clean_list
 
 from parallel.optm import MultiGPUOptimizer
@@ -431,7 +430,7 @@ def parallel_apply(modules, inputs, devices, kwargs_tup=None, lock=None):
 
 	lock = Lock() if lock is None else lock
 	results = {}
-	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
+	grad_enabled, autocast_enabled = torch.is_grad_enabled(), is_autocast_enabled()
 
 	def _worker(i, module, input, kwargs, device=None):
 
@@ -464,7 +463,7 @@ def criterion_parallel_apply(modules, inputs, targets, devices, kwargs_tup=None,
 
 	lock = Lock() if lock is None else lock
 	results = {}
-	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
+	grad_enabled, autocast_enabled = torch.is_grad_enabled(), is_autocast_enabled()
 
 	def _worker(i, module, input, target, kwargs, device):
 

@@ -14,7 +14,7 @@ def parse_cuda(use_cuda_arg, gpuid=None):
 		if gpuid is None:
 			cuda_devices = tuple(torch.device('cuda', i) for i in range(ngpus))
 		else:
-			cuda_devices = tuple(int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(","))
+			gpuid = tuple(int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(","))
 			cuda_devices = tuple(torch.device('cuda', i) for i in gpuid if (i >= 0) and (i < ngpus))
 		cuda_device = cuda_devices[0]
 		if len(cuda_devices) > 1:
@@ -36,7 +36,7 @@ def parse_cuda_decode(use_cuda_arg, gpuid=None, multi_gpu_decoding=False):
 		if gpuid is None:
 			cuda_devices = tuple(torch.device('cuda', i) for i in range(ngpus))
 		else:
-			cuda_devices = tuple(int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(","))
+			gpuid = tuple(int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(","))
 			cuda_devices = tuple(torch.device('cuda', i) for i in gpuid if (i >= 0) and (i < ngpus))
 		if len(cuda_devices) > 1 and multi_gpu_decoding:
 			cuda_device = cuda_devices[0]

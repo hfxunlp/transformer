@@ -1,7 +1,6 @@
 #encoding: utf-8
 
 import torch
-from torch.cuda.amp import autocast
 
 from transformer.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble

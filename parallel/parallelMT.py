@@ -1,11 +1,10 @@
 #encoding: utf-8
 
 import torch
-from torch.cuda.amp import autocast
 
 from parallel.base import DataParallelModel
 
-from utils.base import pad_tensors
+from utils.base import autocast, is_autocast_enabled, pad_tensors
 from utils.fmt.base import clean_list
 
 from threading import Lock, Thread
@@ -55,7 +54,7 @@ def parallel_apply_decode(modules, inputs, devices, kwargs_tup=None, lock=None):
 
 	lock = Lock() if lock is None else lock
 	results = {}
-	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
+	grad_enabled, autocast_enabled = torch.is_grad_enabled(), is_autocast_enabled()
 
 	def _worker(i, module, input, kwargs, device=None):
 
@@ -87,7 +86,7 @@ def parallel_apply_train_decode(modules, inputs, devices, kwargs_tup=None, lock=
 
 	lock = Lock() if lock is None else lock
 	results = {}
-	grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
+	grad_enabled, autocast_enabled = torch.is_grad_enabled(), is_autocast_enabled()
 
 	def _worker(i, module, input, kwargs, device=None):
 

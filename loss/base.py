@@ -21,7 +21,9 @@ class FastLabelSmoothingLoss(_Loss):
 	# Faster implementation from fairseq: https://github.com/pytorch/fairseq/blob/master/fairseq/criterions/label_smoothed_cross_entropy.py#L33-L50, but do not support fbil.
 	def forward(self, input, target):
 
-		_target = target.unsqueeze(-1)
+		_tsize = list(input.size())
+		_tsize[-1] = 1
+		_target = target.view(_tsize)
 		nll_loss = -input.gather(dim=-1, index=_target)
 		smooth_loss = -input.sum(dim=-1, keepdim=True)
 		if isinstance(self.ignore_index, (list, tuple)):

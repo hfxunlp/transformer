@@ -2,7 +2,7 @@
 
 import torch
 from torch.optim.optimizer import Optimizer
-from torch.cuda.amp import GradScaler#, autocast
+from utils.base import GradScaler#, autocast, is_autocast_enabled
 
 from collections import defaultdict
 from threading import Thread
@@ -51,7 +51,7 @@ class MultiGPUGradScaler(GradScaler):
 
 def parallel_apply(optms, closure=None, devices=None):
 
-	#grad_enabled, autocast_enabled = torch.is_grad_enabled(), torch.is_autocast_enabled()
+	#grad_enabled, autocast_enabled = torch.is_grad_enabled(), is_autocast_enabled()
 
 	def _worker(optm, closure=None, device=None):
 

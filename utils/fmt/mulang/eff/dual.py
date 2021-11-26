@@ -1,9 +1,11 @@
 #encoding: utf-8
 
 from utils.fmt.base import list_reader, get_bsize, map_batch, pad_batch
+from math import ceil
 
 def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 
+	_f_maxpart = float(maxpart)
 	rsi = []
 	rst = []
 	rstask = None
@@ -17,7 +19,7 @@ def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 		#if (lid <= 0) or (ltd <= 0):
 			#continue
 		if maxlen == 0:
-			maxlen = lgth + min(maxpad, lgth // maxpart + 1)
+			maxlen = lgth + min(maxpad, ceil(lgth / _f_maxpart))
 			_bsize = get_bsize(maxlen, maxtoken, bsize)
 			rstask = _task
 		if (rstask == _task) and ((nd < minbsize) or (lgth <= maxlen and nd < _bsize)):
@@ -35,7 +37,7 @@ def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 			rst = [td]
 			mlen_i = lid
 			mlen_t = ltd
-			maxlen = lgth + min(maxpad, lgth // maxpart + 1)
+			maxlen = lgth + min(maxpad, ceil(lgth / _f_maxpart))
 			_bsize = get_bsize(maxlen, maxtoken, bsize)
 			nd = 1
 	if rsi:

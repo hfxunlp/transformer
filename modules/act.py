@@ -74,13 +74,25 @@ class Swish(nn.Module):
 			if self.reset_beta is not None:
 				self.beta.fill_(self.reset_beta)
 
+class SReLU(nn.Module):
+
+	def __init__(self, inplace=False, k=2.0):
+
+		super(SReLU, self).__init__()
+
+		self.inplace, self.k = inplace, k
+
+	def forward(self, x):
+
+		return nnFunc.relu(x, inplace=self.inplace).pow(self.k)
+
 class Mish(nn.Module):
 
 	def forward(self, x):
 
 		return x * nnFunc.softplus(x).tanh()
 
-Custom_Act = {"swish": Swish, "normswish": Swish, "sigmoid": nn.Sigmoid, "mish": Mish}.get(adv_act, GELU)
+Custom_Act = {"swish": Swish, "normswish": Swish, "sigmoid": nn.Sigmoid, "mish": Mish, "srelu": SReLU}.get(adv_act, GELU)
 
 # SparseMax (https://arxiv.org/pdf/1602.02068) borrowed form OpenNMT-py( https://github.com/OpenNMT/OpenNMT-py/blob/master/onmt/modules/sparse_activations.py)
 class SparsemaxFunction(Function):
@@ -146,6 +158,6 @@ class Sparsemax(nn.Module):
 
 def reduce_model(modin):
 
-	rsm = reduce_model_list(modin, [nn.ReLU, nn.Softmax, Sparsemax, Swish], [lambda m: (m.inplace,), lambda m: (m.dim,), lambda m: (m.dim,), lambda m: (m.reset_beta, m.beta, m.dim, m.eps)])
+	rsm = reduce_model_list(modin, [nn.ReLU, nn.Softmax, Sparsemax, Swish, SReLU], [lambda m: (m.inplace,), lambda m: (m.dim,), lambda m: (m.dim,), lambda m: (m.reset_beta, m.beta, m.dim, m.eps), lambda m: (m.inplace, m.k,)])
 
 	return reduce_model_list(rsm, [GELU, GeLU_GPT, GeLU_BERT, Mish, nn.Tanh, nn.Sigmoid])

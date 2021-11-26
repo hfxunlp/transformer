@@ -51,9 +51,8 @@ class MHPLSTMCore(nn.Module):
 				csum = self.normer_csum(_csum_state)
 				csum_state_return = _csum_state + heads_input
 		gh_input = torch.cat((heads_input, csum,), dim=-1)
-		(igate, fgate,), hidden = self.normer_ifg(self.trans_ifg(gh_input).view(bsize, seql, nheads, 2, -1)).unbind(-2), self.trans_hid(gh_input)
-		fgate = fgate.sigmoid()
-		igh = igate.sigmoid() * hidden
+		(igate, fgate,), hidden = self.normer_ifg(self.trans_ifg(gh_input).view(bsize, seql, nheads, 2, -1)).sigmoid().unbind(-2), self.trans_hid(gh_input)
+		igh = igate * hidden
 		if head_mask is not None:
 			fgate = fgate.masked_fill(head_mask, 1.0)
 			igh.masked_fill_(head_mask, 0.0)

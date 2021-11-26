@@ -14,7 +14,7 @@ import logging
 
 from utils.h5serial import h5save, h5load
 
-from cnfg.ihyp import h5modelwargs, optm_step_zero_grad_set_none
+from cnfg.ihyp import h5modelwargs, optm_step_zero_grad_set_none, n_keep_best
 
 secure_type_map = {torch.float16: torch.float64, torch.float32: torch.float64, torch.uint8: torch.int64, torch.int8: torch.int64, torch.int16: torch.int64, torch.int32: torch.int64}
 
@@ -42,6 +42,42 @@ def flip_mask_byte(mask, dim):
 
 	return mask.flip(dim)
 
+class EmptyAutocast:
+
+	def __init__(self, *inputs, **kwargs):
+
+		self.args, self.kwargs = inputs, kwargs
+
+	def __enter__(self):
+
+		return self
+
+	def __exit__(self, *inputs, **kwargs):
+
+		pass
+
+class EmptyGradScaler:
+
+	def __init__(self, *args, **kwargs):
+
+		self.args, self.kwargs = args, kwargs
+
+	def scale(self, outputs):
+
+		return outputs
+
+	def step(self, optimizer, *args, **kwargs):
+
+		return optimizer.step(*args, **kwargs)
+
+	def update(self, *args, **kwargs):
+
+		pass
+
+def is_autocast_enabled_empty(*args, **kwargs):
+
+	return False
+
 # handling torch.bool
 try:
 	mask_tensor_type = torch.bool
@@ -56,6 +92,14 @@ except Exception as e:
 	all_done = all_done_byte
 	exist_any = exist_any_byte
 	flip_mask = flip_mask_byte
+
+# handling torch.cuda.amp, fp16 will NOT be really enabled if torch.cuda.amp does not exist (for early versions)
+try:
+	from torch.cuda.amp import autocast, GradScaler
+	is_autocast_enabled = torch.is_autocast_enabled
+	fp16_supported = True
+except Exception as e:
+	autocast, GradScaler, is_autocast_enabled, fp16_supported = EmptyAutocast, EmptyGradScaler, is_autocast_enabled_empty, False
 
 def pad_tensors(tensor_list, dim=-1):
 
@@ -190,13 +234,20 @@ def load_model_cpu_old(modf, base_model):
 
 	return base_model
 
-_save_model_cleaner_holder = {}
-def save_model_cleaner(fname, typename, holder=_save_model_cleaner_holder):
+class SaveModelCleaner:
 
-	if typename in holder:
-		holder[typename].update(fname)
-	else:
-		holder[typename] = bestfkeeper(fname)
+	def __init__(self):
+
+		self.holder = {}
+
+	def __call__(self, fname, typename):
+
+		if typename in self.holder:
+			self.holder[typename].update(fname)
+		else:
+			self.holder[typename] = bestfkeeper(fnames=[fname])
+
+save_model_cleaner = SaveModelCleaner()
 
 def save_model(model, fname, sub_module=False, print_func=print, mtyp=None, h5args=h5modelwargs):
 
@@ -423,7 +474,7 @@ def iternext(iterin):
 
 	return rs
 
-def optm_step(optm, model=None, scaler=None, closure=None, multi_gpu=False, multi_gpu_optimizer=False, zero_grad_none=optm_step_zero_grad_set_none):
+def optm_step_std(optm, model=None, scaler=None, closure=None, multi_gpu=False, multi_gpu_optimizer=False, zero_grad_none=optm_step_zero_grad_set_none):
 
 	if multi_gpu:
 		model.collect_gradients()
@@ -436,6 +487,18 @@ def optm_step(optm, model=None, scaler=None, closure=None, multi_gpu=False, mult
 		optm.zero_grad(set_to_none=zero_grad_none)
 	if multi_gpu:
 		model.update_replicas()
+
+def optm_step_wofp16(optm, model=None, scaler=None, closure=None, multi_gpu=False, multi_gpu_optimizer=False, zero_grad_none=optm_step_zero_grad_set_none):
+
+	if multi_gpu:
+		model.collect_gradients()
+	optm.step(closure=closure)
+	if not multi_gpu_optimizer:
+		optm.zero_grad(set_to_none=zero_grad_none)
+	if multi_gpu:
+		model.update_replicas()
+
+optm_step = optm_step_std if fp16_supported else optm_step_wofp16
 
 def divide_para_ind(para_list, ngroup, return_np=False):
 
@@ -545,12 +608,21 @@ class holder(dict):
 
 class bestfkeeper:
 
-	def __init__(self, fname=None):
+	def __init__(self, fnames=[], k=n_keep_best):
 
-		self.prev_fname = fname
+		self.fnames, self.k = fnames, k
+		self.clean()
 
 	def update(self, fname=None):
 
-		if self.prev_fname is not None and fs_check(self.prev_fname):
-			remove(self.prev_fname)
-		self.prev_fname = fname
+		self.fnames.append(fname)
+		self.clean()
+
+	def clean(self):
+
+		_n_files = len(self.fnames)
+		while _n_files > self.k:
+			fname = self.fnames.pop(0)
+			if fname is not None and fs_check(fname):
+				remove(fname)
+			_n_files -= 1

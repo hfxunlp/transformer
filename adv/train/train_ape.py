@@ -1,7 +1,6 @@
 #encoding: utf-8
 
 import torch
-from torch.cuda.amp import autocast, GradScaler
 
 from torch.optim import Adam as Optimizer
 

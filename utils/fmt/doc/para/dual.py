@@ -2,22 +2,22 @@
 
 from utils.fmt.base import get_bsize, map_batch, pad_batch
 from utils.fmt.doc.base import doc_reader
+from math import ceil
 
 def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 
+	_f_maxpart = float(maxpart)
 	rsi = []
 	rst = []
 	nd = maxlen = minlen = mlen_i = mlen_t = nsent = 0
-	_bsize = bsize
 	for (i_d, i_lgth), (td, t_lgth) in zip(doc_reader(finput), doc_reader(ftarget)):
 		cur_nsent = len(i_d)
 		lgth = i_lgth + t_lgth
 		if maxlen == 0:
-			_maxpad = max(1, min(maxpad, lgth // maxpart + 1) // 2)
+			_maxpad = max(1, min(maxpad, ceil(lgth / _f_maxpart)) // 2)
 			maxlen = lgth + _maxpad
 			minlen = lgth - _maxpad
 			_bsize = max(1, get_bsize(maxlen, maxtoken, bsize) // cur_nsent)
-		if nsent == 0:
 			nsent = cur_nsent
 		if (cur_nsent == nsent) and ((nd < minbsize) or (lgth <= maxlen and lgth >= minlen and nd < _bsize)):
 			rsi.append(i_d)
@@ -34,7 +34,7 @@ def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 			mlen_i = i_lgth
 			mlen_t = t_lgth
 			nsent = cur_nsent
-			_maxpad = max(1, min(maxpad, lgth // maxpart + 1) // 2)
+			_maxpad = max(1, min(maxpad, ceil(lgth / _f_maxpart)) // 2)
 			maxlen = lgth + _maxpad
 			minlen = lgth - _maxpad
 			_bsize = max(1, get_bsize(maxlen, maxtoken, bsize) // cur_nsent)

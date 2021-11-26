@@ -1,7 +1,6 @@
 #encoding: utf-8
 
 import torch
-from torch.cuda.amp import autocast, GradScaler
 
 from torch.optim import Adam as Optimizer
 
@@ -18,7 +17,7 @@ from utils.fmt.base4torch import parse_cuda, load_emb
 from utils.mulang import data_sampler
 
 from lrsch import GoogleLR as LRScheduler
-from loss.base import MultiLabelSmoothingLoss as LabelSmoothingLoss
+from loss.base import LabelSmoothingLoss
 
 from random import shuffle
 
@@ -29,7 +28,7 @@ import h5py
 import cnfg.mulang as cnfg
 from cnfg.ihyp import *
 
-from transformer.MuLang.Eff.Base.NMT import NMT
+from transformer.NMT import NMT
 
 def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, multi_gpu_optimizer, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, chkpof=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False, scaler=None):
 
@@ -51,8 +50,8 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 		oi = seq_o.narrow(1, 0, lo)
 		ot = seq_o.narrow(1, 1, lo).contiguous()
 		with autocast(enabled=_use_amp):
-			output = model(seq_batch, oi, taskid=taskid)
-			loss = lossf(output, ot, lang_id=taskid)
+			output = model(seq_batch, oi)
+			loss = lossf(output, ot)
 			if multi_gpu:
 				loss = loss.sum()
 		loss_add = loss.data.item()
@@ -144,8 +143,8 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 			seq_batch, seq_o = seq_batch.long(), seq_o.long()
 			ot = seq_o.narrow(1, 1, lo).contiguous()
 			with autocast(enabled=use_amp):
-				output = model(seq_batch, seq_o.narrow(1, 0, lo), taskid=taskid)
-				loss = lossf(output, ot, lang_id=taskid)
+				output = model(seq_batch, seq_o.narrow(1, 0, lo))
+				loss = lossf(output, ot)
 				if multi_gpu:
 					loss = loss.sum()
 					trans = torch.cat([outu.argmax(-1).to(mv_device) for outu in output], 0)
@@ -219,7 +218,7 @@ nword = td["nword"][:].tolist()
 nwordi, ntask, nwordt = nword[0], nword[1], nword[-1]
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
-mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask)#, ngroup=cnfg.ngroup
+mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
 fine_tune_m = cnfg.fine_tune_m
 task_weight, task_weight_T = cnfg.task_weight, cnfg.task_weight_T

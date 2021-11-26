@@ -4,7 +4,7 @@ ease_optimization = True
 
 lipschitz_initialization = True
 
-# choices: None, "GeLU", "Swish", "Sigmoid", "Mish", "NormSwish"
+# choices: None, "GeLU", "Swish", "Sigmoid", "SReLU", "Mish", "NormSwish"
 advance_activation_function = None
 
 # choices: "v1", "v2"
@@ -45,3 +45,6 @@ use_c_backend = False
 
 # accelerate optimizer by using contigous parameters and gradients. Disabling it leads to better performance.
 contiguous_parameters = False
+
+# the number of checkpoints kept for `cnfg.save_auto_clean`
+n_keep_best = 1

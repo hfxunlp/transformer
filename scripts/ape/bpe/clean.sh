@@ -36,9 +36,10 @@ export numrules=1
 # cleaning bpe results and bpe again
 python tools/clean/ape/chars.py $tgtd/src.train.bpe $tgtd/mt.train.bpe $tgtd/tgt.train.bpe $tgtd/src.clean.tmp $tgtd/mt.clean.tmp $tgtd/tgt.clean.tmp $charatio $bperatio $seperatio $bibperatio $bioratio $numrules
 
-sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/src.clean.tmp > $tgtd/src.train.tok.clean
-sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/mt.clean.tmp > $tgtd/mt.train.tok.clean
-sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/tgt.clean.tmp > $tgtd/tgt.train.tok.clean
+sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/src.clean.tmp > $tgtd/src.train.tok.clean &
+sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/mt.clean.tmp > $tgtd/mt.train.tok.clean &
+sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/tgt.clean.tmp > $tgtd/tgt.train.tok.clean &
+wait
 rm -fr $tgtd/src.clean.tmp $tgtd/mt.clean.tmp $tgtd/tgt.clean.tmp
 
 if $share_bpe; then
@@ -50,18 +51,21 @@ else
 # to learn independent bpe:
 	export src_cdsf=$tgtd/src.cds
 	export tgt_cdsf=$tgtd/tgt.cds
-	subword-nmt learn-bpe -s $bpeops < $tgtd/src.train.tok.clean > $src_cdsf
-	subword-nmt learn-bpe -s $bpeops < $tgtd/tgt.train.tok.clean > $tgt_cdsf
-	subword-nmt apply-bpe -c $src_cdsf < $tgtd/src.train.tok.clean | subword-nmt get-vocab > $tgtd/src.vcb.bpe
-	subword-nmt apply-bpe -c $tgt_cdsf < $tgtd/tgt.train.tok.clean | subword-nmt get-vocab > $tgtd/tgt.vcb.bpe
+	subword-nmt learn-bpe -s $bpeops < $tgtd/src.train.tok.clean > $src_cdsf &
+	subword-nmt learn-bpe -s $bpeops < $tgtd/tgt.train.tok.clean > $tgt_cdsf &
+	wait
+	subword-nmt apply-bpe -c $src_cdsf < $tgtd/src.train.tok.clean | subword-nmt get-vocab > $tgtd/src.vcb.bpe &
+	subword-nmt apply-bpe -c $tgt_cdsf < $tgtd/tgt.train.tok.clean | subword-nmt get-vocab > $tgtd/tgt.vcb.bpe &
+	wait
 fi
 
-subword-nmt apply-bpe -c $src_cdsf --vocabulary $tgtd/src.vcb.bpe --vocabulary-threshold $minfreq < $tgtd/src.train.tok.clean > $tgtd/src.train.bpe
-subword-nmt apply-bpe -c $tgt_cdsf --vocabulary $tgtd/tgt.vcb.bpe --vocabulary-threshold $minfreq < $tgtd/mt.train.tok.clean > $tgtd/mt.train.bpe
-subword-nmt apply-bpe -c $tgt_cdsf --vocabulary $tgtd/tgt.vcb.bpe --vocabulary-threshold $minfreq < $tgtd/tgt.train.tok.clean > $tgtd/tgt.train.bpe
+subword-nmt apply-bpe -c $src_cdsf --vocabulary $tgtd/src.vcb.bpe --vocabulary-threshold $minfreq < $tgtd/src.train.tok.clean > $tgtd/src.train.bpe &
+subword-nmt apply-bpe -c $tgt_cdsf --vocabulary $tgtd/tgt.vcb.bpe --vocabulary-threshold $minfreq < $tgtd/mt.train.tok.clean > $tgtd/mt.train.bpe &
+subword-nmt apply-bpe -c $tgt_cdsf --vocabulary $tgtd/tgt.vcb.bpe --vocabulary-threshold $minfreq < $tgtd/tgt.train.tok.clean > $tgtd/tgt.train.bpe &
 
-subword-nmt apply-bpe -c $src_cdsf --vocabulary $tgtd/src.vcb.bpe --vocabulary-threshold $minfreq < $srcd/$srcvf > $tgtd/src.dev.bpe
-subword-nmt apply-bpe -c $tgt_cdsf --vocabulary $tgtd/tgt.vcb.bpe --vocabulary-threshold $minfreq < $srcd/$mtvf > $tgtd/mt.dev.bpe
-subword-nmt apply-bpe -c $tgt_cdsf --vocabulary $tgtd/tgt.vcb.bpe --vocabulary-threshold $minfreq < $srcd/$tgtvf > $tgtd/tgt.dev.bpe
+subword-nmt apply-bpe -c $src_cdsf --vocabulary $tgtd/src.vcb.bpe --vocabulary-threshold $minfreq < $srcd/$srcvf > $tgtd/src.dev.bpe &
+subword-nmt apply-bpe -c $tgt_cdsf --vocabulary $tgtd/tgt.vcb.bpe --vocabulary-threshold $minfreq < $srcd/$mtvf > $tgtd/mt.dev.bpe &
+subword-nmt apply-bpe -c $tgt_cdsf --vocabulary $tgtd/tgt.vcb.bpe --vocabulary-threshold $minfreq < $srcd/$tgtvf > $tgtd/tgt.dev.bpe &
+wait
 
 # then execute scripts/mktrain.sh to generate training and development data.

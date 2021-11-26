@@ -53,7 +53,6 @@ fi
 if $debpe; then
 	if $spm_bpe; then
 		python tools/spm/decode.py --model $tgtd/bpe.model --input_format piece --input $tgtd/$bpef > $rsf
-
 	else
 		sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/$bpef > $rsf
 	fi
