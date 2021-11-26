@@ -11,7 +11,7 @@ import h5py
 import cnfg.mulang as cnfg
 from cnfg.ihyp import *
 
-from transformer.MuLang.NMT import NMT
+from transformer.MuLang.Eff.Base.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 
@@ -32,7 +32,7 @@ vcbt, nwordt = ldvocab(sys.argv[2])
 vcbt = reverse_dict(vcbt)
 
 if len(sys.argv) == 4:
-	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask, ngroup=cnfg.ngroup)
+	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask)
 
 	mymodel = load_model_cpu(sys.argv[3], mymodel)
 	mymodel.apply(load_fixing)
@@ -40,7 +40,7 @@ if len(sys.argv) == 4:
 else:
 	models = []
 	for modelf in sys.argv[3:]:
-		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask, ngroup=cnfg.ngroup)
+		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask)
 
 		tmp = load_model_cpu(modelf, tmp)
 		tmp.apply(load_fixing)

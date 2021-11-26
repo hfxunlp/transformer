@@ -28,7 +28,7 @@ import h5py
 import cnfg.mulang as cnfg
 from cnfg.ihyp import *
 
-from transformer.MuLang.NMT import NMT
+from transformer.MuLang.Eff.Base.NMT import NMT
 
 def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, multi_gpu_optimizer, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, chkpof=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False, scaler=None):
 
@@ -218,7 +218,7 @@ nword = td["nword"][:].tolist()
 nwordi, ntask, nwordt = nword[0], nword[1], nword[-1]
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
-mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask, ngroup=cnfg.ngroup)
+mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask)
 
 fine_tune_m = cnfg.fine_tune_m
 task_weight, task_weight_T = cnfg.task_weight, cnfg.task_weight_T
