@@ -43,6 +43,9 @@ clip_beam_with_lp = True
 # use C backend. Disabling it leads to better performance.
 use_c_backend = False
 
+# optimize speed even if it sacrifices reproduction
+performance_over_reproduction = True
+
 # accelerate optimizer by using contigous parameters and gradients. Disabling it leads to better performance.
 contiguous_parameters = False
 

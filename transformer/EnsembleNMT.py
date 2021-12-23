@@ -3,7 +3,7 @@
 import torch
 from torch import nn
 
-from utils.base import all_done
+from utils.base import all_done, select_zero_
 
 from transformer.EnsembleEncoder import Encoder
 
@@ -120,7 +120,8 @@ class NMT(nn.Module):
 			_scores, _wds = _out.topk(beam_size, dim=-1)
 
 			if done_trans is not None:
-				_scores = _scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size)
+				_done_trans_unsqueeze = done_trans.unsqueeze(2)
+				_scores = _scores.masked_fill(_done_trans_unsqueeze.expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).repeat(1, 1, beam_size).masked_fill_(select_zero_(_done_trans_unsqueeze.repeat(1, 1, beam_size), -1, 0), -inf_default)
 
 				if length_penalty > 0.0:
 					lpv = lpv.masked_fill(1 - done_trans.view(real_bsize, 1), ((step + 5.0) ** length_penalty) / lpv_base)

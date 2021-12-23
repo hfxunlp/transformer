@@ -86,7 +86,4 @@ freeze_tgtemb = False
 scale_down_emb = True
 
 train_statesf = None
-fine_tune_state = None
-
-save_optm_state = False
 save_train_state = False

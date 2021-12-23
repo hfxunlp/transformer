@@ -53,25 +53,6 @@ def load_states(fname):
 
 	return rs
 
-def save_states(fname, stl):
-
-	with open(fname, "wb") as f:
-		f.write(" ".join(stl).encode("utf-8"))
-		f.write("\n".encode("utf-8"))
-
-def load_states(fname):
-
-	rs = []
-	with open(fname, "rb") as f:
-		for line in f:
-			tmp = line.strip()
-			if tmp:
-				for tmpu in tmp.decode("utf-8").split():
-					if tmpu:
-						rs.append(tmpu)
-
-	return rs
-
 def list_reader(fname):
 
 	with open(fname, "rb") as frd:
@@ -303,6 +284,8 @@ def iter_dict_sort(dict_in, reverse=False):
 				yield _item
 		else:
 			yield d_v
+		# the below line gradually frees the memory by removing items from dict_in, in the end, dict_in will be empty
+		del dict_in[d_key]
 
 def dict_insert_set(dict_in, value, *keys):
 
@@ -433,3 +416,20 @@ class FileList(list):
 
 		for _f in self:
 			_f.close()
+
+def multi_line_reader(fname, *inputs, num_line=1, **kwargs):
+
+	_i = 0
+	rs = []
+	ens = "\n".encode("utf-8") if "rb" in inputs or "rb" in kwargs.values() else "\n"
+	with open(fname, *inputs, **kwargs) as frd:
+		for line in frd:
+			tmp = line.rstrip()
+			rs.append(tmp)
+			_i += 1
+			if _i >= num_line:
+				yield ens.join(rs)
+				rs = []
+				_i = 0
+	if rs:
+		yield ens.join(rs)

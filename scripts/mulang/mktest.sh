@@ -45,7 +45,7 @@ python predict_mulang.py $tgtd/$bpef.srt $tgt_vcb $modelf
 
 if $sort_decode; then
 	python tools/restore.py $srcd/$srctf $srt_input_f $tgtd/$bpef.srt $tgtd/$bpef
-	rm $srt_input_f $tgtd/$bpef.srt $tgtd/$bpef
+	rm $srt_input_f $tgtd/$bpef.srt
 else
 	mv $tgtd/$bpef.srt $tgtd/$bpef
 fi

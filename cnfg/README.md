@@ -124,13 +124,9 @@ freeze_tgtemb = False
 # scale down loaded embedding by sqrt(isize) or not, True as default to make positional embedding meaningful at beginning.
 scale_down_emb = True
 
-# training state and optimizer state files to resume training.
+# training state file to resume training.
 train_statesf = None
-fine_tune_state = None
-
-# saving the optimizer state or not.
-save_optm_state = False
-# saving shuffled sequence of training set or not
+# saving training state or not
 save_train_state = False
 ```
 

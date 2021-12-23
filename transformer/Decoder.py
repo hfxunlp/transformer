@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from modules.base import *
 from utils.sampler import SampleMax
-from utils.base import all_done, index_tensors, expand_bsize_for_beam, mask_tensor_type
+from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_zero_, mask_tensor_type
 from math import sqrt
 
 from utils.fmt.base import pad_id
@@ -408,7 +408,8 @@ class Decoder(nn.Module):
 			# added_scores: (bsize, 1, beam_size) => (bsize, beam_size, beam_size)
 
 			_scores, _wds = out.topk(beam_size, dim=-1)
-			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
+			_done_trans_unsqueeze = done_trans.unsqueeze(2)
+			_scores = (_scores.masked_fill(_done_trans_unsqueeze.expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).repeat(1, 1, beam_size).masked_fill_(select_zero_(_done_trans_unsqueeze.repeat(1, 1, beam_size), -1, 0), -inf_default))
 
 			if length_penalty > 0.0:
 				lpv.masked_fill_(~done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
@@ -470,11 +471,11 @@ class Decoder(nn.Module):
 			scores = scores / lpv.view(bsize, beam_size)
 			scores, _inds = scores.topk(beam_size, dim=-1)
 			_inds = (_inds + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
-			trans = trans.view(real_bsize, -1).index_select(0, _inds).view(bsize, beam_size, -1)
+			trans = trans.view(real_bsize, -1).index_select(0, _inds)
 
 		if return_all:
 
-			return trans, scores
+			return trans.view(bsize, beam_size, -1), scores
 		else:
 
 			return trans.view(bsize, beam_size, -1).select(1, 0)
@@ -742,7 +743,8 @@ class Decoder(nn.Module):
 			# added_scores: (bsize, 1, beam_size) => (bsize, beam_size, beam_size)
 
 			_scores, _wds = out.topk(beam_size, dim=-1)
-			_scores = (_scores.masked_fill(done_trans.unsqueeze(2).expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).expand(bsize, beam_size, beam_size))
+			_done_trans_unsqueeze = done_trans.unsqueeze(2)
+			_scores = (_scores.masked_fill(_done_trans_unsqueeze.expand(bsize, beam_size, beam_size), 0.0) + sum_scores.unsqueeze(2).repeat(1, 1, beam_size).masked_fill_(select_zero_(_done_trans_unsqueeze.repeat(1, 1, beam_size), -1, 0), -inf_default))
 
 			if length_penalty > 0.0:
 				lpv.masked_fill_(~done_trans.view(real_bsize, 1), ((step + 6.0) ** length_penalty) / lpv_base)
@@ -799,7 +801,7 @@ class Decoder(nn.Module):
 					scores = scores / lpv.view(bsize, beam_size)
 					scores, _inds = scores.topk(beam_size, dim=-1)
 					_inds = (_inds + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
-					trans = trans.view(real_bsize, -1).index_select(0, _inds).view(bsize, beam_size, -1)
+					trans = trans.view(real_bsize, -1).index_select(0, _inds)
 				if return_all:
 					for _iu, (_tran, _score) in enumerate(zip(trans.view(bsize, beam_size, -1).unbind(0), scores.view(bsize, beam_size).unbind(0))):
 						_rid = mapper[_iu]

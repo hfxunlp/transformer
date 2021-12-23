@@ -14,7 +14,7 @@ import logging
 
 from utils.h5serial import h5save, h5load
 
-from cnfg.ihyp import h5modelwargs, optm_step_zero_grad_set_none, n_keep_best
+from cnfg.ihyp import h5modelwargs, optm_step_zero_grad_set_none, n_keep_best, use_deterministic
 
 secure_type_map = {torch.float16: torch.float64, torch.float32: torch.float64, torch.uint8: torch.int64, torch.int8: torch.int64, torch.int16: torch.int64, torch.int32: torch.int64}
 
@@ -285,6 +285,14 @@ def async_save_model(model, fname, sub_module=False, print_func=print, mtyp=None
 
 	Thread(target=_worker, args=(model, fname, sub_module, print_func, mtyp, para_lock, log_success)).start()
 
+def save_states(state_dict, fname, print_func=print):
+
+	try:
+		torch.save(state_dict, fname)
+	except Exception as e:
+		if print_func is not None:
+			print_func(str(e))
+
 def get_logger(fname):
 
 	logger = logging.getLogger(__name__)
@@ -310,8 +318,19 @@ def set_random_seed(seed, set_cuda=False):
 	if set_cuda:
 		torch.cuda.manual_seed_all(_rseed)
 		# Make cudnn methods deterministic according to: https://pytorch.org/docs/stable/notes/randomness.html#cudnn
-		torch.backends.cudnn.deterministic = True
+		try:
+			torch.use_deterministic_algorithms(use_deterministic)
+		except:
+			torch.backends.cudnn.deterministic = use_deterministic
 		torch.backends.cudnn.benchmark = False
+
+def module_train(netin, module, mode=True):
+
+	for net in netin.modules():
+		if isinstance(net, module):
+			net.train(mode=mode)
+
+	return netin
 
 def repeat_bsize_for_beam_tensor(tin, beam_size):
 
@@ -355,6 +374,12 @@ def index_tensors(*inputs, indices=None, dim=0):
 			outputs.append(inputu)
 
 	return outputs[0] if len(inputs) == 1 else tuple(outputs)
+
+def select_zero_(x, dim, index):
+
+	x.select(dim, index).zero_()
+
+	return x
 
 def remove_layers(all_layers, ltr):
 
