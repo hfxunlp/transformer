@@ -100,7 +100,7 @@ class GroupLinear(nn.Module):
 		return i_d, *self.aargs
 
 	def extra_repr(self):
-		return 'groups={}, in_features={}, out_features={}, bias={}'.format(self.ngroup, self.ngroup * self.isize, self.ngroup * self.osize, self.bias is not None)
+		return "groups={}, in_features={}, out_features={}, bias={}".format(self.ngroup, self.ngroup * self.isize, self.ngroup * self.osize, self.bias is not None)
 
 	def fix_init(self):
 

@@ -3,7 +3,7 @@
 import sys
 
 from utils.base import *
-from utils.init import init_model_params
+from utils.init.base import init_model_params
 from utils.h5serial import h5File
 
 import cnfg.probe as cnfg
@@ -15,7 +15,7 @@ from transformer.Probe.NMT import NMT
 def handle(cnfg, srcmtf, decf, rsf):
 
 	with h5File(cnfg.dev_data, "r") as tdf:
-		nwordi, nwordt = tdf["nword"][:].tolist()
+		nwordi, nwordt = tdf["nword"][()].tolist()
 
 	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_layer_fwd)
 	init_model_params(mymodel)

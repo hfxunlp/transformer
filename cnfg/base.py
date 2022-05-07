@@ -9,16 +9,18 @@ data_id = "w14ed32"
 exp_dir = "expm/"
 cache_dir = "cache/"
 
-train_data = cache_dir+data_id+"/train.h5"
-dev_data = cache_dir+data_id+"/dev.h5"
-test_data = cache_dir+data_id+"/test.h5"
+train_data = cache_dir + data_id + "/train.h5"
+dev_data = cache_dir + data_id + "/dev.h5"
+test_data = cache_dir + data_id + "/test.h5"
 
 fine_tune_m = None
 
 # non-exist indexes in the classifier.
 # "<pad>":0, "<sos>":1, "<eos>":2, "<unk>":3
 # add 3 to forbidden_indexes if there are <unk> tokens in data
-forbidden_indexes = [0, 1]
+# must be None if use_fast_loss is set in cnfg/hyp.py
+#from fbind import fbl
+forbidden_indexes = None#[0, 1] + fbl
 
 save_auto_clean = True
 overwrite_eva = False
@@ -36,8 +38,8 @@ batch_report = 5000
 report_eva = False
 
 use_cuda = True
-# Data Parallel multi-GPU support can be enabled with values like: 'cuda:0, 1, 3'. Set to None to use all GPUs.
-gpuid = 'cuda:0'
+# Data Parallel multi-GPU support can be enabled with values like: "cuda:0, 1, 3". Set to None to use all GPUs.
+gpuid = "cuda:0"
 use_amp = False
 multi_gpu_optimizer = True
 

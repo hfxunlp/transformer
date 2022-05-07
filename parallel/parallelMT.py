@@ -58,7 +58,7 @@ def parallel_apply_decode(modules, inputs, devices, kwargs_tup=None, lock=None):
 
 	def _worker(i, module, input, kwargs, device=None):
 
-		if not isinstance(input, (list, tuple)):
+		if not isinstance(input, (list, tuple,)):
 			input = (input,)
 		with torch.set_grad_enabled(grad_enabled), torch.cuda.device(device), autocast(enabled=autocast_enabled):
 			output = module.decode(*input, **kwargs)
@@ -90,7 +90,7 @@ def parallel_apply_train_decode(modules, inputs, devices, kwargs_tup=None, lock=
 
 	def _worker(i, module, input, kwargs, device=None):
 
-		if not isinstance(input, (list, tuple)):
+		if not isinstance(input, (list, tuple,)):
 			input = (input,)
 		with torch.set_grad_enabled(grad_enabled), torch.cuda.device(device), autocast(enabled=autocast_enabled):
 			output = module.train_decode(*input, **kwargs)

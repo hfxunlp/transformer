@@ -1,8 +1,8 @@
 #encoding: utf-8
 
-''' this file aims at pruning source/target vocabulary of the trained model using a shared vocabulary. It depends on the model implementation, and has to be executed at the root path of the project. Usage:
+""" this file aims at pruning source/target vocabulary of the trained model using a shared vocabulary. It depends on the model implementation, and has to be executed at the root path of the project. Usage:
 	python prune_model_vocab.py path/to/common.vcb path/to/src.vcb path/to/tgt.vcb path/to/model.h5 path/to/pruned_model.h5
-'''
+"""
 
 import sys
 

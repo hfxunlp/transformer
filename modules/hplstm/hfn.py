@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from modules.base import Linear, Dropout
 from modules.group.base import GroupLinear
-from modules.act import Custom_Act
+from modules.act import Custom_Act, LGLU, get_act
 from modules.hplstm.LGate import LGateFunc
 from utils.base import float2odd
 
@@ -14,7 +14,8 @@ from cnfg.ihyp import *
 
 class MHPLSTMCore(nn.Module):
 
-	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default):
+	# use_glu leads to performance drop with MHPLSTM, disable by default
+	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, use_glu=False):
 
 		super(MHPLSTMCore, self).__init__()
 
@@ -25,16 +26,36 @@ class MHPLSTMCore(nn.Module):
 		o_head_dim = float2odd(float(_osize) / num_head)
 		o_hsize = o_head_dim * num_head
 		_head_fhsize = float2odd(float(o_hsize * 4 if fhsize is None else fhsize) / num_head)
+		if (use_glu is not None) and (_head_fhsize % 2 == 1):
+			_head_fhsize += 1
 		_fhsize = _head_fhsize * num_head
 
-		self.trans_hid = nn.Sequential(GroupLinear(i_hsize + i_hsize, _fhsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, _head_fhsize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters), Custom_Act() if custom_act else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_Custom_Act), GroupLinear(_fhsize, o_hsize, num_head, bias=enable_proj_bias, shuffle=False, trans_input=False, flatten_output=False), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(GroupLinear(i_hsize + i_hsize, _fhsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, _head_fhsize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters), Custom_Act() if custom_act else nn.ReLU(inplace=True), GroupLinear(_fhsize, o_hsize, num_head, bias=enable_proj_bias, shuffle=False, trans_input=False, flatten_output=False))
+		_ = [GroupLinear(i_hsize + i_hsize, _fhsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, _head_fhsize), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)]
+		_drop_ind = 3
+		if use_glu is None:
+			_.extend([Custom_Act() if custom_act else nn.ReLU(inplace=True), GroupLinear(_fhsize, o_hsize, num_head, bias=enable_proj_bias, shuffle=False, trans_input=False, flatten_output=False)])
+		else:
+			use_glu = use_glu.lower()
+			if use_glu == "glu":
+				_.append(nn.GLU())
+			else:
+				_act = get_act(use_glu, None)
+				if _act is not None:
+					_.append(_act())
+					_drop_ind += 1
+				_.append(LGLU())
+			_.append(GroupLinear(_fhsize // 2, o_hsize, num_head, bias=enable_proj_bias, shuffle=False, trans_input=False, flatten_output=False))
+		if dropout > 0.0:
+			_.append(Dropout(dropout, inplace=True))
+			_.insert(_drop_ind, Dropout(dropout, inplace=inplace_after_Custom_Act))
+		self.trans_hid = nn.Sequential(*_)
 		self.trans_ifg = GroupLinear(i_hsize + i_hsize, o_hsize + o_hsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False)
 		self.trans_og = nn.Sequential(GroupLinear(i_hsize + o_hsize, o_hsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, o_head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters))
 
 		self.normer_csum = nn.LayerNorm((num_head, i_head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 		self.normer_ifg = nn.LayerNorm((num_head, 2, o_head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
-		self.init_cx = nn.Parameter(torch.zeros(1, num_head, o_head_dim))
+		self.init_cx = nn.Parameter(torch.zeros(num_head, o_head_dim))
 
 	def forward(self, heads_input, states=None, head_mask=None):
 
@@ -57,7 +78,7 @@ class MHPLSTMCore(nn.Module):
 			fgate = fgate.masked_fill(head_mask, 1.0)
 			igh.masked_fill_(head_mask, 0.0)
 
-		cell = LGateFunc(fgate, igh, self.init_cx, 1, True) if states is None else igh.addcmul_(fgate, self.init_cx.unsqueeze(1) if _init_state else states[-1])
+		cell = LGateFunc(fgate, igh, self.init_cx, 1, True) if states is None else igh.addcmul_(fgate, self.init_cx if _init_state else states[-1])
 		out = self.trans_og(torch.cat((heads_input, cell), dim=-1)).sigmoid() * cell
 
 		if states is None:

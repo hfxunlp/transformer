@@ -5,7 +5,7 @@ from os.path import sep
 from subprocess import PIPE, Popen
 
 perl_exec = "perl"
-moses_scripts = os.environ.get('moses_scripts')
+moses_scripts = os.environ.get("moses_scripts")
 
 if not moses_scripts.endswith(sep):
 	moses_scripts += sep
@@ -41,7 +41,7 @@ class BatchProcessor(ProcessWrapper):
 
 	def __call__(self, input):
 
-		if isinstance(input, (list, tuple)):
+		if isinstance(input, (list, tuple,)):
 			rs = []
 
 			for inputu in input:
@@ -71,7 +71,7 @@ class SentenceSplitter(ProcessWrapper):
 		self.process.stdin.flush()
 		x = self.process.stdout.readline().strip().decode("utf-8", "ignore")
 		ret = []
-		while x != '<P>' and x != '':
+		while x != "<P>" and x != "":
 			ret.append(x)
 			x = self.process.stdout.readline().strip().decode("utf-8", "ignore")
 

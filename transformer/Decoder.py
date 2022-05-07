@@ -140,7 +140,7 @@ class Decoder(nn.Module):
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.xseql = xseql
-		self.register_buffer('mask', torch.ones(xseql, xseql, dtype=mask_tensor_type).triu(1).unsqueeze(0))
+		self.register_buffer("mask", torch.ones(xseql, xseql, dtype=mask_tensor_type).triu(1).unsqueeze(0))
 
 		self.wemb = nn.Embedding(nwd, isize, padding_idx=pad_id)
 		if emb_w is not None:
@@ -361,6 +361,8 @@ class Decoder(nn.Module):
 		sum_scores = scores
 		wds = wds.view(real_bsize, 1)
 		trans = wds
+		_inds_add_beam2 = torch.arange(0, bsizeb2, beam_size2, dtype=wds.dtype, device=wds.device).unsqueeze(1).expand(bsize, beam_size)
+		_inds_add_beam = torch.arange(0, real_bsize, beam_size, dtype=wds.dtype, device=wds.device).unsqueeze(1).expand(bsize, beam_size)
 
 		# done_trans: (bsize, beam_size)
 
@@ -420,23 +422,24 @@ class Decoder(nn.Module):
 
 			if clip_beam and (length_penalty > 0.0):
 				scores, _inds = (_scores.view(real_bsize, beam_size) / lpv.expand(real_bsize, beam_size)).view(bsize, beam_size2).topk(beam_size, dim=-1)
-				_tinds = (_inds + torch.arange(0, bsizeb2, beam_size2, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+				_tinds = (_inds + _inds_add_beam2).view(real_bsize)
 				sum_scores = _scores.view(bsizeb2).index_select(0, _tinds).view(bsize, beam_size)
 			else:
 				scores, _inds = _scores.view(bsize, beam_size2).topk(beam_size, dim=-1)
-				_tinds = (_inds + torch.arange(0, bsizeb2, beam_size2, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+				_tinds = (_inds + _inds_add_beam2).view(real_bsize)
 				sum_scores = scores
 
 			# select the top-k candidate with higher route score and update translation record
 			# wds: (bsize, beam_size, beam_size) => (bsize * beam_size, 1)
-
+			# this can also be done simply with the below line, but it is slightly slower.
+			# wds = _wds.view(bsize, beam_size2).gather(-1, _inds).view(real_bsize, 1)
 			wds = _wds.view(bsizeb2).index_select(0, _tinds).view(real_bsize, 1)
 
 			# reduces indexes in _inds from (beam_size ** 2) to beam_size
 			# thus the fore path of the top-k candidate is pointed out
 			# _inds: indexes for the top-k candidate (bsize, beam_size)
 
-			_inds = (_inds // beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+			_inds = (_inds // beam_size + _inds_add_beam).view(real_bsize)
 
 			# select the corresponding translation history for the top-k candidate and update translation records
 			# trans: (bsize * beam_size, nquery) => (bsize * beam_size, nquery + 1)
@@ -470,7 +473,7 @@ class Decoder(nn.Module):
 		if (not clip_beam) and (length_penalty > 0.0):
 			scores = scores / lpv.view(bsize, beam_size)
 			scores, _inds = scores.topk(beam_size, dim=-1)
-			_inds = (_inds + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+			_inds = (_inds + _inds_add_beam).view(real_bsize)
 			trans = trans.view(real_bsize, -1).index_select(0, _inds)
 
 		if return_all:

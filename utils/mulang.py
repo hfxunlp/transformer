@@ -1,7 +1,7 @@
 #encoding: utf-8
 
 from utils.random import multinomial
-from random import shuffle
+from utils.data import inf_data_generator
 
 def T_normalize(wl, T):
 
@@ -11,20 +11,11 @@ def T_normalize(wl, T):
 
 	return [_tu / _s for _tu in _tmp]
 
-def data_generator(dlin, shuf=True):
-
-	tmp = list(dlin)
-	while True:
-		if shuf:
-			shuffle(tmp)
-		for tmpu in tmp:
-			yield tmpu
-
 def sample_iter(wl, T, ntrain, taskl):
 
 	samples = {}
 	for i, (nd, task,) in enumerate(zip(ntrain, taskl)):
-		samples[i] = (task, data_generator(str(i) for i in range(nd)),)
+		samples[i] = (task, inf_data_generator(str(i) for i in range(nd)),)
 	pl = T_normalize(wl, T)
 	while True:
 		task, dg = samples[multinomial(pl, s=1.0)]

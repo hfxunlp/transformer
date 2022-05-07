@@ -9,10 +9,10 @@ from utils.random import multinomial
 
 # comment the following line and uncomment the 4 lines following it to load para_group_select_alpha from cnfg.dynb
 para_group_select_alpha = 3.0
-'''try:
+"""try:
 	from cnfg.dynb import select_alpha as para_group_select_alpha
 except Exception:
-	para_group_select_alpha = 3.0'''
+	para_group_select_alpha = 3.0"""
 
 def gumble_random():
 

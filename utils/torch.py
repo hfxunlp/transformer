@@ -47,6 +47,16 @@ def multinomial(x, num_samples, replacement=False, generator=None, dim=-1, **kwa
 
 	return out
 
+def arcsigmoid(x):
+
+	return ((1.0 / x) - 1.0).log().neg()
+
+def arcsoftmax(p):
+
+	_ = p.amax(-1, keepdim=True)
+
+	return (p / _).log()
+
 def ensure_num_threads(n):
 
 	if torch.get_num_threads() < n:

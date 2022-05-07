@@ -30,21 +30,13 @@ def main():
 		# remap reference-side <unk> to 0
 		return int(tok) if tok != "<unk>" else 0
 
-	if args.input == "-":
+	with sys.stdin if args.input == "-" else open(args.input, "r", encoding="utf-8") as h:
 		if args.input_format == "id":
-			for line in sys.stdin:
+			for line in h:
 				print(decode(list(map(tok2int, line.rstrip().split()))))
 		elif args.input_format == "piece":
-			for line in sys.stdin:
+			for line in h:
 				print(decode(line.rstrip().split()))
-	else:
-		with open(args.input, "r", encoding="utf-8") as h:
-			if args.input_format == "id":
-				for line in h:
-					print(decode(list(map(tok2int, line.rstrip().split()))))
-			elif args.input_format == "piece":
-				for line in h:
-					print(decode(line.rstrip().split()))
 
 if __name__ == "__main__":
 	main()

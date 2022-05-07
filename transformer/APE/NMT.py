@@ -40,7 +40,7 @@ class NMT(NMTBase):
 		src_mask = inpute.eq(0).unsqueeze(1)
 		mt_mask = inputm.eq(0).unsqueeze(1)
 
-		_max_len = inpute.size(1) + max(64, inpute.size(1) // 4) if max_len is None else max_len
+		_max_len = (inpute.size(1) + max(64, inpute.size(1) // 4)) if max_len is None else max_len
 
 		enc_src, enc_mt = self.enc(inpute, inputm, src_mask, mt_mask)
 

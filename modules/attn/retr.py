@@ -67,10 +67,10 @@ class SelfAttn(SelfAttnBase):
 				scores = self.drop(scores)
 				# prevent all-zero dropout breaking multinomial sampling.
 				scores.select(-1, 0).add_(ieps_dropout_multinomial_default)
-				'''if mask is None:
+				"""if mask is None:
 					scores.add_(ieps_dropout_multinomial_default)
 				else:
-					scores[(~_mask).expand(scores.size())] += ieps_dropout_multinomial_default'''
+					scores[(~_mask).expand(scores.size())] += ieps_dropout_multinomial_default"""
 		else:
 			if mask is not None:
 				scores.masked_fill_(mask.unsqueeze(1), -inf_default)
@@ -161,10 +161,10 @@ class CrossAttn(CrossAttnBase):
 				scores = self.drop(scores)
 				# prevent all-zero dropout breaking multinomial sampling.
 				scores.select(-1, 0).add_(ieps_dropout_multinomial_default)
-				'''if mask is None:
+				"""if mask is None:
 					scores.add_(ieps_dropout_multinomial_default)
 				else:
-					scores[(~_mask).expand(scores.size())] += ieps_dropout_multinomial_default'''
+					scores[(~_mask).expand(scores.size())] += ieps_dropout_multinomial_default"""
 		else:
 			if mask is not None:
 				scores.masked_fill_(mask.unsqueeze(1), -inf_default)

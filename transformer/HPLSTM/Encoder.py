@@ -1,5 +1,6 @@
 #encoding: utf-8
 
+import torch
 from torch import nn
 from modules.base import Dropout
 from modules.hplstm.hfn import BiHPLSTM
@@ -48,13 +49,19 @@ class Encoder(EncoderBase):
 
 	def forward(self, inputs, mask=None):
 
-		_rmask = None if mask is None else flip_mask(mask.view(*(list(inputs.size())+[1, 1])), 1)
+		if mask is None:
+			_rmask = None
+		else:
+			bsize, seql = inputs.size()[:2]
+			nheads = self.nets[0].net.num_head
+			_rmask = torch.cat((mask.new_zeros(1, 1, 1, 1).expand(bsize, seql, nheads, 1), flip_mask(mask.view(bsize, seql, 1, 1), 1).expand(bsize, seql, nheads, 1),), dim=2)
+
 		out = self.wemb(inputs)
 
 		if self.drop is not None:
 			out = self.drop(out)
 
 		for net in self.nets:
-			out = net(out, reversed_mask=_rmask)
+			out = net(out, pad_reversed_mask=_rmask)
 
 		return out if self.out_normer is None else self.out_normer(out)

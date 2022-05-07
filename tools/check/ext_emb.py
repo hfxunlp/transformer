@@ -1,8 +1,8 @@
 #encoding: utf-8
 
-''' usage:
+""" usage:
 	python tools/ext_emb.py vocab_file emb_file result
-'''
+"""
 
 import sys
 

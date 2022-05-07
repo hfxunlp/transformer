@@ -8,9 +8,9 @@ import sys
 
 import torch
 
-from tqdm import tqdm
+from utils.tqdm import tqdm
 
-import h5py
+from utils.h5serial import h5File
 
 import cnfg.base as cnfg
 from cnfg.ihyp import *
@@ -31,10 +31,10 @@ def load_fixing(module):
 	if hasattr(module, "fix_load"):
 		module.fix_load()
 
-td = h5py.File(sys.argv[2], "r")
+td = h5File(sys.argv[2], "r")
 
-ntest = td["ndata"][:].item()
-nword = td["nword"][:].tolist()
+ntest = td["ndata"][()].item()
+nword = td["nword"][()].tolist()
 nwordi, nwordt = nword[0], nword[-1]
 
 if len(sys.argv) == 4:
@@ -56,7 +56,7 @@ else:
 
 mymodel.eval()
 
-lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction='none', forbidden_index=cnfg.forbidden_indexes)
+lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction="none", forbidden_index=cnfg.forbidden_indexes)
 
 use_cuda, cuda_device, cuda_devices, multi_gpu = parse_cuda(cnfg.use_cuda, cnfg.gpuid)
 use_amp = cnfg.use_amp and use_cuda
@@ -77,8 +77,8 @@ src_grp, tgt_grp = td["src"], td["tgt"]
 with open(sys.argv[1], "wb") as f, torch.no_grad():
 	for i in tqdm(range(ntest), mininterval=tqdm_mininterval):
 		_curid = str(i)
-		seq_batch = torch.from_numpy(src_grp[_curid][:])
-		seq_o = torch.from_numpy(tgt_grp[_curid][:])
+		seq_batch = torch.from_numpy(src_grp[_curid][()])
+		seq_o = torch.from_numpy(tgt_grp[_curid][()])
 		if cuda_device:
 			seq_batch = seq_batch.to(cuda_device)
 			seq_o = seq_o.to(cuda_device)
@@ -87,12 +87,12 @@ with open(sys.argv[1], "wb") as f, torch.no_grad():
 		ot = seq_o.narrow(1, 1, lo).contiguous()
 		with autocast(enabled=use_amp):
 			output = mymodel(seq_batch, seq_o.narrow(1, 0, lo))
-			loss = lossf(output, ot).sum(-1).view(-1, lo).sum(-1)
+			loss = lossf(output, ot).view(ot.size(0), -1).sum(-1)
 		if norm_token:
 			lenv = ot.ne(pad_id).int().sum(-1).to(loss)
 			loss = loss / lenv
 		f.write("\n".join([str(rsu) for rsu in loss.tolist()]).encode("utf-8"))
-		loss = output = ot = seq_batch = seq_o = None
 		f.write(ens)
+		loss = output = ot = seq_batch = seq_o = None
 
 td.close()

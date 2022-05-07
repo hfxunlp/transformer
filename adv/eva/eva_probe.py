@@ -4,9 +4,9 @@ import sys
 
 import torch
 
-from tqdm import tqdm
+from utils.tqdm import tqdm
 
-import h5py
+from utils.h5serial import h5File
 
 import cnfg.probe as cnfg
 from cnfg.ihyp import *
@@ -40,8 +40,8 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	with torch.no_grad():
 		for i in tqdm(range(nd), mininterval=tqdm_mininterval):
 			bid = str(i)
-			seq_batch = torch.from_numpy(src_grp[bid][:])
-			seq_o = torch.from_numpy(tgt_grp[bid][:])
+			seq_batch = torch.from_numpy(src_grp[bid][()])
+			seq_o = torch.from_numpy(tgt_grp[bid][()])
 			lo = seq_o.size(1) - ind_shift
 			if mv_device:
 				seq_batch = seq_batch.to(mv_device)
@@ -65,10 +65,10 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	w = float(w)
 	return sum_loss / w, (w - r) / w * 100.0
 
-td = h5py.File(sys.argv[1], "r")
+td = h5File(sys.argv[1], "r")
 
-ntest = td["ndata"][:].item()
-nword = td["nword"][:].tolist()
+ntest = td["ndata"][()].item()
+nword = td["nword"][()].tolist()
 nwordi, nwordt = nword[0], nword[-1]
 
 mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_layer_fwd)
@@ -83,7 +83,7 @@ elif cnfg.probe_remove_cross:
 
 mymodel.eval()
 
-lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction='sum', forbidden_index=cnfg.forbidden_indexes)
+lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction="sum", forbidden_index=cnfg.forbidden_indexes)
 
 use_cuda = cnfg.use_cuda
 gpuid = cnfg.gpuid

@@ -1,8 +1,8 @@
 #encoding: utf-8
 
-''' usage:
+""" usage:
 	python tools/check/para.py $model_file.h5
-'''
+"""
 
 import sys
 
@@ -14,7 +14,7 @@ def handle_group(srcg):
 	rs = 0
 	for k, v in srcg.items():
 		if isinstance(v, Dataset):
-			rs += v[:].size
+			rs += v.size
 		else:
 			rs += handle_group(v)
 

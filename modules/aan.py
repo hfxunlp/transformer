@@ -22,14 +22,15 @@ class AverageAttn(nn.Module):
 		_hsize = isize if hsize is None else hsize
 
 		self.num_pos = num_pos
-		self.register_buffer('w', torch.Tensor(num_pos, 1))
+		self.register_buffer("w", torch.Tensor(num_pos, 1))
 
 		if enable_ffn:
 			self.ffn = nn.Sequential(Linear(isize, _hsize, bias=enable_bias), nn.LayerNorm(_hsize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters), Custom_Act() if custom_act else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_Custom_Act), Linear(_hsize, isize, bias=enable_proj_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize, bias=enable_bias), nn.LayerNorm(_hsize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters), Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_proj_bias))
 		else:
 			self.ffn = None
 
-		self.gw = Linear(isize * 2, isize * 2)
+		_d_isize = isize + isize
+		self.gate = Linear(_d_isize, _d_isize)
 
 		self.reset_parameters()
 
@@ -50,7 +51,7 @@ class AverageAttn(nn.Module):
 		if self.ffn is not None:
 			avg = self.ffn(avg)
 
-		igate, fgate = self.gw(torch.cat((iQ, avg), -1)).sigmoid().chunk(2, -1)
+		igate, fgate = self.gate(torch.cat((iQ, avg), -1)).sigmoid().chunk(2, -1)
 
 		return igate * iQ + fgate * avg
 

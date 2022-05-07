@@ -1,10 +1,12 @@
 #encoding: utf-8
 
+import sys
+
 from utils.fmt.base import clean_list
 
 def doc_reader(fname):
 
-	with open(fname, "rb") as frd:
+	with sys.stdin.buffer if fname == "-" else open(fname, "rb") as frd:
 		cache = []
 		max_tok = 0
 		for line in frd:

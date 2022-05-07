@@ -12,10 +12,10 @@ def parse_cuda(use_cuda_arg, gpuid=None):
 		use_cuda = True
 		ngpus = torch.cuda.device_count()
 		if gpuid is None:
-			cuda_devices = tuple(torch.device('cuda', i) for i in range(ngpus))
+			cuda_devices = tuple(torch.device("cuda", i) for i in range(ngpus))
 		else:
 			gpuid = tuple(int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(","))
-			cuda_devices = tuple(torch.device('cuda', i) for i in gpuid if (i >= 0) and (i < ngpus))
+			cuda_devices = tuple(torch.device("cuda", i) for i in gpuid if (i >= 0) and (i < ngpus))
 		cuda_device = cuda_devices[0]
 		if len(cuda_devices) > 1:
 			multi_gpu = True
@@ -34,10 +34,10 @@ def parse_cuda_decode(use_cuda_arg, gpuid=None, multi_gpu_decoding=False):
 		use_cuda = True
 		ngpus = torch.cuda.device_count()
 		if gpuid is None:
-			cuda_devices = tuple(torch.device('cuda', i) for i in range(ngpus))
+			cuda_devices = tuple(torch.device("cuda", i) for i in range(ngpus))
 		else:
 			gpuid = tuple(int(_.strip()) for _ in gpuid[gpuid.find(":") + 1:].split(","))
-			cuda_devices = tuple(torch.device('cuda', i) for i in gpuid if (i >= 0) and (i < ngpus))
+			cuda_devices = tuple(torch.device("cuda", i) for i in gpuid if (i >= 0) and (i < ngpus))
 		if len(cuda_devices) > 1 and multi_gpu_decoding:
 			cuda_device = cuda_devices[0]
 			multi_gpu = True
@@ -54,7 +54,7 @@ def parse_cuda_decode(use_cuda_arg, gpuid=None, multi_gpu_decoding=False):
 def load_emb_txt(vcb, embf):
 
 	rs = {}
-	for tmp in list_reader(embf):
+	for tmp in list_reader(embf, keep_empty_line=False):
 		wd = tmp[0]
 		if wd in vcb or wd == "<unk>":
 			rs[wd] = torch.tensor([float(_t) for _t in tmp[1:]])

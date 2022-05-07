@@ -14,7 +14,12 @@ import logging
 
 from utils.h5serial import h5save, h5load
 
-from cnfg.ihyp import h5modelwargs, optm_step_zero_grad_set_none, n_keep_best, use_deterministic
+from cnfg.ihyp import h5modelwargs, optm_step_zero_grad_set_none, n_keep_best, use_deterministic, enable_torch_check
+
+try:
+	torch.autograd.set_detect_anomaly(enable_torch_check)
+except Exception as e:
+	print(e)
 
 secure_type_map = {torch.float16: torch.float64, torch.float32: torch.float64, torch.uint8: torch.int64, torch.int8: torch.int64, torch.int16: torch.int64, torch.int32: torch.int64}
 
@@ -33,6 +38,54 @@ def exist_any_bool(stat):
 def exist_any_byte(stat):
 
 	return stat.int().sum().item() > 0
+
+def torch_all_bool_wodim(x, *inputs, **kwargs):
+
+	return x.all(*inputs, **kwargs)
+
+def torch_all_byte_wodim(x, *inputs, **kwargs):
+
+	return x.int().sum(*inputs, **kwargs).eq(x.numel())
+
+def torch_all_bool_dim(x, dim, *inputs, **kwargs):
+
+	return x.all(dim, *inputs, **kwargs)
+
+def torch_all_byte_dim(x, dim, *inputs, **kwargs):
+
+	return x.int().sum(*inputs, dim=dim, **kwargs).eq(x.size(dim))
+
+def torch_all_bool(x, *inputs, dim=None, **kwargs):
+
+	return x.all(*inputs, **kwargs) if dim is None else x.all(dim, *inputs, **kwargs)
+
+def torch_all_byte(x, *inputs, dim=None, **kwargs):
+
+	return x.int().sum(*inputs, **kwargs).eq(x.numel()) if dim is None else x.int().sum(*inputs, dim=dim, **kwargs).eq(x.size(dim))
+
+def torch_any_bool_wodim(x, *inputs, **kwargs):
+
+	return x.any(*inputs, **kwargs)
+
+def torch_any_byte_wodim(x, *inputs, **kwargs):
+
+	return x.int().sum(*inputs, **kwargs).gt(0)
+
+def torch_any_bool_dim(x, dim, *inputs, **kwargs):
+
+	return x.any(dim, *inputs, **kwargs)
+
+def torch_any_byte_dim(x, dim, *inputs, **kwargs):
+
+	return x.int().sum(*inputs, dim=dim, **kwargs).gt(0)
+
+def torch_any_bool(x, *inputs, dim=None, **kwargs):
+
+	return x.any(*inputs, **kwargs) if dim is None else x.any(dim, *inputs, **kwargs)
+
+def torch_any_byte(x, *inputs, dim=None, **kwargs):
+
+	return x.int().sum(*inputs, **kwargs).gt(0) if dim is None else x.int().sum(*inputs, dim=dim, **kwargs).gt(0)
 
 def flip_mask_bool(mask, dim):
 
@@ -85,12 +138,24 @@ try:
 	nccl_type_map = {torch.bool:torch.uint8}
 	all_done = all_done_bool
 	exist_any = exist_any_bool
+	torch_all = torch_all_bool
+	torch_all_dim = torch_all_bool_dim
+	torch_all_wodim = torch_all_bool_wodim
+	torch_any = torch_any_bool
+	torch_any_dim = torch_any_bool_dim
+	torch_any_wodim = torch_any_bool_wodim
 	flip_mask = flip_mask_bool
 except Exception as e:
 	mask_tensor_type = torch.uint8
 	nccl_type_map = None
 	all_done = all_done_byte
 	exist_any = exist_any_byte
+	torch_all = torch_all_byte
+	torch_all_dim = torch_all_byte_dim
+	torch_all_wodim = torch_all_byte_wodim
+	torch_any = torch_any_byte
+	torch_any_dim = torch_any_byte_dim
+	torch_any_wodim = torch_any_byte_wodim
 	flip_mask = flip_mask_byte
 
 # handling torch.cuda.amp, fp16 will NOT be really enabled if torch.cuda.amp does not exist (for early versions)
@@ -171,7 +236,7 @@ def getlr(optm):
 
 	lr = []
 	for i, param_group in enumerate(optm.param_groups):
-		lr.append(float(param_group['lr']))
+		lr.append(float(param_group["lr"]))
 
 	return lr
 
@@ -188,19 +253,19 @@ def updated_lr(oldlr, newlr):
 def reset_Adam(optm, amsgrad=False):
 
 	for group in optm.param_groups:
-		for p in group['params']:
+		for p in group["params"]:
 			state = optm.state[p]
 			if len(state) != 0:
-				state['step'] = 0
-				state['exp_avg'].zero_()
-				state['exp_avg_sq'].zero_()
+				state["step"] = 0
+				state["exp_avg"].zero_()
+				state["exp_avg_sq"].zero_()
 				if amsgrad:
-					state['max_exp_avg_sq'].zero_()
+					state["max_exp_avg_sq"].zero_()
 
 def reinit_Adam(optm, amsgrad=False):
 
 	for group in optm.param_groups:
-		for p in group['params']:
+		for p in group["params"]:
 			optm.state[p].clear()
 
 def dynamic_sample(incd, dss_ws, dss_rm):
@@ -299,7 +364,7 @@ def get_logger(fname):
 	logger.setLevel(level=logging.INFO)
 	handler = logging.FileHandler(fname)
 	handler.setLevel(logging.INFO)
-	formatter = logging.Formatter('[%(asctime)s %(levelname)s] %(message)s')
+	formatter = logging.Formatter("[%(asctime)s %(levelname)s] %(message)s")
 	handler.setFormatter(formatter)
 
 	console = logging.StreamHandler()

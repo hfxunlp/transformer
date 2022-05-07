@@ -8,7 +8,7 @@ def handle(srcf, rsf, vsize=65532):
 
 	vocab = {}
 
-	with open(srcf, "rb") as f:
+	with sys.stdin.buffer if srcf == "-" else open(srcf, "rb") as f:
 		for line in f:
 			tmp = line.strip()
 			if tmp:

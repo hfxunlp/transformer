@@ -9,7 +9,7 @@ from parallel.parallelMT import DataParallelMT
 from parallel.optm import MultiGPUGradScaler
 
 from utils.base import *
-from utils.init import init_model_params
+from utils.init.base import init_model_params
 from utils.contpara import get_model_parameters
 from utils.state.holder import Holder
 from utils.state.pyrand import PyRandomState
@@ -23,9 +23,9 @@ from loss.base import MultiLabelSmoothingLoss as LabelSmoothingLoss
 
 from random import shuffle, randint
 
-from tqdm import tqdm
+from utils.tqdm import tqdm
 
-import h5py
+from utils.h5serial import h5File
 
 import cnfg.mulang as cnfg
 from cnfg.ihyp import *
@@ -69,7 +69,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 	global ntask, ro_beam_size
 	t_sample_max_id = ntask - 2
 	for i_d, taskid in tqdm(tl, mininterval=tqdm_mininterval):
-		seq_o = torch.from_numpy(td[str(taskid)]["tgt"][i_d][:])
+		seq_o = torch.from_numpy(td[str(taskid)]["tgt"][i_d][()])
 		lo = seq_o.size(1) - 1
 		if mv_device:
 			seq_o = seq_o.to(mv_device)
@@ -156,8 +156,8 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	with torch.no_grad():
 		for i_d, taskid in tqdm(nd, mininterval=tqdm_mininterval):
 			task_grp = ed[str(taskid)]
-			seq_batch = torch.from_numpy(task_grp["src"][i_d][:])
-			seq_o = torch.from_numpy(task_grp["tgt"][i_d][:])
+			seq_batch = torch.from_numpy(task_grp["src"][i_d][()])
+			seq_o = torch.from_numpy(task_grp["tgt"][i_d][()])
 			lo = seq_o.size(1) - 1
 			if mv_device:
 				seq_batch = seq_batch.to(mv_device)
@@ -229,26 +229,26 @@ multi_gpu_optimizer = multi_gpu and cnfg.multi_gpu_optimizer
 
 set_random_seed(cnfg.seed, use_cuda)
 
-td = h5py.File(cnfg.train_data, "r")
-vd = h5py.File(cnfg.dev_data, "r")
+td = h5File(cnfg.train_data, "r")
+vd = h5File(cnfg.dev_data, "r")
 
-ntrain = td["ndata"][:].tolist()
-nvalid = vd["ndata"][:].tolist()
-nword = td["nword"][:].tolist()
+ntrain = td["ndata"][()].tolist()
+nvalid = vd["ndata"][()].tolist()
+nword = td["nword"][()].tolist()
 nwordi, ntask, nwordt = nword[0], nword[1], nword[-1]
 
 task_weight, task_weight_T = cnfg.task_weight, cnfg.task_weight_T
 if task_weight_T is None or task_weight_T == 1.0:
-	tl = [(str(i), _task,) for _nd, _task in zip(ntrain, td["taskorder"][:].tolist()) for i in range(_nd)]
+	tl = [(str(i), _task,) for _nd, _task in zip(ntrain, td["taskorder"][()].tolist()) for i in range(_nd)]
 	train_sampler = None
 else:
-	train_taskorder = td["taskorder"][:].tolist()
+	train_taskorder = td["taskorder"][()].tolist()
 	_tnd = dict(zip(train_taskorder, ntrain))
 	train_taskorder.sort()
 	ntrain = [_tnd[i] for i in train_taskorder]
 	_tnd = None
 	train_sampler = data_sampler(ntrain if task_weight is None else task_weight, task_weight_T, ntrain, train_taskorder, nsample=sum(ntrain))
-nvalid = [(str(i), _task,) for _nd, _task in zip(nvalid, vd["taskorder"][:].tolist()) for i in range(_nd)]
+nvalid = [(str(i), _task,) for _nd, _task in zip(nvalid, vd["taskorder"][()].tolist()) for i in range(_nd)]
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
 mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask)
@@ -262,7 +262,7 @@ if fine_tune_m is not None:
 	mymodel = load_model_cpu(fine_tune_m, mymodel)
 	mymodel.apply(load_fixing)
 
-lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction='sum', forbidden_index=cnfg.forbidden_indexes)
+lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction="sum", forbidden_index=cnfg.forbidden_indexes)
 
 if cnfg.src_emb is not None:
 	logger.info("Load source embedding from: " + cnfg.src_emb)

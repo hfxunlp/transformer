@@ -14,7 +14,7 @@ class MultiLabelSmoothingLoss(MultiLabelSmoothingLossBase):
 		super(MultiLabelSmoothingLoss, self).__init__(*inputs, **kwargs)
 		self.register_buffer("weight", self.weight.squeeze(1))
 
-	def forward(self, input, target, tinput):
+	def forward(self, input, target, tinput, mask=None):
 
 		_rsize = list(input.size())
 		_nclass = _rsize[-1]
@@ -30,11 +30,17 @@ class MultiLabelSmoothingLoss(MultiLabelSmoothingLossBase):
 		model_prob = self.weight.index_select(0, tinput).view(_mpvsize).repeat(*_rsize).view(-1, _nclass)
 		model_prob.scatter_(1, _target, self.conf)
 
-		if isinstance(self.ignore_index, (list, tuple)):
-			model_prob.masked_fill_(eq_indexes(_target, self.ignore_index), 0.0)
-		elif self.ignore_index >= 0:
-			model_prob.masked_fill_(_target == self.ignore_index, 0.0)
+		_pad_mask = mask
+		if _pad_mask is None:
+			if isinstance(self.ignore_index, (list, tuple,)):
+				_pad_mask = eq_indexes(_target, self.ignore_index)
+			elif self.ignore_index >= 0:
+				_pad_mask = _target.eq(self.ignore_index)
+		else:
+			_pad_mask = _pad_mask.view(-1, 1)
+		if _pad_mask is not None:
+			model_prob.masked_fill_(_pad_mask, 0.0)
 
 		rs = kl_div(_input, model_prob, reduction=self.reduction)
 
-		return rs.view(input.size()) if self.reduction == 'none' and target.dim() > 1 else rs
+		return rs.view(input.size()) if self.reduction == "none" and target.dim() > 1 else rs

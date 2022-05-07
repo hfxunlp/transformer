@@ -10,7 +10,7 @@ from datautils.moses import SentenceSplitter
 from datautils.bpe import BPEApplier, BPERemover
 from translator import TranslatorCore, Translator
 
-'''
+"""
 slang = "de"# source language
 tlang = "en"# target language
 tcmodel = "path/to/truecase/model/source language"
@@ -20,7 +20,7 @@ tgtvcb = "path/to/target/vocabulary"
 bpecds = "path/to/source/bpe/codes"
 bpevcb = "path/to/source/bpe/vocabulary"
 bpethr = 8# bpe threshold
-'''
+"""
 
 spl = SentenceSplitter(slang)
 tok = Tokenizer(slang)
@@ -35,19 +35,19 @@ trans = Translator(tran_core, spl, tok, detok, bpe, debpe, punc_norm, truecaser,
 
 app = Flask(__name__)
 
-@app.route('/', methods=['GET'])
+@app.route("/", methods=["GET"])
 def translate_form():
 
-	return render_template('translate.html')
+	return render_template("translate.html")
 
-@app.route('/', methods=['POST'])
+@app.route("/", methods=["POST"])
 def translate_core():
 
-	srclang = request.form['src']
+	srclang = request.form["src"]
 
-	return render_template('translate.html', tgt=trans(srclang), src=srclang)
+	return render_template("translate.html", tgt=trans(srclang), src=srclang)
 
-@app.route('/api', methods=['POST'])
+@app.route("/api", methods=["POST"])
 def translate_core_api():
 
 	try:
@@ -59,11 +59,10 @@ def translate_core_api():
 	return json.dumps({"tgt": trans(srclang)})
 
 # send everything from client as static content
-@app.route('/favicon.ico')
+@app.route("/favicon.ico")
 def favicon():
 
-	return send_from_directory(app.root_path, 'favicon.ico', mimetype='image/vnd.microsoft.icon')
+	return send_from_directory(app.root_path, "favicon.ico", mimetype="image/vnd.microsoft.icon")
 
-if __name__ == '__main__':
-
-	app.run(port=8888, debug=False, host="0.0.0.0")
+if __name__ == "__main__":
+	app.run(host="0.0.0.0", port=8888, debug=False, threaded=True, use_reloader=False, use_debugger=False, use_evalex=False)

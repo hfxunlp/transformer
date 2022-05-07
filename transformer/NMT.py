@@ -81,7 +81,7 @@ class NMT(nn.Module):
 
 		mask = inpute.eq(0).unsqueeze(1)
 
-		_max_len = inpute.size(1) + max(64, inpute.size(1) // 4) if max_len is None else max_len
+		_max_len = (inpute.size(1) + max(64, inpute.size(1) // 4)) if max_len is None else max_len
 
 		return self.dec.decode(self.enc(inpute, mask), mask, beam_size, _max_len, length_penalty)
 
@@ -89,7 +89,7 @@ class NMT(nn.Module):
 
 		_mask = inpute.eq(0).unsqueeze(1) if mask is None else mask
 
-		_max_len = inpute.size(1) + max(64, inpute.size(1) // 4) if max_len is None else max_len
+		_max_len = (inpute.size(1) + max(64, inpute.size(1) // 4)) if max_len is None else max_len
 
 		return self.train_beam_decode(inpute, _mask, beam_size, _max_len, length_penalty) if beam_size > 1 else self.train_greedy_decode(inpute, _mask, _max_len)
 

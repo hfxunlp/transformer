@@ -1,7 +1,7 @@
 # Neutron
 Neutron: A pytorch based implementation of the [Transformer](https://arxiv.org/abs/1706.03762) and its variants.
 
-This project is developed with python 3.8.
+This project is developed with python 3.10.
 
 ## Setup dependencies
 

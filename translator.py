@@ -31,7 +31,7 @@ def sorti(lin):
 		if ls:
 			data = dict_insert_set(data, ls, len(ls.split()))
 
-	return list(iter_dict_sort(data))
+	return list(iter_dict_sort(data, free=True))
 
 def restore(src, tsrc, trs):
 
@@ -62,7 +62,7 @@ class TranslatorCore:
 		self.maxpart = maxpart
 		self.minbsize = minbsize
 
-		if isinstance(modelfs, (list, tuple)):
+		if isinstance(modelfs, (list, tuple,)):
 			models = []
 			for modelf in modelfs:
 				tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)

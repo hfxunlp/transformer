@@ -6,21 +6,21 @@ from random import random
 
 class BPE(object):
 
-	def __init__(self, codes, merges=-1, separator='@@', vocab=None, glossaries=None):
+	def __init__(self, codes, merges=-1, separator="@@", vocab=None, glossaries=None):
 
 		codes.seek(0)
 		offset=1
 
 		# check version information
 		firstline = codes.readline()
-		if firstline.startswith('#version:'):
-			self.version = tuple([int(x) for x in re.sub(r'(\.0+)*$','', firstline.split()[-1]).split(".")])
+		if firstline.startswith("#version:"):
+			self.version = tuple([int(x) for x in re.sub(r"(\.0+)*$","", firstline.split()[-1]).split(".")])
 			offset += 1
 		else:
 			self.version = (0, 1)
 			codes.seek(0)
 
-		self.bpe_codes = [tuple(item.strip('\r\n ').split(' ')) for (n, item) in enumerate(codes) if (n < merges or merges == -1)]
+		self.bpe_codes = [tuple(item.strip("\r\n ").split(" ")) for (n, item) in enumerate(codes) if (n < merges or merges == -1)]
 
 		# some hacking to deal with duplicates (only consider first instance)
 		self.bpe_codes = dict([(code,i) for (i,code) in reversed(list(enumerate(self.bpe_codes)))])
@@ -33,7 +33,7 @@ class BPE(object):
 
 		self.glossaries = glossaries if glossaries else []
 
-		self.glossaries_regex = re.compile('^({})$'.format('|'.join(glossaries))) if glossaries else None
+		self.glossaries_regex = re.compile("^({})$".format("|".join(glossaries))) if glossaries else None
 
 		self.cache = {}
 
@@ -42,13 +42,13 @@ class BPE(object):
 
 		out = ""
 
-		leading_whitespace = len(line)-len(line.lstrip('\r\n '))
+		leading_whitespace = len(line)-len(line.lstrip("\r\n "))
 		if leading_whitespace:
 			out += line[:leading_whitespace]
 
 		out += self.segment(line, dropout)
 
-		trailing_whitespace = len(line)-len(line.rstrip('\r\n '))
+		trailing_whitespace = len(line)-len(line.rstrip("\r\n "))
 		if trailing_whitespace and trailing_whitespace != len(line):
 			out += line[-trailing_whitespace:]
 
@@ -56,8 +56,8 @@ class BPE(object):
 
 	def segment(self, sentence, dropout=0):
 		"""segment single sentence (whitespace-tokenized string) with BPE encoding"""
-		segments = self.segment_tokens(sentence.strip('\r\n ').split(' '), dropout)
-		return ' '.join(segments)
+		segments = self.segment_tokens(sentence.strip("\r\n ").split(" "), dropout)
+		return " ".join(segments)
 
 	def segment_tokens(self, tokens, dropout=0):
 		"""segment a sequence of tokens with BPE encoding"""
@@ -95,9 +95,9 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
 		return orig
 
 	if version == (0, 1):
-		word = list(orig) + ['</w>']
+		word = list(orig) + ["</w>"]
 	elif version == (0, 2): # more consistent handling of word-final segments
-		word = list(orig[:-1]) + [orig[-1] + '</w>']
+		word = list(orig[:-1]) + [orig[-1] + "</w>"]
 	else:
 		raise NotImplementedError
 
@@ -117,7 +117,7 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
 
 		i = 0
 		new_word = []
-		bigram = ''.join(bigram)
+		bigram = "".join(bigram)
 		for j in positions:
 			# merges are invalid if they start before current position. This can happen if there are overlapping pairs: (x x x -> xx x)
 			if j < i:
@@ -128,10 +128,10 @@ def encode(orig, bpe_codes, bpe_codes_reverse, vocab, separator, version, cache,
 		new_word.extend(word[i:]) # add all symbols until end of word
 		word = new_word
 
-	# don't print end-of-word symbols
-	if word[-1] == '</w>':
+	# don"t print end-of-word symbols
+	if word[-1] == "</w>":
 		word = word[:-1]
-	elif word[-1].endswith('</w>'):
+	elif word[-1].endswith("</w>"):
 		word[-1] = word[-1][:-4]
 
 	word = tuple(word)
@@ -147,12 +147,12 @@ def recursive_split(segment, bpe_codes, vocab, separator, final=False):
 
 	try:
 		if final:
-			left, right = bpe_codes[segment + '</w>']
+			left, right = bpe_codes[segment + "</w>"]
 			right = right[:-4]
 		else:
 			left, right = bpe_codes[segment]
 	except:
-		#sys.stderr.write('cannot split {0} further.\n'.format(segment))
+		#sys.stderr.write("cannot split {0} further.\n".format(segment))
 		yield segment
 		return
 
@@ -197,7 +197,7 @@ def read_vocabulary(vocab_file, threshold):
 	vocabulary = set()
 
 	for line in vocab_file:
-		word, freq = line.strip('\r\n ').split(' ')
+		word, freq = line.strip("\r\n ").split(" ")
 		freq = int(freq)
 		if threshold == None or freq >= threshold:
 			vocabulary.add(word)
@@ -207,24 +207,24 @@ def read_vocabulary(vocab_file, threshold):
 def isolate_glossary(word, glossary):
 	"""
 	Isolate a glossary present inside a word.
-	Returns a list of subwords. In which all 'glossary' glossaries are isolated
-	For example, if 'USA' is the glossary and '1934USABUSA' the word, the return value is:
-		['1934', 'USA', 'B', 'USA']
+	Returns a list of subwords. In which all "glossary" glossaries are isolated
+	For example, if "USA" is the glossary and "1934USABUSA" the word, the return value is:
+		["1934", "USA", "B", "USA"]
 	"""
 	# regex equivalent of (if word == glossary or glossary not in word)
-	if re.match('^'+glossary+'$', word) or not re.search(glossary, word):
+	if re.match("^"+glossary+"$", word) or not re.search(glossary, word):
 		return [word]
 	else:
-		segments = re.split(r'({})'.format(glossary), word)
+		segments = re.split(r"({})".format(glossary), word)
 		segments, ending = segments[:-1], segments[-1]
 		segments = list(filter(None, segments)) # Remove empty strings in regex group.
-		return segments + [ending.strip('\r\n ')] if ending != '' else segments
+		return segments + [ending.strip("\r\n ")] if ending != "" else segments
 
 class BPERemover:
 
 	def __call__(self, input):
 
-		if isinstance(input, (list, tuple)):
+		if isinstance(input, (list, tuple,)):
 			rs = []
 			for inputu in input:
 				rs.append(inputu.replace("@@ ", ""))
@@ -237,16 +237,16 @@ class BPEApplier:
 	def __init__(self, codesf, bpe_vcb=None, vocabulary_threshold=None, separator="@@", merges=-1, glossaries=None):
 
 		if bpe_vcb is not None:
-			vocabulary = read_vocabulary(codecs.open(bpe_vcb, encoding='utf-8'), vocabulary_threshold)
+			vocabulary = read_vocabulary(codecs.open(bpe_vcb, encoding="utf-8"), vocabulary_threshold)
 		else:
 			vocabulary = None
 		if glossaries is not None:
-			glossaries = [g.decode('utf-8') for g in glossaries]
-		self.bpe = BPE(codecs.open(codesf, encoding='utf-8'), merges, separator, vocabulary, glossaries)
+			glossaries = [g.decode("utf-8") for g in glossaries]
+		self.bpe = BPE(codecs.open(codesf, encoding="utf-8"), merges, separator, vocabulary, glossaries)
 
 	def __call__(self, input):
 
-		if isinstance(input, (list, tuple)):
+		if isinstance(input, (list, tuple,)):
 			rs = []
 			for inputu in input:
 				rs.append(self.bpe.process_line(inputu))

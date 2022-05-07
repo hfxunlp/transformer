@@ -29,7 +29,7 @@ def handle(srcfl, tgtfl, max_len=256, remove_same=False, shuf=True, max_remove=F
 	ens = "\n".encode("utf-8")
 
 	with FileList(tgtfl, "wb") as fl:
-		for tmp in iter_dict_sort(data):
+		for tmp in iter_dict_sort(data, free=True):
 			lines = zip(*tmp)
 			if len(tmp) > 1:
 				if max_remove:

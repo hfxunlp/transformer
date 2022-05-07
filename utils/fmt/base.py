@@ -1,5 +1,7 @@
 #encoding: utf-8
 
+import sys
+
 from random import shuffle
 
 from cnfg.hyp import use_unk
@@ -24,7 +26,7 @@ def tostr(lin):
 def save_objects(fname, *inputs):
 
 	ens = "\n".encode("utf-8")
-	with open(fname, "wb") as f:
+	with sys.stdout.buffer if fname == "-" else open(fname, "wb") as f:
 		for tmpu in inputs:
 			f.write(serial_func(tmpu).encode("utf-8"))
 			f.write(ens)
@@ -32,7 +34,7 @@ def save_objects(fname, *inputs):
 def load_objects(fname):
 
 	rs = []
-	with open(fname, "rb") as f:
+	with sys.stdin.buffer if fname == "-" else open(fname, "rb") as f:
 		for line in f:
 			tmp = line.strip()
 			if tmp:
@@ -43,7 +45,7 @@ def load_objects(fname):
 def load_states(fname):
 
 	rs = []
-	with open(fname, "rb") as f:
+	with sys.stdin.buffer if fname == "-" else open(fname, "rb") as f:
 		for line in f:
 			tmp = line.strip()
 			if tmp:
@@ -53,22 +55,32 @@ def load_states(fname):
 
 	return rs
 
-def list_reader(fname):
+def list_reader(fname, keep_empty_line=True, print_func=print):
 
-	with open(fname, "rb") as frd:
+	with sys.stdin.buffer if fname == "-" else open(fname, "rb") as frd:
 		for line in frd:
 			tmp = line.strip()
 			if tmp:
 				tmp = clean_list(tmp.decode("utf-8").split())
 				yield tmp
+			else:
+				if print_func is not None:
+					print_func("Reminder: encounter an empty line, which may not be the case.")
+				if keep_empty_line:
+					yield []
 
-def line_reader(fname):
+def line_reader(fname, keep_empty_line=True, print_func=print):
 
-	with open(fname, "rb") as frd:
+	with sys.stdin.buffer if fname == "-" else open(fname, "rb") as frd:
 		for line in frd:
 			tmp = line.strip()
 			if tmp:
 				yield tmp.decode("utf-8")
+			else:
+				if print_func is not None:
+					print_func("Reminder: encounter an empty line, which shall not be the case.")
+				if keep_empty_line:
+					yield ""
 
 def ldvocab(vfile, minf=False, omit_vsize=False, vanilla=False):
 
@@ -82,7 +94,7 @@ def ldvocab(vfile, minf=False, omit_vsize=False, vanilla=False):
 		vsize = omit_vsize
 	else:
 		vsize = False
-	for data in list_reader(vfile):
+	for data in list_reader(vfile, keep_empty_line=False):
 		freq = int(data[0])
 		if (not minf) or freq > minf:
 			if vsize:
@@ -122,7 +134,7 @@ def save_vocab(vcb_dict, fname, omit_vsize=False):
 
 	ens = "\n".encode("utf-8")
 	remain = omit_vsize
-	with open(fname, "wb") as f:
+	with sys.stdout.buffer if fname == "-" else open(fname, "wb") as f:
 		for freq in freqs:
 			cdata = r_vocab[freq]
 			ndata = len(cdata) - 1
@@ -148,7 +160,7 @@ def ldvocab_list(vfile, minf=False, omit_vsize=False):
 	else:
 		vsize = False
 	cwd = 0
-	for data in list_reader(vfile):
+	for data in list_reader(vfile, keep_empty_line=False):
 		freq = int(data[0])
 		if (not minf) or freq > minf:
 			if vsize:
@@ -240,18 +252,18 @@ def get_bsize(maxlen, maxtoken, maxbsize):
 
 	return min(rs, maxbsize)
 
-def no_unk_mapper(vcb, ltm, prompt=False):
+def no_unk_mapper(vcb, ltm, print_func=None):
 
-	if prompt:
+	if print_func is None:
+		return [vcb[wd] for wd in ltm if wd in vcb]
+	else:
 		rs = []
 		for wd in ltm:
 			if wd in vcb:
 				rs.append(vcb[wd])
 			else:
-				print("Error mapping: "+ wd)
+				print_func("Error mapping: "+ wd)
 		return rs
-	else:
-		return [vcb[wd] for wd in ltm if wd in vcb]
 
 def list2dict(lin, kfunc=None):
 
@@ -273,19 +285,18 @@ def dict2pairs(dict_in):
 
 	return rsk, rsv
 
-def iter_dict_sort(dict_in, reverse=False):
+def iter_dict_sort(dict_in, reverse=False, free=False):
 
 	d_keys = list(dict_in.keys())
 	d_keys.sort(reverse=reverse)
 	for d_key in d_keys:
 		d_v = dict_in[d_key]
 		if isinstance(d_v, dict):
-			for _item in iter_dict_sort(d_v, reverse):
-				yield _item
+			yield from iter_dict_sort(d_v, reverse=reverse, free=free)
 		else:
 			yield d_v
-		# the below line gradually frees the memory by removing items from dict_in, in the end, dict_in will be empty
-		del dict_in[d_key]
+	if free:
+		dict_in.clear()
 
 def dict_insert_set(dict_in, value, *keys):
 
@@ -367,17 +378,21 @@ def get_bi_ratio(ls, lt):
 	else:
 		return float(lt) / float(ls)
 
-def map_batch(i_d, vocabi):
+def map_batch_core(i_d, vocabi):
 
 	global use_unk, sos_id, eos_id, unk_id
 
 	if isinstance(i_d[0], (tuple, list,)):
-		return [map_batch(idu, vocabi)[0] for idu in i_d], 2
+		return [map_batch_core(idu, vocabi) for idu in i_d]
 	else:
 		rsi = [sos_id]
 		rsi.extend([vocabi.get(wd, unk_id) for wd in i_d] if use_unk else no_unk_mapper(vocabi, i_d))#[vocabi[wd] for wd in i_d if wd in vocabi]
 		rsi.append(eos_id)
-		return rsi, 2
+		return rsi
+
+def map_batch(i_d, vocabi):
+
+	return map_batch_core(i_d, vocabi), 2
 
 def pad_batch(i_d, mlen_i):
 
@@ -421,8 +436,9 @@ def multi_line_reader(fname, *inputs, num_line=1, **kwargs):
 
 	_i = 0
 	rs = []
-	ens = "\n".encode("utf-8") if "rb" in inputs or "rb" in kwargs.values() else "\n"
-	with open(fname, *inputs, **kwargs) as frd:
+	_enc = ("rb" in inputs) or ("rb" in kwargs.values())
+	ens = "\n".encode("utf-8") if _enc else "\n"
+	with (sys.stdin.buffer if _enc else sys.stdin) if fname == "-" else open(fname, *inputs, **kwargs) as frd:
 		for line in frd:
 			tmp = line.rstrip()
 			rs.append(tmp)

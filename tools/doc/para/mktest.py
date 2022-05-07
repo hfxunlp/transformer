@@ -2,7 +2,7 @@
 
 import sys
 
-import numpy
+from numpy import array as np_array, int32 as np_int32
 
 from utils.h5serial import h5File
 from utils.fmt.base import ldvocab, dict2pairs
@@ -18,11 +18,11 @@ def handle(finput, fvocab_i, frs, minbsize=1, expand_for_mulgpu=True, bsize=max_
 	else:
 		_bsize = bsize
 		_maxtoken = maxtoken
-	with h5File(frs, 'w') as rsf:
+	with h5File(frs, "w", libver=h5_libver) as rsf:
 		src_grp = rsf.create_group("src")
 		curd = {}
 		for i_d, nsent in batch_padder(finput, vcbi, _bsize, maxpad, maxpart, _maxtoken, minbsize):
-			rid = numpy.array(i_d, dtype=numpy.int32)
+			rid = np_array(i_d, dtype=np_int32)
 			_nsentgid = str(nsent)
 			_curd = curd.get(nsent, 0)
 			if _curd == 0:
@@ -30,9 +30,9 @@ def handle(finput, fvocab_i, frs, minbsize=1, expand_for_mulgpu=True, bsize=max_
 			src_grp[_nsentgid].create_dataset(str(_curd), data=rid, **h5datawargs)
 			curd[nsent] = _curd + 1
 		sents, ndl = dict2pairs(curd)
-		rsf["nsent"] = numpy.array(sents, dtype=numpy.int32)
-		rsf["ndata"] = numpy.array(ndl, dtype=numpy.int32)
-		rsf["nword"] = numpy.array([nwordi], dtype=numpy.int32)
+		rsf["nsent"] = np_array(sents, dtype=np_int32)
+		rsf["ndata"] = np_array(ndl, dtype=np_int32)
+		rsf["nword"] = np_array([nwordi], dtype=np_int32)
 	print("Number of batches: %d\nSource Vocabulary Size: %d" % (sum(ndl), nwordi,))
 
 if __name__ == "__main__":

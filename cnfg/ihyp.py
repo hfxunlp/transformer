@@ -58,9 +58,10 @@ ieps_dropout_multinomial_default = ieps_default
 adam_betas_default = (0.9, 0.98,)
 
 # HDF5 serialization
-h5datawargs = {} if hdf5_data_compression is None else {"compression": hdf5_data_compression, "compression_opts": hdf5_data_compression_level, "shuffle":True}
-h5modelwargs = {} if hdf5_model_compression is None else {"compression": hdf5_model_compression, "compression_opts": hdf5_model_compression_level, "shuffle":True}
-h5zipargs = {"compression": "gzip", "compression_opts": 9, "shuffle":True}
+h5datawargs = {"track_times": False} if hdf5_data_compression is None else {"compression": hdf5_data_compression, "compression_opts": hdf5_data_compression_level, "shuffle": True, "track_times": False}
+h5modelwargs = {"track_times": False} if hdf5_model_compression is None else {"compression": hdf5_model_compression, "compression_opts": hdf5_model_compression_level, "shuffle": True, "track_times": False}
+h5zipargs = {"compression": "gzip", "compression_opts": 9, "shuffle":True, "track_times": False}
+h5_libver = "latest" if hdf5_perf_over_camp else "earliest"
 
 list_key_func = str
 

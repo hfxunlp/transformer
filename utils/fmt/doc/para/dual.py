@@ -42,14 +42,16 @@ def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 	if rsi:
 		yield rsi, rst, mlen_i, mlen_t, nsent
 
-def batch_mapper(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize):
+def batch_mapper(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize, custom_batch_loader=None):
 
-	for i_d, td, mlen_i, mlen_t, nsent in batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
+	_batch_loader = batch_loader if custom_batch_loader is None else custom_batch_loader
+	for i_d, td, mlen_i, mlen_t, nsent in _batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 		rsi, extok_i = map_batch(i_d, vocabi)
 		rst, extok_t = map_batch(td, vocabt)
 		yield rsi, rst, mlen_i + extok_i, mlen_t + extok_t, nsent
 
-def batch_padder(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize):
+def batch_padder(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize, custom_batch_loader=None, custom_batch_mapper=None):
 
-	for i_d, td, mlen_i, mlen_t, nsent in batch_mapper(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize):
+	_batch_mapper = batch_mapper if custom_batch_mapper is None else custom_batch_mapper
+	for i_d, td, mlen_i, mlen_t, nsent in _batch_mapper(finput, ftarget, vocabi, vocabt, bsize, maxpad, maxpart, maxtoken, minbsize, custom_batch_loader=custom_batch_loader):
 		yield pad_batch(i_d, mlen_i), pad_batch(td, mlen_t), nsent

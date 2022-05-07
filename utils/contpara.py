@@ -122,8 +122,7 @@ def get_contiguous_parameters_p(parameters, model=None):
 
 def get_all_contiguous_parameters_m(model):
 
-	for para in model._contiguous_parameters:
-		yield para
+	return model._contiguous_parameters
 
 def get_model_parameters(model, contiguous_parameters=False):
 

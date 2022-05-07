@@ -25,19 +25,19 @@ class Lookahead(Optimizer):
 			# Lookahead and cache the current optimizer parameters
 			for group in self.optimizer.param_groups:
 
-				for p in group['params']:
+				for p in group["params"]:
 
 					if p.grad is not None:
 
 						state = self.state[p]
 
 						if len(state) == 0:
-							state['cached_params'] = p.data.clone()
+							state["cached_params"] = p.data.clone()
 							if self.pullback_momentum == "pullback":
-								state['cached_mom'] = p.data.new_zeros(p.data.size())
+								state["cached_mom"] = p.data.new_zeros(p.data.size())
 						else:
-							p.data.mul_(self.alpha).add_(1.0 - self.alpha, state['cached_params'])
-							state['cached_params'].copy_(p.data)
+							p.data.mul_(self.alpha).add_(1.0 - self.alpha, state["cached_params"])
+							state["cached_params"].copy_(p.data)
 							if self.pullback_momentum == "pullback":
 								internal_momentum = self.optimizer.state[p]["momentum_buffer"]
 								self.optimizer.state[p]["momentum_buffer"] = internal_momentum.mul_(self.alpha).add_(

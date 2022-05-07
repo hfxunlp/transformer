@@ -37,12 +37,12 @@ class WarmUpInverseSqrtLR(_LRScheduler):
 
 		return [cur_lr for i in range(len(self.base_lrs))]
 
-'''
+"""
 class GoogleLR(WarmUpInverseSqrtLR):
 
 	def __init__(self, optimizer, dmodel, warm_steps, scale=1.0, last_epoch=-1):
 
-		super(GoogleLR, self).__init__(optimizer, scale / sqrt(dmodel * warm_steps), warm_steps, warm_init_lr=0.0, last_epoch=last_epoch)'''
+		super(GoogleLR, self).__init__(optimizer, scale / sqrt(dmodel * warm_steps), warm_steps, warm_init_lr=0.0, last_epoch=last_epoch)"""
 
 class InverseSqrtLR(_LRScheduler):
 

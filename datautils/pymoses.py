@@ -8,7 +8,7 @@ class BatchProcessor():
 
 	def __call__(self, input):
 
-		return [self.process(inputu) for inputu in input] if isinstance(input, (list, tuple)) else self.process(input)
+		return [self.process(inputu) for inputu in input] if isinstance(input, (list, tuple,)) else self.process(input)
 
 	def process(self, input):
 

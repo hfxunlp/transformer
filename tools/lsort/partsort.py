@@ -12,7 +12,7 @@ def handle(srcfl, tgtd, max_len=256, remove_same=False, cache_token=500000000):
 		ens = "\n".encode("utf-8")
 
 		with FileList(tgtfl, "wb") as wfl:
-			for tmp in iter_dict_sort(cache):
+			for tmp in iter_dict_sort(cache, free=True):
 				lines = zip(*tmp)
 				for du, f in zip(lines, wfl):
 					f.write(ens.join(du))

@@ -41,7 +41,7 @@ class NMT(nn.Module):
 		context_mask = inputc.eq(0).unsqueeze(1)
 
 		bsize, nsent, seql = inpute.size()
-		_max_len = seql + max(64, seql // 4) if max_len is None else max_len
+		_max_len = (seql + max(64, seql // 4)) if max_len is None else max_len
 		ence, contexts, context_masks = self.enc(inpute, inputc, mask, context_mask)
 
 		return self.dec.decode(ence, contexts, mask.view(bsize * nsent, 1, seql), context_masks, beam_size, _max_len, length_penalty)

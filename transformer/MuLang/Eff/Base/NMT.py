@@ -16,7 +16,7 @@ class NMT(NMTBase):
 
 		enc_layer, dec_layer = parse_double_value_tuple(num_layer)
 
-		super(NMT, self).__init__(isize, snwd, tnwd, (enc_layer, dec_layer,), fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, global_emb=global_emb, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output, bindDecoderEmb=bindDecoderEmb, forbidden_index=None)
+		super(NMT, self).__init__(isize, snwd, tnwd, (enc_layer, dec_layer,), fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, global_emb=global_emb, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output, bindDecoderEmb=bindDecoderEmb, forbidden_index=None, **kwargs)
 
 		self.enc = Encoder(isize, snwd, enc_layer, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output, ntask=ntask)
 
@@ -40,6 +40,6 @@ class NMT(NMTBase):
 	def decode(self, inpute, taskid=None, beam_size=1, max_len=None, length_penalty=0.0):
 
 		mask = inpute.eq(0).unsqueeze(1)
-		_max_len = inpute.size(1) + max(64, inpute.size(1) // 4) if max_len is None else max_len
+		_max_len = (inpute.size(1) + max(64, inpute.size(1) // 4)) if max_len is None else max_len
 
 		return self.dec.decode(self.enc(inpute, taskid=taskid, mask=mask), taskid=taskid, src_pad_mask=mask, beam_size=beam_size, max_len=_max_len, length_penalty=length_penalty)

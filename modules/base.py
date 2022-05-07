@@ -8,7 +8,7 @@ from torch.autograd import Function
 from torch.utils.cpp_extension import load
 
 from utils.base import reduce_model_list, repeat_bsize_for_beam_tensor
-from modules.act import Custom_Act, reduce_model as reduce_model_act
+from modules.act import Custom_Act, LGLU, get_act, reduce_model as reduce_model_act
 from modules.dropout import Dropout, reduce_model as reduce_model_drop
 
 from utils.pyctorch import transfer_CNone_tuple
@@ -22,19 +22,40 @@ class PositionwiseFF(nn.Module):
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
+	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, use_glu=use_glu_ffn):
 
 		super(PositionwiseFF, self).__init__()
 
 		_hsize = isize * 4 if hsize is None else hsize
 
-		self.net = nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Dropout(dropout, inplace=inplace_after_Custom_Act), Linear(_hsize, isize, bias=enable_bias), Dropout(dropout, inplace=True)) if dropout > 0.0 else nn.Sequential(Linear(isize, _hsize), Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_bias))
+		if (use_glu is not None) and (_hsize % 2 == 1):
+			_hsize += 1
+
+		_ = [Linear(isize, _hsize)]
+		_drop_ind = 2
+		if use_glu is None:
+			_.extend([Custom_Act() if custom_act else nn.ReLU(inplace=True), Linear(_hsize, isize, bias=enable_bias)])
+		else:
+			use_glu = use_glu.lower()
+			if use_glu == "glu":
+				_.append(nn.GLU())
+			else:
+				_act = get_act(use_glu, None)
+				if _act is not None:
+					_.append(_act())
+					_drop_ind += 1
+				_.append(LGLU())
+			_.append(Linear(_hsize // 2, isize, bias=enable_bias))
+		if dropout > 0.0:
+			_.append(Dropout(dropout, inplace=True))
+			_.insert(_drop_ind, Dropout(dropout, inplace=inplace_after_Custom_Act))
+		self.net = nn.Sequential(*_)
 
 		self.normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
 		self.norm_residual = norm_residual
 
-		if self.c_available():
+		if self.c_available() and (use_glu is None):
 			self.c_init()
 
 	def forward(self, x):
@@ -56,11 +77,11 @@ class PositionwiseFF(nn.Module):
 		try:
 			import pff_cpp
 		except Exception as e:
-			pff_cpp = load(name="pff_cpp", sources=['modules/cpp/base/ffn/pff.cpp', 'modules/cpp/base/ffn/pff_func.cpp', 'modules/cpp/act/act_func.cpp'])
+			pff_cpp = load(name="pff_cpp", sources=["modules/cpp/base/ffn/pff.cpp", "modules/cpp/base/ffn/pff_func.cpp", "modules/cpp/act/act_func.cpp"])
 		try:
 			import act_cpp
 		except Exception as e:
-			act_cpp = load(name="act_cpp", sources=['modules/cpp/act/act.cpp', 'modules/cpp/act/act_func.cpp'])
+			act_cpp = load(name="act_cpp", sources=["modules/cpp/act/act.cpp", "modules/cpp/act/act_func.cpp"])
 		self.c_forward_func = pff_cpp.forward
 		self.c_act_func = act_cpp.get_func(adv_act if use_adv_act_default else "relu")
 		self.c_build_cache()
@@ -113,7 +134,7 @@ class PositionalEmb(nn.Module):
 		self.poff = pos_offset
 		self.doff = dim_offset
 		self.alpha = alpha
-		self.register_buffer('w', torch.Tensor(num_pos, num_dim))
+		self.register_buffer("w", torch.Tensor(num_pos, num_dim))
 		self.reset_parameters()
 
 	# x: input (bsize, seql)
@@ -217,8 +238,8 @@ class MultiHeadAttn(nn.Module):
 				_n_pemb = k_rel_pos + k_rel_pos + 1
 				self.clamp_min, self.clamp_max = -k_rel_pos, k_rel_pos
 			self.rel_pemb = nn.Embedding(_n_pemb, self.attn_dim, padding_idx=padding_idx)
-			_rpm = torch.arange(-xseql + 1, 1, dtype=torch.long).unsqueeze(0)
-			self.register_buffer("rel_pos", (_rpm - _rpm.t()).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+			_rpm = torch.arange(0, xseql, dtype=torch.long)
+			self.register_buffer("rel_pos", (_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
 			self.xseql = xseql
 			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
 			self.ref_rel_posm = None
@@ -226,10 +247,10 @@ class MultiHeadAttn(nn.Module):
 		else:
 			self.rel_pemb = None
 
-		self.register_buffer('real_iK', None)
-		self.register_buffer('real_iV', None)
-		self.register_buffer('iK', None)
-		self.register_buffer('iV', None)
+		self.register_buffer("real_iK", None)
+		self.register_buffer("real_iV", None)
+		self.register_buffer("iK", None)
+		self.register_buffer("iV", None)
 
 		if self.c_available():
 			self.c_init()
@@ -372,8 +393,8 @@ class MultiHeadAttn(nn.Module):
 		if length <= self.xseql:
 			return self.rel_pos.narrow(0, 0, length).narrow(1, 0, length)
 		else:
-			_rpm = torch.arange(-length + 1, 1, dtype=self.rel_pos.dtype, device=self.rel_pos.device).unsqueeze(0)
-			return ((_rpm - _rpm.t()).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+			_rpm = torch.arange(0, length, dtype=self.rel_pos.dtype, device=self.rel_pos.device)
+			return ((_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
 
 	def reset_buffer(self, value=None):
 
@@ -435,8 +456,8 @@ class SelfAttn(nn.Module):
 				_n_pemb = k_rel_pos + k_rel_pos + 1
 				self.clamp_min, self.clamp_max = -k_rel_pos, k_rel_pos
 			self.rel_pemb = nn.Embedding(_n_pemb, self.attn_dim, padding_idx=padding_idx)
-			_rpm = torch.arange(-xseql + 1, 1, dtype=torch.long).unsqueeze(0)
-			self.register_buffer("rel_pos", (_rpm - _rpm.t()).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+			_rpm = torch.arange(0, xseql, dtype=torch.long)
+			self.register_buffer("rel_pos", (_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
 			self.xseql = xseql
 			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
 			self.ref_rel_posm = None
@@ -546,8 +567,8 @@ class SelfAttn(nn.Module):
 		if length <= self.xseql:
 			return self.rel_pos.narrow(0, 0, length).narrow(1, 0, length)
 		else:
-			_rpm = torch.arange(-length + 1, 1, dtype=self.rel_pos.dtype, device=self.rel_pos.device).unsqueeze(0)
-			return ((_rpm - _rpm.t()).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+			_rpm = torch.arange(0, length, dtype=self.rel_pos.dtype, device=self.rel_pos.device)
+			return ((_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
 
 	def reset_buffer(self, value=None):
 
@@ -575,9 +596,9 @@ class CrossAttn(nn.Module):
 
 		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
-		self.register_buffer('real_iK', None)
-		self.register_buffer('real_iV', None)
-		self.register_buffer('iK', None)
+		self.register_buffer("real_iK", None)
+		self.register_buffer("real_iV", None)
+		self.register_buffer("iK", None)
 
 		if self.c_available():
 			self.c_init()
@@ -1185,7 +1206,7 @@ class FertSummer(nn.Module):
 		if mask is not None:
 			_weight.masked_fill_(mask, -inf_default)
 
-		# (bsize, seql, 1)' * (bsize, seql, isize) => (bsize, 1, isize)
+		# (bsize, seql, 1)" * (bsize, seql, isize) => (bsize, 1, isize)
 		return self.normer(_weight).transpose(1, 2).bmm(x).squeeze(1)
 
 class CoordinateEmb(nn.Module):
@@ -1206,7 +1227,7 @@ class CoordinateEmb(nn.Module):
 		self.poff = pos_offset
 		self.doff = dim_offset
 		self.alpha = alpha
-		self.register_buffer('w', torch.Tensor(num_steps, num_pos, num_dim))
+		self.register_buffer("w", torch.Tensor(num_steps, num_pos, num_dim))
 		self.reset_parameters()
 
 	# x: input (bsize, seql)

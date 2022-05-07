@@ -44,11 +44,11 @@ except Exception as e:
 
 # Swish approximates GeLU when beta=1.702 (https://mp.weixin.qq.com/s/LEPalstOc15CX6fuqMRJ8Q).
 # GELU is nonmonotonic function that has a shape similar to Swish with beta = 1.4 (https://arxiv.org/abs/1710.05941).
-class Swish(nn.Module):
+class CustSwish(nn.Module):
 
 	def __init__(self, beta=1.0, freeze_beta=True, isize=None, dim=-1 if adv_act == "normswish" else None, eps=ieps_default):
 
-		super(Swish, self).__init__()
+		super(CustSwish, self).__init__()
 
 		if freeze_beta:
 			self.beta = None if beta == 1.0 else beta
@@ -74,6 +74,11 @@ class Swish(nn.Module):
 			if self.reset_beta is not None:
 				self.beta.fill_(self.reset_beta)
 
+try:
+	Swish = nn.SiLU
+except Exception as e:
+	Swish = CustSwish
+
 class SReLU(nn.Module):
 
 	def __init__(self, inplace=False, k=2.0):
@@ -92,7 +97,27 @@ class Mish(nn.Module):
 
 		return x * nnFunc.softplus(x).tanh()
 
-Custom_Act = {"swish": Swish, "normswish": Swish, "sigmoid": nn.Sigmoid, "mish": Mish, "srelu": SReLU}.get(adv_act, GELU)
+class LGLU(nn.Module):
+
+	def __init__(self, dim=-1):
+
+		super(LGLU, self).__init__()
+
+		self.dim = dim
+
+	def forward(self, x):
+
+		_h, _t = x.tensor_split(2, self.dim)
+
+		return _h * _t
+
+act_dict = {"swish": Swish, "normswish": Swish, "sigmoid": nn.Sigmoid, "srelu": SReLU, "mish": Mish}
+
+def get_act(strin, value=GELU):
+
+	return act_dict.get(strin.lower(), value)
+
+Custom_Act = act_dict.get(adv_act, GELU)
 
 # SparseMax (https://arxiv.org/pdf/1602.02068) borrowed form OpenNMT-py( https://github.com/OpenNMT/OpenNMT-py/blob/master/onmt/modules/sparse_activations.py)
 class SparsemaxFunction(Function):

@@ -2,7 +2,7 @@
 
 import sys
 
-import numpy
+from numpy import array as np_array, int32 as np_int32
 
 from utils.h5serial import h5File
 from utils.fmt.base import ldvocab
@@ -21,7 +21,7 @@ def handle(finput, fvocab_i, fvocab_task, frs, minbsize=1, expand_for_mulgpu=Tru
 	else:
 		_bsize = bsize
 		_maxtoken = maxtoken
-	with h5File(frs, 'w') as rsf:
+	with h5File(frs, "w", libver=h5_libver) as rsf:
 		curd = {}
 		torder = []
 		for i_d, taskd in batch_padder(finput, vcbi, vcbtask, _bsize, maxpad, maxpart, _maxtoken, minbsize):
@@ -31,15 +31,15 @@ def handle(finput, fvocab_i, fvocab_task, frs, minbsize=1, expand_for_mulgpu=Tru
 			else:
 				src_grp = rsf.create_group(_str_taskd).create_group("src")
 				torder.append(taskd)
-			rid = numpy.array(i_d, dtype=numpy.int32)
+			rid = np_array(i_d, dtype=np_int32)
 			_id = curd.get(taskd, 0)
 			wid = str(_id)
 			src_grp.create_dataset(wid, data=rid, **h5datawargs)
 			curd[taskd] = _id + 1
-		rsf["taskorder"] = numpy.array(torder, dtype=numpy.int32)
+		rsf["taskorder"] = np_array(torder, dtype=np_int32)
 		curd = [curd[tmp] for tmp in torder]
-		rsf["ndata"] = numpy.array(curd, dtype=numpy.int32)
-		rsf["nword"] = numpy.array([nwordi, nwordtask], dtype=numpy.int32)
+		rsf["ndata"] = np_array(curd, dtype=np_int32)
+		rsf["nword"] = np_array([nwordi, nwordtask], dtype=np_int32)
 	print("Number of batches: %d\nSource Vocabulary Size: %d\nNumber of Tasks: %d" % (sum(curd), nwordi, nwordtask,))
 
 if __name__ == "__main__":

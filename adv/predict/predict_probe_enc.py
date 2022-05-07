@@ -6,9 +6,9 @@ import sys
 
 import torch
 
-from tqdm import tqdm
+from utils.tqdm import tqdm
 
-import h5py
+from utils.h5serial import h5File
 
 import cnfg.probe as cnfg
 from cnfg.ihyp import *
@@ -24,10 +24,10 @@ def load_fixing(module):
 	if hasattr(module, "fix_load"):
 		module.fix_load()
 
-td = h5py.File(sys.argv[1], "r")
+td = h5File(sys.argv[1], "r")
 
-ntest = td["ndata"][:].item()
-nwordi = td["nword"][:].tolist()[0]
+ntest = td["ndata"][()].item()
+nwordi = td["nword"][()].tolist()[0]
 vcbt, nwordt = ldvocab(sys.argv[3])
 vcbt = reverse_dict(vcbt)
 
@@ -59,7 +59,7 @@ ens = "\n".encode("utf-8")
 with open(sys.argv[4], "wb") as fwrt, torch.no_grad():
 	for i in tqdm(range(ntest), mininterval=tqdm_mininterval):
 		bid = str(i)
-		seq_batch = torch.from_numpy(src_grp[bid][:])
+		seq_batch = torch.from_numpy(src_grp[bid][()])
 		if cuda_device:
 			seq_batch = seq_batch.to(cuda_device)
 		seq_batch = seq_batch.long()

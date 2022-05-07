@@ -185,6 +185,8 @@ class Decoder(DecoderBase):
 		sum_scores = scores
 		wds = wds.view(real_bsize, 1)
 		trans = wds
+		_inds_add_beam2 = torch.arange(0, bsizeb2, beam_size2, dtype=wds.dtype, device=wds.device).unsqueeze(1).expand(bsize, beam_size)
+		_inds_add_beam = torch.arange(0, real_bsize, beam_size, dtype=wds.dtype, device=wds.device).unsqueeze(1).expand(bsize, beam_size)
 
 		done_trans = wds.view(bsize, beam_size).eq(2)
 
@@ -222,16 +224,16 @@ class Decoder(DecoderBase):
 
 			if clip_beam and (length_penalty > 0.0):
 				scores, _inds = (_scores.view(real_bsize, beam_size) / lpv.expand(real_bsize, beam_size)).view(bsize, beam_size2).topk(beam_size, dim=-1)
-				_tinds = (_inds + torch.arange(0, bsizeb2, beam_size2, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+				_tinds = (_inds + _inds_add_beam2).view(real_bsize)
 				sum_scores = _scores.view(bsizeb2).index_select(0, _tinds).view(bsize, beam_size)
 			else:
 				scores, _inds = _scores.view(bsize, beam_size2).topk(beam_size, dim=-1)
-				_tinds = (_inds + torch.arange(0, bsizeb2, beam_size2, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+				_tinds = (_inds + _inds_add_beam2).view(real_bsize)
 				sum_scores = scores
 
 			wds = _wds.view(bsizeb2).index_select(0, _tinds).view(real_bsize, 1)
 
-			_inds = (_inds // beam_size + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+			_inds = (_inds // beam_size + _inds_add_beam).view(real_bsize)
 
 			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), pad_id) if fill_pad else wds), 1)
 
@@ -251,7 +253,7 @@ class Decoder(DecoderBase):
 		if (not clip_beam) and (length_penalty > 0.0):
 			scores = scores / lpv.view(bsize, beam_size)
 			scores, _inds = scores.topk(beam_size, dim=-1)
-			_inds = (_inds + torch.arange(0, real_bsize, beam_size, dtype=_inds.dtype, device=_inds.device).unsqueeze(1).expand_as(_inds)).view(real_bsize)
+			_inds = (_inds + _inds_add_beam).view(real_bsize)
 			trans = trans.view(real_bsize, -1).index_select(0, _inds)
 
 		if return_all:

@@ -35,7 +35,7 @@ class Tokenizer:
 
 	def start(self):
 
-		nlpir.Init(nlpir.PACKAGE_DIR.encode("utf-8"), nlpir.UTF8_CODE, ''.encode("utf-8"))
+		nlpir.Init(nlpir.PACKAGE_DIR.encode("utf-8"), nlpir.UTF8_CODE, "".encode("utf-8"))
 
 	def __del__(self):
 
@@ -57,7 +57,7 @@ class Tokenizer:
 
 			return " ".join(rs)
 
-		if not isinstance(input, (list, tuple)):
+		if not isinstance(input, (list, tuple,)):
 			input = [input]
 
 		rs = []
@@ -74,7 +74,7 @@ class Detokenizer:
 
 	def __call__(self, input):
 
-		if not isinstance(input, (list, tuple)):
+		if not isinstance(input, (list, tuple,)):
 			input = [input]
 		rs = []
 		for inputu in input:

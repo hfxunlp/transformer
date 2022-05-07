@@ -4,9 +4,9 @@ import sys
 
 import torch
 
-from tqdm import tqdm
+from utils.tqdm import tqdm
 
-import h5py
+from utils.h5serial import h5File
 
 import cnfg.docpara as cnfg
 from cnfg.ihyp import *
@@ -24,10 +24,10 @@ def load_fixing(module):
 	if hasattr(module, "fix_load"):
 		module.fix_load()
 
-td = h5py.File(cnfg.test_data, "r")
+td = h5File(cnfg.test_data, "r")
 
-tl = [(str(nsent), str(_curd),) for nsent, ndata in zip(td["nsent"][:].tolist(), td["ndata"][:].tolist()) for _curd in range(ndata)]
-nwordi = td["nword"][:].tolist()[0]
+tl = [(str(nsent), str(_curd),) for nsent, ndata in zip(td["nsent"][()].tolist(), td["ndata"][()].tolist()) for _curd in range(ndata)]
+nwordi = td["nword"][()].tolist()[0]
 vcbt, nwordt = ldvocab(sys.argv[2])
 vcbt = reverse_dict(vcbt)
 
@@ -71,7 +71,7 @@ ens_skip = "\n".encode("utf-8")#.join(["\n" for i in range(num_prev_sent)])
 src_grp = td["src"]
 with open(sys.argv[1], "wb") as f, torch.no_grad():
 	for nsent, i_d in tqdm(tl, mininterval=tqdm_mininterval):
-		seq_batch = torch.from_numpy(src_grp[nsent][i_d][:])
+		seq_batch = torch.from_numpy(src_grp[nsent][i_d][()])
 		if cuda_device:
 			seq_batch = seq_batch.to(cuda_device)
 		seq_batch = seq_batch.long()

@@ -4,9 +4,9 @@ import sys
 
 import torch
 
-from tqdm import tqdm
+from utils.tqdm import tqdm
 
-import h5py
+from utils.h5serial import h5File
 
 import cnfg.mulang as cnfg
 from cnfg.ihyp import *
@@ -24,10 +24,10 @@ def load_fixing(module):
 	if hasattr(module, "fix_load"):
 		module.fix_load()
 
-td = h5py.File(cnfg.test_data, "r")
+td = h5File(cnfg.test_data, "r")
 
-ntest = td["ndata"][:].tolist()
-nwordi, ntask = td["nword"][:].tolist()
+ntest = td["ndata"][()].tolist()
+nwordi, ntask = td["nword"][()].tolist()
 vcbt, nwordt = ldvocab(sys.argv[2])
 vcbt = reverse_dict(vcbt)
 
@@ -65,11 +65,11 @@ length_penalty = cnfg.length_penalty
 
 ens = "\n".encode("utf-8")
 
-ntest = [(str(i), _task,) for _nd, _task in zip(ntest, td["taskorder"][:].tolist()) for i in range(_nd)]
+ntest = [(str(i), _task,) for _nd, _task in zip(ntest, td["taskorder"][()].tolist()) for i in range(_nd)]
 
 with open(sys.argv[1], "wb") as f, torch.no_grad():
 	for i_d, taskid in tqdm(ntest, mininterval=tqdm_mininterval):
-		seq_batch = torch.from_numpy(td[str(taskid)]["src"][i_d][:])
+		seq_batch = torch.from_numpy(td[str(taskid)]["src"][i_d][()])
 		if cuda_device:
 			seq_batch = seq_batch.to(cuda_device)
 		seq_batch = seq_batch.long()

@@ -93,11 +93,11 @@ class DataParallelModel(DataParallel):
 		self.ngradev = 0
 
 	# below 2 functions support direct access to the wrapped module parameters/modules, but exclude direct access to copies (self.nets)
-	def named_parameters(self, prefix='', recurse=True):
+	def named_parameters(self, prefix="", recurse=True):
 
 		return self.module.named_parameters(prefix=prefix, recurse=recurse)
 
-	def named_modules(self, memo=None, prefix='', remove_duplicate=True):
+	def named_modules(self, memo=None, prefix="", remove_duplicate=True):
 
 		return self.module.named_modules(memo=memo, prefix=prefix, remove_duplicate=remove_duplicate)
 
@@ -359,7 +359,7 @@ def replicate(network, devices, no_gradient=False):
 				# we have to initialize ScriptModule properly so that it works with pybind11
 				replica = module._replicate_for_data_parallel()
 				replica._former_parameters = OrderedDict()
-				'''replica = ScriptModule()
+				"""replica = ScriptModule()
 
 				attribute_names = set(entry[0] for entry in module._c._get_attributes())
 
@@ -369,7 +369,7 @@ def replicate(network, devices, no_gradient=False):
 						replica.__dict__[key] = module.__dict__[key]
 				for name, the_type, value in module._c._get_attributes():
 					if not name in module._buffers.keys():
-						replica._c._register_attribute(name, the_type, value)'''
+						replica._c._register_attribute(name, the_type, value)"""
 			else:
 				replica = module.__new__(type(module))
 				replica.__dict__ = module.__dict__.copy()
@@ -435,7 +435,7 @@ def parallel_apply(modules, inputs, devices, kwargs_tup=None, lock=None):
 	def _worker(i, module, input, kwargs, device=None):
 
 		# this also avoids accidental slicing of `input` if it is a Tensor
-		if not isinstance(input, (list, tuple)):
+		if not isinstance(input, (list, tuple,)):
 			input = (input,)
 		with torch.set_grad_enabled(grad_enabled), torch.cuda.device(device), autocast(enabled=autocast_enabled):
 			output = module(*input, **kwargs)
@@ -467,9 +467,9 @@ def criterion_parallel_apply(modules, inputs, targets, devices, kwargs_tup=None,
 
 	def _worker(i, module, input, target, kwargs, device):
 
-		if not isinstance(input, (list, tuple)):
+		if not isinstance(input, (list, tuple,)):
 			input = (input,)
-		if not isinstance(target, (list, tuple)):
+		if not isinstance(target, (list, tuple,)):
 			target = (target,)
 		with torch.set_grad_enabled(grad_enabled), torch.cuda.device(device), autocast(enabled=autocast_enabled):
 			output = module(*(input + target), **kwargs)

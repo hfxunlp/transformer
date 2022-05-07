@@ -9,7 +9,7 @@ from parallel.parallelMT import DataParallelMT
 from parallel.optm import MultiGPUGradScaler
 
 from utils.base import *
-from utils.init import init_model_params
+from utils.init.base import init_model_params
 from utils.contpara import get_model_parameters
 from utils.state.holder import Holder
 from utils.state.pyrand import PyRandomState
@@ -24,9 +24,9 @@ from loss.base import LabelSmoothingLoss
 
 from random import shuffle
 
-from tqdm import tqdm
+from utils.tqdm import tqdm
 
-import h5py
+from utils.h5serial import h5File
 
 import cnfg.dynb as cnfg
 from cnfg.ihyp import *
@@ -56,8 +56,8 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 
 	src_grp, tgt_grp = td["src"], td["tgt"]
 	for i_d in tqdm(tl, mininterval=tqdm_mininterval):
-		seq_batch = torch.from_numpy(src_grp[i_d][:])
-		seq_o = torch.from_numpy(tgt_grp[i_d][:])
+		seq_batch = torch.from_numpy(src_grp[i_d][()])
+		seq_o = torch.from_numpy(tgt_grp[i_d][()])
 		lo = seq_o.size(1) - 1
 		if mv_device:
 			seq_batch = seq_batch.to(mv_device)
@@ -160,8 +160,8 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	with torch.no_grad():
 		for i in tqdm(range(nd), mininterval=tqdm_mininterval):
 			bid = str(i)
-			seq_batch = torch.from_numpy(src_grp[bid][:])
-			seq_o = torch.from_numpy(tgt_grp[bid][:])
+			seq_batch = torch.from_numpy(src_grp[bid][()])
+			seq_o = torch.from_numpy(tgt_grp[bid][()])
 			lo = seq_o.size(1) - 1
 			if mv_device:
 				seq_batch = seq_batch.to(mv_device)
@@ -228,12 +228,12 @@ multi_gpu_optimizer = multi_gpu and cnfg.multi_gpu_optimizer
 
 set_random_seed(cnfg.seed, use_cuda)
 
-td = h5py.File(cnfg.train_data, "r")
-vd = h5py.File(cnfg.dev_data, "r")
+td = h5File(cnfg.train_data, "r")
+vd = h5File(cnfg.dev_data, "r")
 
-ntrain = td["ndata"][:].item()
-nvalid = vd["ndata"][:].item()
-nword = td["nword"][:].tolist()
+ntrain = td["ndata"][()].item()
+nvalid = vd["ndata"][()].item()
+nword = td["nword"][()].tolist()
 nwordi, nwordt = nword[0], nword[-1]
 
 tl = [str(i) for i in range(ntrain)]
@@ -250,7 +250,7 @@ if fine_tune_m is not None:
 	mymodel = load_model_cpu(fine_tune_m, mymodel)
 	mymodel.apply(load_fixing)
 
-lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction='sum', forbidden_index=cnfg.forbidden_indexes)
+lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction="sum", forbidden_index=cnfg.forbidden_indexes)
 
 if cnfg.src_emb is not None:
 	logger.info("Load source embedding from: " + cnfg.src_emb)

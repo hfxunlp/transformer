@@ -8,9 +8,9 @@ import sys
 
 import torch
 
-from tqdm import tqdm
+from utils.tqdm import tqdm
 
-import h5py
+from utils.h5serial import h5File
 
 import cnfg.base as cnfg
 from cnfg.ihyp import *
@@ -31,10 +31,10 @@ def load_fixing(module):
 	if hasattr(module, "fix_load"):
 		module.fix_load()
 
-td = h5py.File(sys.argv[2], "r")
+td = h5File(sys.argv[2], "r")
 
-ntest = td["ndata"][:].item()
-nword = td["nword"][:].tolist()
+ntest = td["ndata"][()].item()
+nword = td["nword"][()].tolist()
 nwordi, nwordt = nword[0], nword[-1]
 
 if len(sys.argv) == 4:
@@ -56,7 +56,7 @@ else:
 
 mymodel.eval()
 
-lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction='none', forbidden_index=cnfg.forbidden_indexes)
+lossf = LabelSmoothingLoss(nwordt, cnfg.label_smoothing, ignore_index=pad_id, reduction="none", forbidden_index=cnfg.forbidden_indexes)
 
 use_cuda, cuda_device, cuda_devices, multi_gpu = parse_cuda(cnfg.use_cuda, cnfg.gpuid)
 use_amp = cnfg.use_amp and use_cuda
@@ -77,8 +77,8 @@ src_grp, tgt_grp = td["src"]["4"], td["tgt"]["4"]
 with open(sys.argv[1], "wb") as f, torch.no_grad():
 	for i in tqdm(range(ntest), mininterval=tqdm_mininterval):
 		_curid = str(i)
-		seq_batch = torch.from_numpy(src_grp[_curid][:])
-		seq_o = torch.from_numpy(tgt_grp[_curid][:])
+		seq_batch = torch.from_numpy(src_grp[_curid][()])
+		seq_o = torch.from_numpy(tgt_grp[_curid][()])
 		bsize, nsent = seq_batch.size()[:2]
 		ebsize = bsize * nsent
 		if cuda_device:
@@ -89,12 +89,12 @@ with open(sys.argv[1], "wb") as f, torch.no_grad():
 		ot = seq_o.narrow(-1, 1, lo).contiguous()
 		with autocast(enabled=use_amp):
 			output = mymodel(seq_batch.view(ebsize, -1), seq_o.narrow(-1, 0, lo).contiguous().view(ebsize, -1)).view(bsize, nsent, lo, -1)
-			loss = lossf(output, ot).sum(-1).view(bsize, -1).sum(-1)
+			loss = lossf(output, ot).view(bsize, -1).sum(-1)
 		if norm_token:
 			lenv = ot.ne(pad_id).int().view(bsize, -1).sum(-1).to(loss)
 			loss = loss / lenv
 		f.write("\n".join([str(rsu) for rsu in loss.tolist()]).encode("utf-8"))
-		loss = output = ot = seq_batch = seq_o = None
 		f.write(ens)
+		loss = output = ot = seq_batch = seq_o = None
 
 td.close()
