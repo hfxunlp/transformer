@@ -1,7 +1,8 @@
 sentencepiece>=0.1.96
 subword-nmt>=0.3.8
-sacremoses>=0.0.43
-Cython>=0.29.24
-Flask>=2.1.1
+sacremoses>=0.0.53
+transformers>=4.22.2
+Cython>=0.29.32
+Flask>=2.2.2
 jieba>=0.42.1
 PyNLPIR>=0.6.0

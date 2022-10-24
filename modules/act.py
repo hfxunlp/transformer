@@ -111,7 +111,29 @@ class LGLU(nn.Module):
 
 		return _h * _t
 
-act_dict = {"swish": Swish, "normswish": Swish, "sigmoid": nn.Sigmoid, "srelu": SReLU, "mish": Mish}
+class GLU_Act(LGLU):
+
+	def __init__(self, act=None, dim=-1):
+
+		super(GLU_Act, self).__init__()
+
+		self.dim = dim
+		self.act = nn.Sigmoid() if act is None else act
+
+	def forward(self, x):
+
+		_h, _t = x.tensor_split(2, self.dim)
+
+		return self.act(_h) * _t
+
+class GEGLU(GLU_Act):
+
+	def __init__(self, dim=-1):
+
+		_act = GELU()
+		super(GEGLU, self).__init__(act=_act, dim=dim)
+
+act_dict = {"swish": Swish, "normswish": Swish, "sigmoid": nn.Sigmoid, "geglu": GEGLU, "srelu": SReLU, "mish": Mish}
 
 def get_act(strin, value=GELU):
 
@@ -183,6 +205,6 @@ class Sparsemax(nn.Module):
 
 def reduce_model(modin):
 
-	rsm = reduce_model_list(modin, [nn.ReLU, nn.Softmax, Sparsemax, Swish, SReLU], [lambda m: (m.inplace,), lambda m: (m.dim,), lambda m: (m.dim,), lambda m: (m.reset_beta, m.beta, m.dim, m.eps), lambda m: (m.inplace, m.k,)])
+	rsm = reduce_model_list(modin, [nn.ReLU, nn.Softmax, Sparsemax, Swish, GEGLU, SReLU], [lambda m: (m.inplace,), lambda m: (m.dim,), lambda m: (m.dim,), lambda m: (m.reset_beta, m.beta, m.dim, m.eps) if isinstance(Swish, CustSwish) else lambda m: (m.inplace,), lambda m: (m.dim,), lambda m: (m.inplace, m.k,)])
 
 	return reduce_model_list(rsm, [GELU, GeLU_GPT, GeLU_BERT, Mish, nn.Tanh, nn.Sigmoid])
