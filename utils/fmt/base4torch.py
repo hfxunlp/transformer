@@ -57,7 +57,7 @@ def load_emb_txt(vcb, embf):
 	for tmp in list_reader(embf, keep_empty_line=False):
 		wd = tmp[0]
 		if wd in vcb or wd == "<unk>":
-			rs[wd] = torch.tensor([float(_t) for _t in tmp[1:]])
+			rs[wd] = torch.as_tensor([float(_t) for _t in tmp[1:]])
 
 	return rs
 

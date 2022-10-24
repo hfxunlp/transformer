@@ -72,7 +72,7 @@ class Encoder(EncoderBase):
 			out = out + self.pemb(inputs, expand=False)
 
 		#if _rmask is not None:
-			#_nele = (_ntok - _nmask).masked_fill(_nmask.eq(_ntok), 1).view(bsize, _nchk, 1).to(out)
+			#_nele = (_ntok - _nmask).masked_fill(_nmask.eq(_ntok), 1).view(bsize, _nchk, 1).to(out, non_blocking=True)
 
 		if self.drop is not None:
 			out = self.drop(out)

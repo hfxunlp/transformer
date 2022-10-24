@@ -90,7 +90,7 @@ class SelfAttn(SelfAttnBase):
 					_len = float(seql - 1) if seql > 1 else 1.0
 				else:
 					_mask = mask.view(bsize, 1, seql, 1)
-					_len = float(seql - 1) - _mask.to(oMA.dtype).sum(2, keepdim=True)
+					_len = float(seql - 1) - _mask.to(oMA.dtype, non_blocking=True).sum(2, keepdim=True)
 					_len_zm = _len.eq(0.0)
 					if exist_any(_len_zm):
 						_len.masked_fill_(_len_zm, 1.0)
@@ -176,7 +176,7 @@ class CrossAttn(CrossAttnBase):
 				_len = float(seql - 1) if seql > 1 else 1.0
 			else:
 				_mask = mask.view(bsize, 1, seql, 1)
-				_len = float(seql - 1) - _mask.to(oMA.dtype).sum(2, keepdim=True)
+				_len = float(seql - 1) - _mask.to(oMA.dtype, non_blocking=True).sum(2, keepdim=True)
 				_len_zm = _len.eq(0.0)
 				if exist_any(_len_zm):
 					_len.masked_fill_(_len_zm, 1.0)

@@ -10,7 +10,7 @@ from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_ze
 # shall we keep scaling embeddings?
 #from math import sqrt
 
-from utils.fmt.base import pad_id
+from cnfg.vocab.base import pad_id
 
 from transformer.Decoder import Decoder as DecoderBase
 

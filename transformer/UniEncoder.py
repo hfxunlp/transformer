@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from modules.base import *
 
-from utils.fmt.base import pad_id
+from cnfg.vocab.base import pad_id
 
 from transformer.Encoder import EncoderLayer
 

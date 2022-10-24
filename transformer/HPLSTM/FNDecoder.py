@@ -7,7 +7,7 @@ from modules.hplstm.hfn import HPLSTM
 from utils.sampler import SampleMax
 from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_zero_
 
-from utils.fmt.base import pad_id
+from cnfg.vocab.base import pad_id
 
 from transformer.Decoder import Decoder as DecoderBase
 

@@ -23,7 +23,7 @@ from parallel.base import DataParallelCriterion
 from loss.base import LabelSmoothingLoss
 
 from utils.base import *
-from utils.fmt.base import pad_id
+from cnfg.vocab.base import pad_id
 from utils.fmt.base4torch import parse_cuda
 
 def load_fixing(module):
@@ -65,8 +65,8 @@ use_amp = cnfg.use_amp and use_cuda
 set_random_seed(cnfg.seed, use_cuda)
 
 if cuda_device:
-	mymodel.to(cuda_device)
-	lossf.to(cuda_device)
+	mymodel.to(cuda_device, non_blocking=True)
+	lossf.to(cuda_device, non_blocking=True)
 	if multi_gpu:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 		lossf = DataParallelCriterion(lossf, device_ids=cuda_devices, output_device=cuda_device.index, replicate_once=True)
@@ -82,8 +82,8 @@ with open(sys.argv[1], "wb") as f, torch.no_grad():
 		bsize, nsent = seq_batch.size()[:2]
 		ebsize = bsize * nsent
 		if cuda_device:
-			seq_batch = seq_batch.to(cuda_device)
-			seq_o = seq_o.to(cuda_device)
+			seq_batch = seq_batch.to(cuda_device, non_blocking=True)
+			seq_o = seq_o.to(cuda_device, non_blocking=True)
 		seq_batch, seq_o = seq_batch.long(), seq_o.long()
 		lo = seq_o.size(-1) - 1
 		ot = seq_o.narrow(-1, 1, lo).contiguous()
@@ -91,7 +91,7 @@ with open(sys.argv[1], "wb") as f, torch.no_grad():
 			output = mymodel(seq_batch.view(ebsize, -1), seq_o.narrow(-1, 0, lo).contiguous().view(ebsize, -1)).view(bsize, nsent, lo, -1)
 			loss = lossf(output, ot).view(bsize, -1).sum(-1)
 		if norm_token:
-			lenv = ot.ne(pad_id).int().view(bsize, -1).sum(-1).to(loss)
+			lenv = ot.ne(pad_id).int().view(bsize, -1).sum(-1).to(loss, non_blocking=True)
 			loss = loss / lenv
 		f.write("\n".join([str(rsu) for rsu in loss.tolist()]).encode("utf-8"))
 		f.write(ens)

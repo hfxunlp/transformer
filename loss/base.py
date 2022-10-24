@@ -88,7 +88,7 @@ class StdLabelSmoothingLoss(_Loss):
 
 		weight = torch.full((nclass,), smoothing_value)
 		if fbil:
-			weight.index_fill_(0, torch.tensor(tuple(fbil), dtype=torch.long, device=weight.device), 0.0)
+			weight.index_fill_(0, torch.as_tensor(tuple(fbil), dtype=torch.long, device=weight.device), 0.0)
 		self.register_buffer("weight", weight.unsqueeze(0))
 		self.conf = 1.0 - label_smoothing
 
@@ -184,7 +184,7 @@ class MultiLabelSmoothingLoss(_Loss):
 			smoothing_value = label_smoothing / (nclass - 1 - len(fbilu))
 			_tmp_w = torch.full((nclass,), smoothing_value)
 			if fbilu:
-				_tmp_w.index_fill_(0, torch.tensor(tuple(fbilu), dtype=torch.long, device=_tmp_w.device), 0.0)
+				_tmp_w.index_fill_(0, torch.as_tensor(tuple(fbilu), dtype=torch.long, device=_tmp_w.device), 0.0)
 			_weight.append(_tmp_w)
 		self.register_buffer("weight", torch.stack(_weight, 0).unsqueeze(1))
 		self.conf = 1.0 - label_smoothing

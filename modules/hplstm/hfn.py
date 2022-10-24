@@ -15,7 +15,7 @@ from cnfg.ihyp import *
 class MHPLSTMCore(nn.Module):
 
 	# use_glu leads to performance drop with MHPLSTM, disable by default
-	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, use_glu=False):
+	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, use_glu=None):
 
 		super(MHPLSTMCore, self).__init__()
 

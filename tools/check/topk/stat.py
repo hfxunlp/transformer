@@ -10,7 +10,7 @@ import torch
 
 from utils.tqdm import tqdm
 from utils.h5serial import h5File
-from utils.fmt.base import pad_id
+from cnfg.vocab.base import pad_id
 
 from cnfg.ihyp import *
 

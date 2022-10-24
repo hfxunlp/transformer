@@ -13,7 +13,7 @@ def bmv(inputm, inputv):
 
 def randint_t_core(high):
 
-	return high.new_empty(high.size()).uniform_(0.0, upper_one).mul_(high).floor_().to(torch.long)
+	return high.new_empty(high.size()).uniform_(0.0, upper_one).mul_(high).floor_().to(torch.long, non_blocking=True)
 
 def randint_t(low, high):
 
@@ -21,7 +21,7 @@ def randint_t(low, high):
 		return randint_t_core(high)
 	else:
 		rs = randint_t_core(high - low)
-		return rs.add_(low.to(rs.dtype))
+		return rs.add_(low.to(rs.dtype, non_blocking=True))
 
 def multinomial(x, num_samples, replacement=False, generator=None, dim=-1, **kwargs):
 
@@ -46,6 +46,20 @@ def multinomial(x, num_samples, replacement=False, generator=None, dim=-1, **kwa
 		out = out.transpose(dim, -1)
 
 	return out
+
+def exp_grow(start, end, k):
+
+	rs = torch.full((k,), (end / start) ** (1.0 / (k - 1)))
+	rs[0] = start
+	rs.cumprod_(dim=0)
+
+	return rs
+
+linear_grow = torch.linspace
+
+def comb_grow(start, end, k, alpha=0.5):
+
+	return exp_grow(start, end, k).mul_(alpha).add_(linear_grow(start, end, k).mul_(1.0 - alpha))
 
 def arcsigmoid(x):
 

@@ -16,7 +16,8 @@ from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 
 from utils.base import *
-from utils.fmt.base import ldvocab, reverse_dict, eos_id
+from utils.fmt.base import ldvocab, reverse_dict
+from cnfg.vocab.base import eos_id
 from utils.fmt.base4torch import parse_cuda_decode
 
 def load_fixing(module):
@@ -57,7 +58,7 @@ use_amp = cnfg.use_amp and use_cuda
 set_random_seed(cnfg.seed, use_cuda)
 
 if cuda_device:
-	mymodel.to(cuda_device)
+	mymodel.to(cuda_device, non_blocking=True)
 	if multi_gpu:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 
@@ -73,8 +74,8 @@ with open(sys.argv[1], "wb") as f, torch.no_grad():
 		seq_batch = torch.from_numpy(src_grp[str(i)][()])
 		seq_mt = torch.from_numpy(mt_grp[str(i)][()])
 		if cuda_device:
-			seq_batch = seq_batch.to(cuda_device)
-			seq_mt = seq_mt.to(cuda_device)
+			seq_batch = seq_batch.to(cuda_device, non_blocking=True)
+			seq_mt = seq_mt.to(cuda_device, non_blocking=True)
 		seq_batch, seq_mt = seq_batch.long(), seq_mt.long()
 		with autocast(enabled=use_amp):
 			output = mymodel.decode(seq_batch, seq_mt, beam_size, None, length_penalty)

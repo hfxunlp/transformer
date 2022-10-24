@@ -6,7 +6,7 @@ from cnfg.hyp import *
 
 from math import inf
 
-from utils.fmt.base import parse_none, parse_double_value_tuple
+from utils.fmt.parser import parse_none, parse_double_value_tuple
 
 # C backend
 if use_c_backend is None:
@@ -19,6 +19,7 @@ bind_c_forward = use_c_backend
 
 # the use of deterministic algorithms
 use_deterministic = not performance_over_reproduction
+allow_fp16_reduction = use_deterministic
 
 # biases
 enable_prev_ln_bias_default = enable_proj_bias_default = not ease_optimization
@@ -37,6 +38,7 @@ inplace_after_Custom_Act = use_adv_act_default and (adv_act not in set(["sigmoid
 # relative position encoding
 use_k_relative_position_encoder, use_k_relative_position_decoder = parse_double_value_tuple(use_k_relative_position)
 rel_pos_enabled = (max(use_k_relative_position_encoder, use_k_relative_position_decoder) > 0)
+relative_position_max_bucket_distance_encoder, relative_position_max_bucket_distance_decoder = parse_double_value_tuple(relative_position_max_bucket_distance)
 disable_std_pemb_encoder, disable_std_pemb_decoder = parse_double_value_tuple(disable_std_pemb)
 relpos_reduction_with_zeros = True
 

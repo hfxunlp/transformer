@@ -4,24 +4,13 @@ import sys
 
 from random import shuffle
 
-from cnfg.hyp import use_unk
-
-pad_id, sos_id, eos_id = 0, 1, 2
-if use_unk:
-	unk_id = 3
-	init_vocab = {"<pad>":pad_id, "<sos>":sos_id, "<eos>":eos_id, "<unk>":unk_id}
-	init_normal_token_id = 4
-else:
-	unk_id = None
-	init_vocab = {"<pad>":pad_id, "<sos>":sos_id, "<eos>":eos_id}
-	init_normal_token_id = 3
-init_token_id = 3
+from cnfg.vocab.base import *
 
 serial_func, deserial_func = repr, eval
 
-def tostr(lin):
-
-	return [str(lu) for lu in lin]
+tostr = lambda lin: [str(lu) for lu in lin]
+toint = lambda lin: [int(lu) for lu in lin]
+tofloat = lambda lin: [float(lu) for lu in lin]
 
 def save_objects(fname, *inputs):
 
@@ -82,9 +71,7 @@ def line_reader(fname, keep_empty_line=True, print_func=print):
 				if keep_empty_line:
 					yield ""
 
-def ldvocab(vfile, minf=False, omit_vsize=False, vanilla=False):
-
-	global init_vocab, init_normal_token_id
+def ldvocab(vfile, minf=False, omit_vsize=False, vanilla=False, init_vocab=init_vocab, init_normal_token_id=init_normal_token_id):
 
 	if vanilla:
 		rs, cwd = {}, 0
@@ -378,44 +365,29 @@ def get_bi_ratio(ls, lt):
 	else:
 		return float(lt) / float(ls)
 
-def map_batch_core(i_d, vocabi):
-
-	global use_unk, sos_id, eos_id, unk_id
+def map_batch_core(i_d, vocabi, use_unk=use_unk, sos_id=sos_id, eos_id=eos_id, unk_id=unk_id, **kwargs):
 
 	if isinstance(i_d[0], (tuple, list,)):
-		return [map_batch_core(idu, vocabi) for idu in i_d]
+		return [map_batch_core(idu, vocabi, use_unk=use_unk, sos_id=sos_id, eos_id=eos_id, unk_id=unk_id, **kwargs) for idu in i_d]
 	else:
 		rsi = [sos_id]
 		rsi.extend([vocabi.get(wd, unk_id) for wd in i_d] if use_unk else no_unk_mapper(vocabi, i_d))#[vocabi[wd] for wd in i_d if wd in vocabi]
 		rsi.append(eos_id)
 		return rsi
 
-def map_batch(i_d, vocabi):
+def map_batch(i_d, vocabi, use_unk=use_unk, sos_id=sos_id, eos_id=eos_id, unk_id=unk_id, **kwargs):
 
-	return map_batch_core(i_d, vocabi), 2
+	return map_batch_core(i_d, vocabi, use_unk=use_unk, sos_id=sos_id, eos_id=eos_id, unk_id=unk_id, **kwargs), 2
 
-def pad_batch(i_d, mlen_i):
-
-	global pad_id
+def pad_batch(i_d, mlen_i, pad_id=pad_id):
 
 	if isinstance(i_d[0], (tuple, list,)):
-		return [pad_batch(idu, mlen_i) for idu in i_d]
+		return [pad_batch(idu, mlen_i, pad_id=pad_id) for idu in i_d]
 	else:
 		curlen = len(i_d)
 		if curlen < mlen_i:
 			i_d.extend([pad_id for i in range(mlen_i - curlen)])
 		return i_d
-
-def parse_none(vin, value):
-
-	return value if vin is None else vin
-
-def parse_double_value_tuple(vin):
-
-	if isinstance(vin, (list, tuple,)):
-		return vin[0], vin[-1]
-	else:
-		return vin, vin
 
 class FileList(list):
 

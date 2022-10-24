@@ -14,7 +14,8 @@ from utils.contpara import get_model_parameters
 from utils.state.holder import Holder
 from utils.state.pyrand import PyRandomState
 from utils.state.thrand import THRandomState
-from utils.fmt.base import tostr, pad_id
+from utils.fmt.base import tostr
+from cnfg.vocab.base import pad_id
 from utils.fmt.base4torch import parse_cuda, load_emb
 from utils.mulang import data_sampler
 
@@ -45,8 +46,8 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 		seq_o = torch.from_numpy(task_grp["tgt"][i_d][()])
 		lo = seq_o.size(1) - 1
 		if mv_device:
-			seq_batch = seq_batch.to(mv_device)
-			seq_o = seq_o.to(mv_device)
+			seq_batch = seq_batch.to(mv_device, non_blocking=True)
+			seq_o = seq_o.to(mv_device, non_blocking=True)
 		seq_batch, seq_o = seq_batch.long(), seq_o.long()
 
 		oi = seq_o.narrow(1, 0, lo)
@@ -130,8 +131,8 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 			seq_o = torch.from_numpy(task_grp["tgt"][i_d][()])
 			lo = seq_o.size(1) - 1
 			if mv_device:
-				seq_batch = seq_batch.to(mv_device)
-				seq_o = seq_o.to(mv_device)
+				seq_batch = seq_batch.to(mv_device, non_blocking=True)
+				seq_o = seq_o.to(mv_device, non_blocking=True)
 			seq_batch, seq_o = seq_batch.long(), seq_o.long()
 			ot = seq_o.narrow(1, 1, lo).contiguous()
 			with autocast(enabled=use_amp):
@@ -139,7 +140,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 				loss = lossf(output, ot)
 				if multi_gpu:
 					loss = loss.sum()
-					trans = torch.cat([outu.argmax(-1).to(mv_device) for outu in output], 0)
+					trans = torch.cat([outu.argmax(-1).to(mv_device, non_blocking=True) for outu in output], 0)
 				else:
 					trans = output.argmax(-1)
 			sum_loss += loss.data.item()
@@ -241,8 +242,8 @@ if cnfg.tgt_emb is not None:
 	load_emb(cnfg.tgt_emb, mymodel.dec.wemb.weight, nwordt, cnfg.scale_down_emb, cnfg.freeze_tgtemb)
 
 if cuda_device:
-	mymodel.to(cuda_device)
-	lossf.to(cuda_device)
+	mymodel.to(cuda_device, non_blocking=True)
+	lossf.to(cuda_device, non_blocking=True)
 
 use_amp = cnfg.use_amp and use_cuda
 scaler = (MultiGPUGradScaler() if multi_gpu_optimizer else GradScaler()) if use_amp else None

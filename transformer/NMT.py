@@ -4,8 +4,8 @@ import torch
 from torch import nn
 
 from utils.base import all_done, select_zero_
-from utils.relpos import share_rel_pos_cache
-from utils.fmt.base import parse_double_value_tuple
+from utils.relpos.base import share_rel_pos_cache
+from utils.fmt.parser import parse_double_value_tuple
 
 from transformer.Encoder import Encoder
 
@@ -55,6 +55,18 @@ class NMT(nn.Module):
 
 		return self.dec(self.enc(inpute, _mask), inputo, _mask)
 
+	# inpute: source sentences from encoder (bsize, seql)
+	# beam_size: the beam size for beam search
+	# max_len: maximum length to generate
+
+	def decode(self, inpute, beam_size=1, max_len=None, length_penalty=0.0):
+
+		mask = inpute.eq(0).unsqueeze(1)
+
+		_max_len = (inpute.size(1) + max(64, inpute.size(1) // 4)) if max_len is None else max_len
+
+		return self.dec.decode(self.enc(inpute, mask), mask, beam_size, _max_len, length_penalty)
+
 	def load_base(self, base_nmt):
 
 		if hasattr(self.enc, "load_base"):
@@ -73,17 +85,9 @@ class NMT(nn.Module):
 		if (tgt_indices is not None) and hasattr(self.dec, "update_vocab"):
 			self.dec.update_vocab(tgt_indices)
 
-	# inpute: source sentences from encoder (bsize, seql)
-	# beam_size: the beam size for beam search
-	# max_len: maximum length to generate
+	def update_classifier(self, *args, **kwargs):
 
-	def decode(self, inpute, beam_size=1, max_len=None, length_penalty=0.0):
-
-		mask = inpute.eq(0).unsqueeze(1)
-
-		_max_len = (inpute.size(1) + max(64, inpute.size(1) // 4)) if max_len is None else max_len
-
-		return self.dec.decode(self.enc(inpute, mask), mask, beam_size, _max_len, length_penalty)
+		self.dec.update_classifier(*args, **kwargs)
 
 	def train_decode(self, inpute, beam_size=1, max_len=None, length_penalty=0.0, mask=None):
 

@@ -8,6 +8,7 @@ from torch.autograd import Function
 from torch.utils.cpp_extension import load
 
 from utils.base import reduce_model_list, repeat_bsize_for_beam_tensor
+from utils.relpos.bucket import build_rel_pos_bucket_map, build_rel_pos_bucket
 from modules.act import Custom_Act, LGLU, get_act, reduce_model as reduce_model_act
 from modules.dropout import Dropout, reduce_model as reduce_model_drop
 
@@ -162,7 +163,7 @@ class PositionalEmb(nn.Module):
 		poff = self.poff
 
 		if step_pick:
-			pos = torch.tensor([length + poff], dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
+			pos = torch.as_tensor([length + poff], dtype=self.w.dtype, device=self.w.device).unsqueeze(1)
 			ed = self.w.new_empty(1, self.num_dim)
 		else:
 			npos = self.num_pos
@@ -196,7 +197,7 @@ class MultiHeadAttn(nn.Module):
 	# sparsenorm: using sparse normer or standard softmax
 	# bind_qk: query and key can share a same linear transformation for the Reformer: The Efficient Transformer (https://arxiv.org/abs/2001.04451) paper.
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=0, uni_direction_reduction=False, is_left_to_right_reduction=True, zero_reduction=relpos_reduction_with_zeros, sparsenorm=False, bind_qk=False, xseql=cache_len_default):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=0, uni_direction_reduction=False, is_left_to_right_reduction=True, zero_reduction=relpos_reduction_with_zeros, max_bucket_distance=0, sparsenorm=False, bind_qk=False, xseql=cache_len_default):
 
 		super(MultiHeadAttn, self).__init__()
 
@@ -218,28 +219,35 @@ class MultiHeadAttn(nn.Module):
 
 		if k_rel_pos > 0:
 			self.rel_shift = k_rel_pos
-			padding_idx = None
-			if uni_direction_reduction:
-				_n_pemb = k_rel_pos + 1
-				if is_left_to_right_reduction:
-					self.clamp_min, self.clamp_max = -k_rel_pos, 0,
-				else:
-					self.clamp_min, self.clamp_max, self.rel_shift = 0, k_rel_pos, 0
-				if zero_reduction:
-					_n_pemb += 1
-					if is_left_to_right_reduction:
-						self.clamp_max += 1
-						padding_idx = self.clamp_max
-					else:
-						self.clamp_min -= 1
-						self.rel_shift += 1
-						padding_idx = 0
+			if max_bucket_distance > 0:
+				self.register_buffer("rel_pos_map", build_rel_pos_bucket_map(k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction))
+				self.register_buffer("rel_pos", build_rel_pos_bucket(xseql, k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction, dis_map=self.rel_pos_map))
+				self.rel_pemb = nn.Embedding((k_rel_pos + 1) if uni_direction else (k_rel_pos + k_rel_pos + 1), self.num_head)
+				self.clamp_max, self.clamp_min = max_bucket_distance, uni_direction_reduction
 			else:
-				_n_pemb = k_rel_pos + k_rel_pos + 1
-				self.clamp_min, self.clamp_max = -k_rel_pos, k_rel_pos
-			self.rel_pemb = nn.Embedding(_n_pemb, self.attn_dim, padding_idx=padding_idx)
-			_rpm = torch.arange(0, xseql, dtype=torch.long)
-			self.register_buffer("rel_pos", (_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+				padding_idx = None
+				if uni_direction_reduction:
+					_n_pemb = k_rel_pos + 1
+					if is_left_to_right_reduction:
+						self.clamp_min, self.clamp_max = -k_rel_pos, 0,
+					else:
+						self.clamp_min, self.clamp_max, self.rel_shift = 0, k_rel_pos, 0
+					if zero_reduction:
+						_n_pemb += 1
+						if is_left_to_right_reduction:
+							self.clamp_max += 1
+							padding_idx = self.clamp_max
+						else:
+							self.clamp_min -= 1
+							self.rel_shift += 1
+							padding_idx = 0
+				else:
+					_n_pemb = k_rel_pos + k_rel_pos + 1
+					self.clamp_min, self.clamp_max = -k_rel_pos, k_rel_pos
+				self.rel_pemb = nn.Embedding(_n_pemb, self.attn_dim, padding_idx=padding_idx)
+				_rpm = torch.arange(0, xseql, dtype=torch.long)
+				self.register_buffer("rel_pos", (_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+				self.register_buffer("rel_pos_map", None)
 			self.xseql = xseql
 			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
 			self.ref_rel_posm = None
@@ -298,7 +306,7 @@ class MultiHeadAttn(nn.Module):
 
 		if self.rel_pemb is not None:
 			self.rel_pos_cache = self.get_rel_pos(seql).narrow(0, seql - nquery, nquery).contiguous() if self.ref_rel_posm is None else self.ref_rel_posm.rel_pos_cache
-			scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.rel_pos_cache).transpose(1, 2)).view(nquery, bsize, nheads, seql).permute(1, 2, 0, 3)
+			scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.rel_pos_cache).transpose(1, 2)).view(nquery, bsize, nheads, seql).permute(1, 2, 0, 3) if self.rel_pos_map is None else self.rel_pemb(self.rel_pos_cache).permute(2, 0, 1)
 
 		scores = scores / sqrt(adim)
 
@@ -327,9 +335,38 @@ class MultiHeadAttn(nn.Module):
 
 		return self
 
+	def get_rel_pos(self, length):
+
+		if length <= self.xseql:
+			return self.rel_pos.narrow(0, 0, length).narrow(1, 0, length)
+		else:
+			if self.rel_pos_map is None:
+				_rpm = torch.arange(0, length, dtype=self.rel_pos.dtype, device=self.rel_pos.device)
+				return ((_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+			else:
+				return build_rel_pos_bucket(length, k_rel_pos=self.rel_shift, max_len=self.clamp_max, uni_direction=self.clamp_min, device=self.rel_pos.device, dis_map=self.rel_pos_map)
+
+	def reset_buffer(self, value=None):
+
+		self.iK = self.iV = self.real_iK = self.real_iV = self.rel_pos_cache = value
+
+	def repeat_buffer(self, beam_size):
+
+		if self.real_iK is not None:
+			self.real_iK = repeat_bsize_for_beam_tensor(self.real_iK, beam_size)
+		if self.real_iV is not None:
+			self.real_iV = repeat_bsize_for_beam_tensor(self.real_iV, beam_size)
+
+	def index_buffer(self, indices, dim=0):
+
+		if self.real_iK is not None:
+			self.real_iK = self.real_iK.index_select(dim, indices)
+		if self.real_iV is not None:
+			self.real_iV = self.real_iV.index_select(dim, indices)
+
 	def c_available(self):
 
-		return use_c_backend_mhattn and (type(self) == MultiHeadAttn) and (type(self.normer) == nn.Softmax)
+		return use_c_backend_mhattn and (type(self) == MultiHeadAttn) and (type(self.normer) == nn.Softmax) and ((self.rel_pos is None) or (self.rel_pos_map is None))
 
 	def c_init(self, bind=bind_c_forward):
 
@@ -388,36 +425,10 @@ class MultiHeadAttn(nn.Module):
 		else:
 			return rs["out"], (real_iK, real_iV,)
 
-	def get_rel_pos(self, length):
-
-		if length <= self.xseql:
-			return self.rel_pos.narrow(0, 0, length).narrow(1, 0, length)
-		else:
-			_rpm = torch.arange(0, length, dtype=self.rel_pos.dtype, device=self.rel_pos.device)
-			return ((_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
-
-	def reset_buffer(self, value=None):
-
-		self.iK = self.iV = self.real_iK = self.real_iV = self.rel_pos_cache = value
-
-	def repeat_buffer(self, beam_size):
-
-		if self.real_iK is not None:
-			self.real_iK = repeat_bsize_for_beam_tensor(self.real_iK, beam_size)
-		if self.real_iV is not None:
-			self.real_iV = repeat_bsize_for_beam_tensor(self.real_iV, beam_size)
-
-	def index_buffer(self, indices, dim=0):
-
-		if self.real_iK is not None:
-			self.real_iK = self.real_iK.index_select(dim, indices)
-		if self.real_iV is not None:
-			self.real_iV = self.real_iV.index_select(dim, indices)
-
 # Accelerated MultiHeadAttn for self attention, use when Q == K == V
 class SelfAttn(nn.Module):
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=use_k_relative_position, uni_direction_reduction=False, is_left_to_right_reduction=True, zero_reduction=relpos_reduction_with_zeros, sparsenorm=False, xseql=cache_len_default):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=use_k_relative_position, uni_direction_reduction=False, is_left_to_right_reduction=True, zero_reduction=relpos_reduction_with_zeros, max_bucket_distance=0, sparsenorm=False, xseql=cache_len_default):
 
 		super(SelfAttn, self).__init__()
 
@@ -436,28 +447,35 @@ class SelfAttn(nn.Module):
 
 		if k_rel_pos > 0:
 			self.rel_shift = k_rel_pos
-			padding_idx = None
-			if uni_direction_reduction:
-				_n_pemb = k_rel_pos + 1
-				if is_left_to_right_reduction:
-					self.clamp_min, self.clamp_max = -k_rel_pos, 0,
-				else:
-					self.clamp_min, self.clamp_max, self.rel_shift = 0, k_rel_pos, 0
-				if zero_reduction:
-					_n_pemb += 1
-					if is_left_to_right_reduction:
-						self.clamp_max += 1
-						padding_idx = self.clamp_max
-					else:
-						self.clamp_min -= 1
-						self.rel_shift += 1
-						padding_idx = 0
+			if max_bucket_distance > 0:
+				self.register_buffer("rel_pos_map", build_rel_pos_bucket_map(k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction))
+				self.register_buffer("rel_pos", build_rel_pos_bucket(xseql, k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction, dis_map=self.rel_pos_map))
+				self.rel_pemb = nn.Embedding((k_rel_pos + 1) if uni_direction_reduction else (k_rel_pos + k_rel_pos + 1), self.num_head)
+				self.clamp_max, self.clamp_min = max_bucket_distance, uni_direction_reduction
 			else:
-				_n_pemb = k_rel_pos + k_rel_pos + 1
-				self.clamp_min, self.clamp_max = -k_rel_pos, k_rel_pos
-			self.rel_pemb = nn.Embedding(_n_pemb, self.attn_dim, padding_idx=padding_idx)
-			_rpm = torch.arange(0, xseql, dtype=torch.long)
-			self.register_buffer("rel_pos", (_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+				padding_idx = None
+				if uni_direction_reduction:
+					_n_pemb = k_rel_pos + 1
+					if is_left_to_right_reduction:
+						self.clamp_min, self.clamp_max = -k_rel_pos, 0,
+					else:
+						self.clamp_min, self.clamp_max, self.rel_shift = 0, k_rel_pos, 0
+					if zero_reduction:
+						_n_pemb += 1
+						if is_left_to_right_reduction:
+							self.clamp_max += 1
+							padding_idx = self.clamp_max
+						else:
+							self.clamp_min -= 1
+							self.rel_shift += 1
+							padding_idx = 0
+				else:
+					_n_pemb = k_rel_pos + k_rel_pos + 1
+					self.clamp_min, self.clamp_max = -k_rel_pos, k_rel_pos
+				self.rel_pemb = nn.Embedding(_n_pemb, self.attn_dim, padding_idx=padding_idx)
+				_rpm = torch.arange(0, xseql, dtype=torch.long)
+				self.register_buffer("rel_pos", (_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+				self.register_buffer("rel_pos_map", None)
 			self.xseql = xseql
 			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
 			self.ref_rel_posm = None
@@ -490,10 +508,10 @@ class SelfAttn(nn.Module):
 		if self.rel_pemb is not None:
 			if states is None:
 				self.rel_pos_cache = self.get_rel_pos(nquery).contiguous() if self.ref_rel_posm is None else self.ref_rel_posm.rel_pos_cache
-				scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.rel_pos_cache).transpose(1, 2)).view(nquery, bsize, nheads, nquery).permute(1, 2, 0, 3)
+				scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.rel_pos_cache).transpose(1, 2)).view(nquery, bsize, nheads, nquery).permute(1, 2, 0, 3) if self.rel_pos_map is None else self.rel_pemb(self.rel_pos_cache).permute(2, 0, 1)
 			else:
 				self.rel_pos_cache = self.get_rel_pos(seql).narrow(0, seql - nquery, nquery).contiguous() if self.ref_rel_posm is None else self.ref_rel_posm.rel_pos_cache
-				scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.rel_pos_cache).transpose(1, 2)).view(nquery, bsize, nheads, seql).permute(1, 2, 0, 3)
+				scores += real_iQ.permute(2, 0, 1, 3).contiguous().view(nquery, bsize * nheads, adim).bmm(self.rel_pemb(self.rel_pos_cache).transpose(1, 2)).view(nquery, bsize, nheads, seql).permute(1, 2, 0, 3) if self.rel_pos_map is None else self.rel_pemb(self.rel_pos_cache).permute(2, 0, 1)
 
 		scores = scores / sqrt(adim)
 
@@ -512,9 +530,24 @@ class SelfAttn(nn.Module):
 		else:
 			return out, (real_iK, real_iV,)
 
+	def get_rel_pos(self, length):
+
+		if length <= self.xseql:
+			return self.rel_pos.narrow(0, 0, length).narrow(1, 0, length)
+		else:
+			if self.rel_pos_map is None:
+				_rpm = torch.arange(0, length, dtype=self.rel_pos.dtype, device=self.rel_pos.device)
+				return ((_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
+			else:
+				return build_rel_pos_bucket(length, k_rel_pos=self.rel_shift, max_len=self.clamp_max, uni_direction=self.clamp_min, device=self.rel_pos.device, dis_map=self.rel_pos_map)
+
+	def reset_buffer(self, value=None):
+
+		self.rel_pos_cache = value
+
 	def c_available(self):
 
-		return use_c_backend_selfattn and (type(self) == SelfAttn) and (type(self.normer) == nn.Softmax)
+		return use_c_backend_selfattn and (type(self) == SelfAttn) and (type(self.normer) == nn.Softmax) and ((self.rel_pos is None) or (self.rel_pos_map is None))
 
 	def c_init(self, bind=bind_c_forward):
 
@@ -561,18 +594,6 @@ class SelfAttn(nn.Module):
 			return rs["out"]
 		else:
 			return rs["out"], (rs["real_iK"], rs["real_iV"],)
-
-	def get_rel_pos(self, length):
-
-		if length <= self.xseql:
-			return self.rel_pos.narrow(0, 0, length).narrow(1, 0, length)
-		else:
-			_rpm = torch.arange(0, length, dtype=self.rel_pos.dtype, device=self.rel_pos.device)
-			return ((_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
-
-	def reset_buffer(self, value=None):
-
-		self.rel_pos_cache = value
 
 # Accelerated MultiHeadAttn for cross attention, use when K == V
 class CrossAttn(nn.Module):
@@ -631,6 +652,29 @@ class CrossAttn(nn.Module):
 
 		return self.outer(scores.matmul(real_iV).transpose(1, 2).contiguous().view(bsize, nquery, self.hsize))
 
+	def train(self, mode=True):
+
+		super(CrossAttn, self).train(mode)
+
+		if mode:
+			self.reset_buffer()
+
+		return self
+
+	def reset_buffer(self, value=None):
+
+		self.iK = self.real_iK = self.real_iV = value
+
+	def repeat_buffer(self, beam_size):
+
+		if self.real_iK is not None:
+			self.real_iK, self.real_iV = repeat_bsize_for_beam_tensor(self.real_iK, beam_size), repeat_bsize_for_beam_tensor(self.real_iV, beam_size)
+
+	def index_buffer(self, indices, dim=0):
+
+		if self.real_iK is not None:
+			self.real_iK, self.real_iV = self.real_iK.index_select(dim, indices), self.real_iV.index_select(dim, indices)
+
 	def c_available(self):
 
 		return use_c_backend_crossattn and (type(self) == CrossAttn) and (type(self.normer) == nn.Softmax)
@@ -676,29 +720,6 @@ class CrossAttn(nn.Module):
 			self.iK, self.real_iK, self.real_iV = iK, rs["real_iK"], rs["real_iV"]
 
 		return rs["out"]
-
-	def train(self, mode=True):
-
-		super(CrossAttn, self).train(mode)
-
-		if mode:
-			self.reset_buffer()
-
-		return self
-
-	def reset_buffer(self, value=None):
-
-		self.iK = self.real_iK = self.real_iV = value
-
-	def repeat_buffer(self, beam_size):
-
-		if self.real_iK is not None:
-			self.real_iK, self.real_iV = repeat_bsize_for_beam_tensor(self.real_iK, beam_size), repeat_bsize_for_beam_tensor(self.real_iV, beam_size)
-
-	def index_buffer(self, indices, dim=0):
-
-		if self.real_iK is not None:
-			self.real_iK, self.real_iV = self.real_iK.index_select(dim, indices), self.real_iV.index_select(dim, indices)
 
 class ResMHAttn(nn.Module):
 
@@ -1260,10 +1281,10 @@ class CoordinateEmb(nn.Module):
 	def get_ext(self, length, step, step_pick=False):
 
 		poff = self.poff
-		_step = torch.tensor([step + poff], dtype=self.w.dtype, device=self.w.device).view(1, 1)
+		_step = torch.as_tensor([step + poff], dtype=self.w.dtype, device=self.w.device).view(1, 1)
 
 		if step_pick:
-			_pos = torch.tensor([length + poff], dtype=self.w.dtype, device=self.w.device).view(1, 1)
+			_pos = torch.as_tensor([length + poff], dtype=self.w.dtype, device=self.w.device).view(1, 1)
 			ed = self.w.new_empty(1, self.num_dim)
 		else:
 			npos = self.num_pos
@@ -1284,7 +1305,7 @@ class CoordinateEmb(nn.Module):
 
 class Temperature(nn.Module):
 
-	def __init__(self, isize, minv = 0.125):
+	def __init__(self, isize, minv=0.125):
 
 		super(Temperature, self).__init__()
 

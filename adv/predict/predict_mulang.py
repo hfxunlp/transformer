@@ -11,12 +11,13 @@ from utils.h5serial import h5File
 import cnfg.mulang as cnfg
 from cnfg.ihyp import *
 
-from transformer.MuLang.Eff.Base.NMT import NMT
+from transformer.MuLang.NMT import NMT
 from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 
 from utils.base import *
-from utils.fmt.base import ldvocab, reverse_dict, eos_id
+from utils.fmt.base import ldvocab, reverse_dict
+from cnfg.vocab.base import eos_id
 from utils.fmt.base4torch import parse_cuda_decode
 
 def load_fixing(module):
@@ -32,7 +33,7 @@ vcbt, nwordt = ldvocab(sys.argv[2])
 vcbt = reverse_dict(vcbt)
 
 if len(sys.argv) == 4:
-	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask)
+	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask, ngroup=cnfg.ngroup)
 
 	mymodel = load_model_cpu(sys.argv[3], mymodel)
 	mymodel.apply(load_fixing)
@@ -40,7 +41,7 @@ if len(sys.argv) == 4:
 else:
 	models = []
 	for modelf in sys.argv[3:]:
-		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask)
+		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask, ngroup=cnfg.ngroup)
 
 		tmp = load_model_cpu(modelf, tmp)
 		tmp.apply(load_fixing)
@@ -56,7 +57,7 @@ use_amp = cnfg.use_amp and use_cuda
 set_random_seed(cnfg.seed, use_cuda)
 
 if cuda_device:
-	mymodel.to(cuda_device)
+	mymodel.to(cuda_device, non_blocking=True)
 	if multi_gpu:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 
@@ -71,7 +72,7 @@ with open(sys.argv[1], "wb") as f, torch.no_grad():
 	for i_d, taskid in tqdm(ntest, mininterval=tqdm_mininterval):
 		seq_batch = torch.from_numpy(td[str(taskid)]["src"][i_d][()])
 		if cuda_device:
-			seq_batch = seq_batch.to(cuda_device)
+			seq_batch = seq_batch.to(cuda_device, non_blocking=True)
 		seq_batch = seq_batch.long()
 		with autocast(enabled=use_amp):
 			output = mymodel.decode(seq_batch, taskid, beam_size, None, length_penalty)

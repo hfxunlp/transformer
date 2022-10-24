@@ -2,11 +2,11 @@
 
 from torch import nn
 from modules.base import Dropout, PositionalEmb
+from utils.fmt.base import parse_double_value_tuple
+from cnfg.vocab.base import pad_id
 
 from transformer.Encoder import Encoder as EncoderBase
 from transformer.Decoder import DecoderLayer as MSEncoderLayerBase
-
-from utils.fmt.base import pad_id, parse_double_value_tuple
 
 from math import sqrt
 
@@ -56,7 +56,7 @@ class MSEncoder(nn.Module):
 
 		out = out * sqrt(out.size(-1))
 		if self.pemb is not None:
-			out = out + self.pemb(inputo, expand=False)
+			out = self.pemb(inputo, expand=False).add(out, alpha=sqrt(out.size(-1)))
 
 		if self.drop is not None:
 			out = self.drop(out)

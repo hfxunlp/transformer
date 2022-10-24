@@ -25,7 +25,7 @@ class ATTNCombiner(nn.Module):
 		_seql = input2.size(-2)
 		if mask is not None:
 			_tm = mask.sum(-2, keepdim=True)
-			_nele = (_seql - _tm).masked_fill(_tm.eq(_seql), 1).to(scores)
+			_nele = (_seql - _tm).masked_fill(_tm.eq(_seql), 1).to(scores, non_blocking=True)
 			scores = scores / _nele
 		else:
 			scores = scores / _seql

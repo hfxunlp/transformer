@@ -2,8 +2,8 @@
 
 from torch import nn
 
-from utils.relpos import share_rel_pos_cache
-from utils.fmt.base import parse_double_value_tuple
+from utils.relpos.base import share_rel_pos_cache
+from utils.fmt.parser import parse_double_value_tuple
 
 from transformer.Doc.Para.Base.Encoder import Encoder
 from transformer.Doc.Para.Base.Decoder import Decoder

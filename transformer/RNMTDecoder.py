@@ -10,7 +10,7 @@ from utils.sampler import SampleMax
 from utils.base import all_done
 from modules.rnncells import *
 
-from utils.fmt.base import pad_id
+from cnfg.vocab.base import pad_id
 
 from transformer.Decoder import Decoder as DecoderBase
 
@@ -426,4 +426,4 @@ class Decoder(DecoderBase):
 
 		if self.fbl is not None:
 			with torch.no_grad():
-				list(self.classifier.modules())[-1].bias.index_fill_(0, torch.tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf_default)"""
+				list(self.classifier.modules())[-1].bias.index_fill_(0, torch.as_tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf_default)"""

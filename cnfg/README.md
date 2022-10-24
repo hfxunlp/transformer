@@ -153,8 +153,9 @@ computation_order = "v2"
 # default cached sequence length (for positional embedding, etc.)
 cache_len_default = 256
 
-# window size (one side) of relative positional embeddings, 0 to disable. 16 and 8 are used in [Self-Attention with Relative Position Representations](https://www.aclweb.org/anthology/N18-2074/) for Transformer Base and Big respectively. disable_std_pemb to disable the standard positional embedding when use the relative position, or to disable only the decoder side with a tuple (False, True,), useful for AAN.
+# window size (one side) of relative positional embeddings, 0 to disable. 8 and 16 are used in [Self-Attention with Relative Position Representations](https://www.aclweb.org/anthology/N18-2074/) for Transformer Base and Big respectively. relative_position_max_bucket_distance for the bucket relative positional encoding used by T5, [Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer](https://www.jmlr.org/papers/v21/20-074.html), which slightly hampers the performance on WMT 14 En-De. disable_std_pemb to disable the standard positional embedding when use the relative position, or to disable only the decoder side with a tuple (False, True,), useful for AAN.
 use_k_relative_position = 0
+relative_position_max_bucket_distance = 0
 disable_std_pemb = False
 
 # using fast implementation of label smoothing loss, but it cannot exclude the negative impact of special tokens, like <pad>, on training. `forbidden_indexes` in `cnfg/base.py` shall be set to None to enable.
@@ -247,3 +248,7 @@ unfreeze_weight = False
 # number of layers for context encoding
 num_layer_context = 1
 ```
+
+## `vocab/`
+
+Configuration of special token IDs.

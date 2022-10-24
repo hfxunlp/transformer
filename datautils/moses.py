@@ -12,10 +12,10 @@ if not moses_scripts.endswith(sep):
 
 class ProcessWrapper:
 
-	def __init__(self, cmd=[]):
+	def __init__(self, cmd=None):
 
 		self.process = None
-		self.cmd = cmd
+		self.cmd = [] if cmd is None else cmd
 
 	def start(self, stdin=PIPE, stdout=PIPE):
 

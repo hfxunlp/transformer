@@ -23,7 +23,7 @@ from transformer.EnsembleNMT import NMT as Ensemble
 from parallel.parallelMT import DataParallelMT
 
 from utils.base import *
-from utils.fmt.base import pad_id
+from cnfg.vocab.base import pad_id
 from utils.fmt.base4torch import parse_cuda_decode
 
 def load_fixing(module):
@@ -67,7 +67,7 @@ use_amp = cnfg.use_amp and use_cuda
 set_random_seed(cnfg.seed, use_cuda)
 
 if cuda_device:
-	mymodel.to(cuda_device)
+	mymodel.to(cuda_device, non_blocking=True)
 	if multi_gpu:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=True)
 
@@ -89,8 +89,8 @@ with torch.no_grad():
 		seq_o = torch.from_numpy(tgt_grp[bid][()])
 		lo = seq_o.size(1) - 1
 		if cuda_device:
-			seq_batch = seq_batch.to(cuda_device)
-			seq_o = seq_o.to(cuda_device)
+			seq_batch = seq_batch.to(cuda_device, non_blocking=True)
+			seq_o = seq_o.to(cuda_device, non_blocking=True)
 		seq_batch, seq_o = seq_batch.long(), seq_o.long()
 		with autocast(enabled=use_amp):
 			output = mymodel(seq_batch, seq_o.narrow(1, 0, lo))

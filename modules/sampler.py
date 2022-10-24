@@ -104,7 +104,7 @@ class SamplerFunction(Function):
 			ctx.sum_batch = True
 		_ms = _ics.ge(_sv).int().cumsum(dim).eq(1)
 
-		return _ms.to(inputs.dtype)
+		return _ms.to(inputs.dtype, non_blocking=True)
 
 	@staticmethod
 	def backward(ctx, grad_outputs):

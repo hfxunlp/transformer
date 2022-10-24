@@ -17,7 +17,7 @@ from parallel.base import DataParallelCriterion
 from parallel.parallelMT import DataParallelMT
 
 from utils.base import *
-from utils.fmt.base import pad_id
+from cnfg.vocab.base import pad_id
 from utils.fmt.base4torch import parse_cuda
 
 probe_reorder = cnfg.probe_reorder
@@ -44,8 +44,8 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 			seq_o = torch.from_numpy(tgt_grp[bid][()])
 			lo = seq_o.size(1) - ind_shift
 			if mv_device:
-				seq_batch = seq_batch.to(mv_device)
-				seq_o = seq_o.to(mv_device)
+				seq_batch = seq_batch.to(mv_device, non_blocking=True)
+				seq_o = seq_o.to(mv_device, non_blocking=True)
 			seq_batch, seq_o = seq_batch.long(), seq_o.long()
 			ot = seq_o.narrow(1, ind_shift, lo).contiguous()
 			with autocast(enabled=use_amp):
@@ -53,7 +53,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 				loss = lossf(output, ot)
 				if multi_gpu:
 					loss = loss.sum()
-					trans = torch.cat([outu.argmax(-1).to(mv_device) for outu in output], 0)
+					trans = torch.cat([outu.argmax(-1).to(mv_device, non_blocking=True) for outu in output], 0)
 				else:
 					trans = output.argmax(-1)
 			sum_loss += loss.data.item()
@@ -94,8 +94,8 @@ use_cuda, cuda_device, cuda_devices, multi_gpu = parse_cuda(cnfg.use_cuda, cnfg.
 set_random_seed(cnfg.seed, use_cuda)
 
 if cuda_device:
-	mymodel.to(cuda_device)
-	lossf.to(cuda_device)
+	mymodel.to(cuda_device, non_blocking=True)
+	lossf.to(cuda_device, non_blocking=True)
 	if multi_gpu:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 		lossf = DataParallelCriterion(lossf, device_ids=cuda_devices, output_device=cuda_device.index, replicate_once=True)

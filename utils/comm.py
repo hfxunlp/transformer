@@ -11,6 +11,6 @@ def secure_broadcast_coalesced(tensors, devices, buffer_size=10485760):
 	else:
 		src_type = [para.dtype for para in tensors]
 		map_type = [nccl_type_map[para.dtype] if para.dtype in nccl_type_map else None for para in tensors]
-		rs = comm.broadcast_coalesced([para if typ is None else para.to(typ) for para, typ in zip(tensors, map_type)], devices, buffer_size=buffer_size)
+		rs = comm.broadcast_coalesced([para if typ is None else para.to(typ, non_blocking=True) for para, typ in zip(tensors, map_type)], devices, buffer_size=buffer_size)
 
-		return list(zip(*[para if mtyp is None else [pu.to(styp) for pu in para] for para, mtyp, styp in zip(list(zip(*rs)), map_type, src_type)]))
+		return list(zip(*[para if mtyp is None else [pu.to(styp, non_blocking=True) for pu in para] for para, mtyp, styp in zip(list(zip(*rs)), map_type, src_type)]))

@@ -8,7 +8,7 @@ from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_ze
 from utils.aan import share_aan_cache
 from math import sqrt
 
-from utils.fmt.base import pad_id
+from cnfg.vocab.base import pad_id
 
 from transformer.Decoder import DecoderLayer as DecoderLayerBase, Decoder as DecoderBase
 
@@ -121,9 +121,8 @@ class Decoder(DecoderBase):
 
 		out = self.wemb(inputo)
 
-		out = out * sqrt(out.size(-1))
 		if self.pemb is not None:
-			out = out + self.pemb(inputo, expand=False)
+			out = self.pemb(inputo, expand=False).add(out, alpha=sqrt(out.size(-1)))
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -165,16 +164,12 @@ class Decoder(DecoderBase):
 
 		bsize = inpute.size(0)
 
-		sos_emb = self.get_sos_emb(inpute)
-
-		sqrt_isize = sqrt(sos_emb.size(-1))
+		out = self.get_sos_emb(inpute)
 
 		# out: input to the decoder for the first step (bsize, 1, isize)
-
-		out = sos_emb * sqrt_isize
 		if self.pemb is not None:
-			out = out + self.pemb.get_pos(0)
-
+			sqrt_isize = sqrt(out.size(-1))
+			out = self.pemb.get_pos(0).add(out, alpha=sqrt_isize)
 		if self.drop is not None:
 			out = self.drop(out)
 
@@ -200,9 +195,9 @@ class Decoder(DecoderBase):
 
 		for i in range(2, max_len + 1):
 
-			out = self.wemb(wds) * sqrt_isize
+			out = self.wemb(wds)
 			if self.pemb is not None:
-				out = out + self.pemb.get_pos(i - 1)
+				out = self.pemb.get_pos(i - 1).add(out, alpha=sqrt_isize)
 
 			if self.drop is not None:
 				out = self.drop(out)
@@ -241,19 +236,17 @@ class Decoder(DecoderBase):
 		bsizeb2 = bsize * beam_size2
 		real_bsize = bsize * beam_size
 
-		sos_emb = self.get_sos_emb(inpute)
-		isize = sos_emb.size(-1)
-		sqrt_isize = sqrt(isize)
+		out = self.get_sos_emb(inpute)
+		isize = out.size(-1)
 
 		if length_penalty > 0.0:
 			# lpv: length penalty vector for each beam (bsize * beam_size, 1)
-			lpv = sos_emb.new_ones(real_bsize, 1)
+			lpv = out.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		out = sos_emb * sqrt_isize
 		if self.pemb is not None:
-			out = out + self.pemb.get_pos(0)
-
+			sqrt_isize = sqrt(isize)
+			out = self.pemb.get_pos(0).add(out, alpha=sqrt_isize)
 		if self.drop is not None:
 			out = self.drop(out)
 
@@ -300,10 +293,9 @@ class Decoder(DecoderBase):
 
 		for step in range(2, max_len + 1):
 
-			out = self.wemb(wds) * sqrt_isize
+			out = self.wemb(wds)
 			if self.pemb is not None:
-				out = out + self.pemb.get_pos(step - 1)
-
+				out = self.pemb.get_pos(step - 1).add(out, alpha=sqrt_isize)
 			if self.drop is not None:
 				out = self.drop(out)
 

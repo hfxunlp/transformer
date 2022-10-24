@@ -89,7 +89,7 @@ def torch_any_byte(x, *inputs, dim=None, **kwargs):
 
 def flip_mask_bool(mask, dim):
 
-	return mask.to(torch.uint8).flip(dim).to(mask.dtype)
+	return mask.to(torch.uint8, non_blocking=True).flip(dim).to(mask.dtype, non_blocking=True)
 
 def flip_mask_byte(mask, dim):
 
@@ -350,10 +350,12 @@ def async_save_model(model, fname, sub_module=False, print_func=print, mtyp=None
 
 	Thread(target=_worker, args=(model, fname, sub_module, print_func, mtyp, para_lock, log_success)).start()
 
-def save_states(state_dict, fname, print_func=print):
+def save_states(state_dict, fname, print_func=print, mtyp=None):
 
 	try:
 		torch.save(state_dict, fname)
+		if mtyp is not None:
+			save_model_cleaner(fname, mtyp)
 	except Exception as e:
 		if print_func is not None:
 			print_func(str(e))
@@ -382,6 +384,12 @@ def set_random_seed(seed, set_cuda=False):
 	torch.manual_seed(_rseed)
 	if set_cuda:
 		torch.cuda.manual_seed_all(_rseed)
+		try:
+			torch.backends.cuda.matmul.allow_tf32 = use_deterministic
+			torch.backends.cudnn.allow_tf32 = use_deterministic
+			torch.backends.cuda.matmul.allow_fp16_reduced_precision_reduction = allow_fp16_reduction
+		except:
+			pass
 		# Make cudnn methods deterministic according to: https://pytorch.org/docs/stable/notes/randomness.html#cudnn
 		try:
 			torch.use_deterministic_algorithms(use_deterministic)
@@ -400,11 +408,11 @@ def module_train(netin, module, mode=True):
 def repeat_bsize_for_beam_tensor(tin, beam_size):
 
 	_tsize = list(tin.size())
-	_rarg = [beam_size if i == 1 else 1 for i in range(len(_tsize))]
+	_rarg = [1 for i in range(len(_tsize))]
+	_rarg[1] = beam_size
 	_tsize[0] *= beam_size
-	_tout = tin.repeat(*_rarg).view(_tsize)
 
-	return _tout
+	return tin.repeat(*_rarg).view(_tsize)
 
 def expand_bsize_for_beam(*inputs, beam_size=1):
 
@@ -676,7 +684,10 @@ def range_parameter_iter_func(model, lind, rind, func=None):
 def mkdir(pth):
 
 	if not fs_check(pth):
-		makedirs(pth)
+		try:
+			makedirs(pth)
+		except Exception as e:
+			print(e)
 
 class holder(dict):
 
@@ -698,21 +709,25 @@ class holder(dict):
 
 class bestfkeeper:
 
-	def __init__(self, fnames=[], k=n_keep_best):
+	def __init__(self, fnames=None, k=n_keep_best):
 
-		self.fnames, self.k = fnames, k
+		self.fnames, self.k = [] if fnames is None else fnames, k
 		self.clean()
 
 	def update(self, fname=None):
 
 		self.fnames.append(fname)
-		self.clean()
+		self.clean(last_fname=fname)
 
-	def clean(self):
+	def clean(self, last_fname=None):
 
 		_n_files = len(self.fnames)
+		_last_fname = (self.fnames[-1] if self.fnames else None) if last_fname is None else last_fname
 		while _n_files > self.k:
 			fname = self.fnames.pop(0)
-			if fname is not None and fs_check(fname):
-				remove(fname)
+			if (fname is not None) and (fname != _last_fname) and fs_check(fname):
+				try:
+					remove(fname)
+				except Exception as e:
+					print(e)
 			_n_files -= 1

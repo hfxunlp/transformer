@@ -59,6 +59,16 @@ class GroupLinear(nn.Module):
 
 		return out.contiguous().view(_size)
 
+	def extra_repr(self):
+		return "groups={}, in_features={}, out_features={}, bias={}".format(self.ngroup, self.ngroup * self.isize, self.ngroup * self.osize, self.bias is not None)
+
+	def fix_init(self):
+
+		with torch.no_grad():
+			self.weight.uniform_(- sqrt(1.0 / self.isize), sqrt(1.0 / self.isize))
+			if self.bias is not None:
+				self.bias.zero_()
+
 	def c_available(self):
 
 		return use_c_backend_group and (type(self) == GroupLinear)
@@ -98,13 +108,3 @@ class GroupLinear(nn.Module):
 			i_d["bias"] = bias
 
 		return i_d, *self.aargs
-
-	def extra_repr(self):
-		return "groups={}, in_features={}, out_features={}, bias={}".format(self.ngroup, self.ngroup * self.isize, self.ngroup * self.osize, self.bias is not None)
-
-	def fix_init(self):
-
-		with torch.no_grad():
-			self.weight.uniform_(- sqrt(1.0 / self.isize), sqrt(1.0 / self.isize))
-			if self.bias is not None:
-				self.bias.zero_()

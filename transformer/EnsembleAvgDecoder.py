@@ -5,7 +5,7 @@ from utils.sampler import SampleMax
 from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_zero_
 from math import sqrt
 
-from utils.fmt.base import pad_id
+from cnfg.vocab.base import pad_id
 
 from transformer.EnsembleDecoder import Decoder as DecoderBase
 
@@ -30,10 +30,8 @@ class Decoder(DecoderBase):
 
 			out = model.wemb(inputo)
 
-			out = out * sqrt(out.size(-1))
 			if model.pemb is not None:
-				out = out + model.pemb(inputo, expand=False)
-
+				out = model.pemb(inputo, expand=False).add(out, alpha=sqrt(out.size(-1)))
 			if model.drop is not None:
 				out = model.drop(out)
 
@@ -62,14 +60,12 @@ class Decoder(DecoderBase):
 
 		for model, inputu in zip(self.nets, inpute):
 
-			sos_emb = model.get_sos_emb(inputu)
+			out = model.get_sos_emb(inputu)
 
 			# out: input to the decoder for the first step (bsize, 1, isize)
 
-			out = sos_emb * sqrt_isize
 			if model.pemb is not None:
-				out = out + model.pemb.get_pos(0)
-
+				out = model.pemb.get_pos(0).add(out, alpha=sqrt_isize)
 			if model.drop is not None:
 				out = model.drop(out)
 
@@ -101,10 +97,9 @@ class Decoder(DecoderBase):
 
 			for model, inputu in zip(self.nets, inpute):
 
-				out = model.wemb(wds) * sqrt_isize
+				out = model.wemb(wds)
 				if model.pemb is not None:
-					out = out + model.pemb.get_pos(step - 1)
-
+					out = model.pemb.get_pos(step - 1).add(out, alpha=sqrt_isize)
 				if model.drop is not None:
 					out = model.drop(out)
 
@@ -156,9 +151,9 @@ class Decoder(DecoderBase):
 
 		for _inum, (model, inputu) in enumerate(zip(self.nets, inpute)):
 
-			out = model.get_sos_emb(inputu) * sqrt_isize
+			out = model.get_sos_emb(inputu)
 			if model.pemb is not None:
-				out = out + model.pemb.get_pos(0)
+				out = model.pemb.get_pos(0).add(out, alpha=sqrt_isize)
 
 			if model.drop is not None:
 				out = model.drop(out)
@@ -212,10 +207,9 @@ class Decoder(DecoderBase):
 
 			for _inum, (model, inputu) in enumerate(zip(self.nets, inpute)):
 
-				out = model.wemb(wds) * sqrt_isize
+				out = model.wemb(wds)
 				if model.pemb is not None:
-					out = out + model.pemb.get_pos(step - 1)
-
+					out = model.pemb.get_pos(step - 1).add(out, alpha=sqrt_isize)
 				if model.drop is not None:
 					out = model.drop(out)
 

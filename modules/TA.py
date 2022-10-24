@@ -49,9 +49,9 @@ class PositionwiseFF(PositionwiseFFBase):
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, norm_residual=norm_residual_default, **kwargs):
+	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=True, **kwargs):
 
-		super(PositionwiseFF, self).__init__(isize, norm_residual=False, **kwargs)
+		super(PositionwiseFF, self).__init__(isize, hsize=hsize, dropout=dropout, norm_residual=True, **kwargs)
 
 	def forward(self, x):
 

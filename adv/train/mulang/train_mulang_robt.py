@@ -14,7 +14,8 @@ from utils.contpara import get_model_parameters
 from utils.state.holder import Holder
 from utils.state.pyrand import PyRandomState
 from utils.state.thrand import THRandomState
-from utils.fmt.base import tostr, pad_id
+from utils.fmt.base import tostr
+from cnfg.vocab.base import pad_id
 from utils.fmt.base4torch import parse_cuda, load_emb
 from utils.mulang import data_sampler
 
@@ -30,7 +31,7 @@ from utils.h5serial import h5File
 import cnfg.mulang as cnfg
 from cnfg.ihyp import *
 
-from transformer.MuLang.Eff.Base.NMT import NMT
+from transformer.MuLang.NMT import NMT
 
 def back_translate(model, seq_in, taskid, beam_size, multi_gpu, enable_autocast=False, step_bsize=32, step_ntok=640, pivot_bt=True):
 
@@ -72,7 +73,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 		seq_o = torch.from_numpy(td[str(taskid)]["tgt"][i_d][()])
 		lo = seq_o.size(1) - 1
 		if mv_device:
-			seq_o = seq_o.to(mv_device)
+			seq_o = seq_o.to(mv_device, non_blocking=True)
 		seq_o = seq_o.long()
 
 		_bt_taskid = randint(0, t_sample_max_id)
@@ -160,8 +161,8 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 			seq_o = torch.from_numpy(task_grp["tgt"][i_d][()])
 			lo = seq_o.size(1) - 1
 			if mv_device:
-				seq_batch = seq_batch.to(mv_device)
-				seq_o = seq_o.to(mv_device)
+				seq_batch = seq_batch.to(mv_device, non_blocking=True)
+				seq_o = seq_o.to(mv_device, non_blocking=True)
 			seq_batch, seq_o = seq_batch.long(), seq_o.long()
 			ot = seq_o.narrow(1, 1, lo).contiguous()
 			with autocast(enabled=use_amp):
@@ -169,7 +170,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 				loss = lossf(output, ot, lang_id=taskid)
 				if multi_gpu:
 					loss = loss.sum()
-					trans = torch.cat([outu.argmax(-1).to(mv_device) for outu in output], 0)
+					trans = torch.cat([outu.argmax(-1).to(mv_device, non_blocking=True) for outu in output], 0)
 				else:
 					trans = output.argmax(-1)
 			sum_loss += loss.data.item()
@@ -251,7 +252,7 @@ else:
 nvalid = [(str(i), _task,) for _nd, _task in zip(nvalid, vd["taskorder"][()].tolist()) for i in range(_nd)]
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
-mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask)
+mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, ntask=ntask, ngroup=cnfg.ngroup)
 
 fine_tune_m = cnfg.fine_tune_m
 
@@ -272,8 +273,8 @@ if cnfg.tgt_emb is not None:
 	load_emb(cnfg.tgt_emb, mymodel.dec.wemb.weight, nwordt, cnfg.scale_down_emb, cnfg.freeze_tgtemb)
 
 if cuda_device:
-	mymodel.to(cuda_device)
-	lossf.to(cuda_device)
+	mymodel.to(cuda_device, non_blocking=True)
+	lossf.to(cuda_device, non_blocking=True)
 
 use_amp = cnfg.use_amp and use_cuda
 scaler = (MultiGPUGradScaler() if multi_gpu_optimizer else GradScaler()) if use_amp else None

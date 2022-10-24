@@ -14,7 +14,8 @@ from utils.contpara import get_model_parameters
 from utils.state.holder import Holder
 from utils.state.pyrand import PyRandomState
 from utils.state.thrand import THRandomState
-from utils.fmt.base import tostr, pad_id
+from utils.fmt.base import tostr
+from cnfg.vocab.base import pad_id
 from utils.fmt.base4torch import parse_cuda, load_emb
 
 from lrsch import GoogleLR as LRScheduler
@@ -50,8 +51,8 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 		seq_o = torch.from_numpy(tgt_grp[i_d][()])
 		lo = seq_o.size(1) - ind_shift
 		if mv_device:
-			seq_batch = seq_batch.to(mv_device)
-			seq_o = seq_o.to(mv_device)
+			seq_batch = seq_batch.to(mv_device, non_blocking=True)
+			seq_o = seq_o.to(mv_device, non_blocking=True)
 		seq_batch, seq_o = seq_batch.long(), seq_o.long()
 
 		oi = seq_o.narrow(1, 0, lo)
@@ -140,8 +141,8 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 			seq_o = torch.from_numpy(tgt_grp[bid][()])
 			lo = seq_o.size(1) - ind_shift
 			if mv_device:
-				seq_batch = seq_batch.to(mv_device)
-				seq_o = seq_o.to(mv_device)
+				seq_batch = seq_batch.to(mv_device, non_blocking=True)
+				seq_o = seq_o.to(mv_device, non_blocking=True)
 			seq_batch, seq_o = seq_batch.long(), seq_o.long()
 			ot = seq_o.narrow(1, ind_shift, lo).contiguous()
 			with autocast(enabled=use_amp):
@@ -149,7 +150,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 				loss = lossf(output, ot)
 				if multi_gpu:
 					loss = loss.sum()
-					trans = torch.cat([outu.argmax(-1).to(mv_device) for outu in output], 0)
+					trans = torch.cat([outu.argmax(-1).to(mv_device, non_blocking=True) for outu in output], 0)
 				else:
 					trans = output.argmax(-1)
 			sum_loss += loss.data.item()
@@ -250,8 +251,8 @@ if cnfg.tgt_emb is not None:
 	load_emb(cnfg.tgt_emb, mymodel.dec.wemb.weight, nwordt, cnfg.scale_down_emb, cnfg.freeze_tgtemb)
 
 if cuda_device:
-	mymodel.to(cuda_device)
-	lossf.to(cuda_device)
+	mymodel.to(cuda_device, non_blocking=True)
+	lossf.to(cuda_device, non_blocking=True)
 
 use_amp = cnfg.use_amp and use_cuda
 scaler = (MultiGPUGradScaler() if multi_gpu_optimizer else GradScaler()) if use_amp else None
@@ -297,7 +298,7 @@ else:
 		logger.info("Epoch: 0, train loss: %.3f, valid loss/error: %.3f %.2f" % (tminerr, vloss, vprec))
 		save_model(mymodel.module.dec if multi_gpu else mymodel.dec, wkdir + "train_0_%.3f_%.3f_%.2f.h5" % (tminerr, vloss, vprec), False, print_func=logger.info, mtyp=("eva" if overwrite_eva else "train") if save_auto_clean else None)
 		if statesf is not None:
-			torch.save(optimizer.state_dict(), wkdir + "train_0_%.3f_%.3f_%.2f.optm.t7" % (tminerr, vloss, vprec))
+			save_states(state_holder.state_dict(update=False, **{"remain_steps": remain_steps, "checkpoint_id": cur_checkid}), statesf, print_func=logger.info)
 		logger.info("New best model saved")
 
 if cnfg.dss_ws is not None and cnfg.dss_ws > 0.0 and cnfg.dss_ws < 1.0:
@@ -326,7 +327,7 @@ for i in range(1, maxrun + 1):
 	if (vprec <= minerr) or (vloss <= minloss):
 		save_model(mymodel.module.dec if multi_gpu else mymodel.dec, wkdir + "eva_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), False, print_func=logger.info, mtyp="eva" if save_auto_clean else None)
 		if statesf is not None:
-			torch.save(optimizer.state_dict(), wkdir + "eva_%d_%.3f_%.3f_%.2f.optm.t7" % (i, terr, vloss, vprec))
+			save_states(state_holder.state_dict(update=False, **{"remain_steps": remain_steps, "checkpoint_id": cur_checkid}), statesf, print_func=logger.info)
 		logger.info("New best model saved")
 
 		namin = 0
@@ -341,7 +342,7 @@ for i in range(1, maxrun + 1):
 			tminerr = terr
 			save_model(mymodel.module.dec if multi_gpu else mymodel.dec, wkdir + "train_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), False, print_func=logger.info, mtyp=("eva" if overwrite_eva else "train") if save_auto_clean else None)
 			if statesf is not None:
-				torch.save(optimizer.state_dict(), wkdir + "train_%d_%.3f_%.3f_%.2f.optm.t7" % (i, terr, vloss, vprec))
+				save_states(state_holder.state_dict(update=False, **{"remain_steps": remain_steps, "checkpoint_id": cur_checkid}), statesf, print_func=logger.info)
 		elif epoch_save:
 			save_model(mymodel.module.dec if multi_gpu else mymodel.dec, wkdir + "epoch_%d_%.3f_%.3f_%.2f.h5" % (i, terr, vloss, vprec), False, print_func=logger.info)
 

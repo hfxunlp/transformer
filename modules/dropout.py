@@ -18,7 +18,7 @@ class TokenDropout(Dropout):
 	def forward(self, inpute):
 
 		if self.training:
-			mask = inpute.new_full(inpute.size()[:-1], self.p, requires_grad=False).bernoulli().to(mask_tensor_type).unsqueeze(-1)
+			mask = inpute.new_full(inpute.size()[:-1], self.p, requires_grad=False).bernoulli().to(mask_tensor_type, non_blocking=True).unsqueeze(-1)
 			out = inpute.masked_fill_(mask, 0.0) if self.inplace else inpute.masked_fill(mask, 0.0)
 			if self.keep_magnitude:
 				out = out * self.keep_magnitude
@@ -63,12 +63,12 @@ class NGramDropout(Dropout):
 			if ngram > 1:
 				nblock = ceil(float(seql) / float(ngram))
 				_msize[self.seqdim] = nblock
-				mask = inpute.new_full(_msize, self.p, requires_grad=False).bernoulli().to(mask_tensor_type).repeat([ngram if i == self.seqdim else 1 for i in range(len(_msize))])
+				mask = inpute.new_full(_msize, self.p, requires_grad=False).bernoulli().to(mask_tensor_type, non_blocking=True).repeat([ngram if i == self.seqdim else 1 for i in range(len(_msize))])
 				if ngram * nblock != seql:
 					mask = mask.narrow(self.seqdim, 0, seql)
 				mask = mask.unsqueeze(-1)
 			else:
-				mask = inpute.new_full(_msize, self.p, requires_grad=False).bernoulli().to(mask_tensor_type).unsqueeze(-1)
+				mask = inpute.new_full(_msize, self.p, requires_grad=False).bernoulli().to(mask_tensor_type, non_blocking=True).unsqueeze(-1)
 			out = inpute.masked_fill_(mask, 0.0) if self.inplace else inpute.masked_fill(mask, 0.0)
 			if self.keep_magnitude:
 				out = out * self.keep_magnitude

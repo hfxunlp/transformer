@@ -55,7 +55,7 @@ class CustSwish(nn.Module):
 			self.reset_beta = None
 		else:
 			self.reset_beta = beta
-			self.beta = nn.Parameter(torch.tensor([beta])) if isize is None else nn.Parameter(torch.tensor([beta]).repeat(isize))
+			self.beta = nn.Parameter(torch.as_tensor([beta])) if isize is None else nn.Parameter(torch.as_tensor([beta]).repeat(isize))
 		self.dim, self.eps = dim, eps
 
 	def forward(self, x):
@@ -143,7 +143,7 @@ class SparsemaxFunction(Function):
 
 			support_size = support.sum(dim=dim).unsqueeze(dim)
 			tau = input_cumsum.gather(dim, support_size - 1)
-			tau /= support_size.to(input.dtype)
+			tau /= support_size.to(input.dtype, non_blocking=True)
 
 			return tau, support_size
 
@@ -164,7 +164,7 @@ class SparsemaxFunction(Function):
 		grad_input = grad_output.clone()
 		grad_input[output == 0] = 0
 
-		v_hat = grad_input.sum(dim=dim) / supp_size.to(output.dtype).squeeze()
+		v_hat = grad_input.sum(dim=dim) / supp_size.to(output.dtype, non_blocking=True).squeeze()
 		v_hat = v_hat.unsqueeze(dim)
 		grad_input = torch.where(output != 0, grad_input - v_hat, grad_input)
 

@@ -65,6 +65,23 @@ class EffRecorder:
 
 		return [sum(tmpu) / len(tmpu) for tmpu in self.his]
 
+class MvAvgRecorder:
+
+	def __init__(self, num_choice, beta=None, num_his=50, init_value=180.0):
+
+		self.beta = (0.9 if num_his is None else (0.5 ** (1.0 / num_his))) if beta is None else beta
+		self.his = [(init_value * (1.0 - self.beta)) for i in range(num_choice)]
+
+	def update_eff(self, ind, value):
+
+		self.his[ind] = self.his[ind] * self.beta + value * (1.0 - self.beta)
+
+	def get_w(self):
+
+		return self.his
+
+Recorder = MvAvgRecorder
+
 class GradientMonitor:
 
 	# num_group: number of parameter groups
@@ -79,7 +96,7 @@ class GradientMonitor:
 
 		self.scale = 180.0 / pi
 		self.num_group = num_group
-		self.recorder = EffRecorder(num_group, num_his=num_his_record, init_value=1.0)#init_value=180.0 if use sample_gumble_norm in self.reset
+		self.recorder = Recorder(num_group, num_his=num_his_record, init_value=1.0)#init_value=180.0 if use sample_gumble_norm in self.reset
 		self.select_func = select_func
 		self.module = module
 		self.alpha, self.num_tol_amin, self.num_his = angle_alpha, num_tol_amin, num_his_gm

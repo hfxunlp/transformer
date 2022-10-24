@@ -48,9 +48,9 @@ use_amp = cnfg.use_amp and use_cuda
 set_random_seed(cnfg.seed, use_cuda)
 
 if cuda_device:
-	enc.to(cuda_device)
-	trans.to(cuda_device)
-	classifier.to(cuda_device)
+	enc.to(cuda_device, non_blocking=True)
+	trans.to(cuda_device, non_blocking=True)
+	classifier.to(cuda_device, non_blocking=True)
 
 ignore_ids = set(init_vocab.values())
 
@@ -61,7 +61,7 @@ with open(sys.argv[4], "wb") as fwrt, torch.no_grad():
 		bid = str(i)
 		seq_batch = torch.from_numpy(src_grp[bid][()])
 		if cuda_device:
-			seq_batch = seq_batch.to(cuda_device)
+			seq_batch = seq_batch.to(cuda_device, non_blocking=True)
 		seq_batch = seq_batch.long()
 		_mask = seq_batch.eq(0)
 		with autocast(enabled=use_amp):

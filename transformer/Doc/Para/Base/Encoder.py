@@ -109,7 +109,7 @@ class Encoder(nn.Module):
 		_tmp_pad[0] = 1
 		_tmp_pad = _tmp_pad.view(1, 1, xseql).repeat(1, nprev_context - 1, 1)
 		self.register_buffer("pad", _tmp_pad)
-		self.register_buffer("pad_mask", (1 - _tmp_pad).to(mask_tensor_type).unsqueeze(1))
+		self.register_buffer("pad_mask", (1 - _tmp_pad).to(mask_tensor_type, non_blocking=True).unsqueeze(1))
 		self.xseql = xseql
 
 		self.nprev_context = nprev_context
