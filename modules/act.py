@@ -91,11 +91,16 @@ class SReLU(nn.Module):
 
 		return nnFunc.relu(x, inplace=self.inplace).pow(self.k)
 
-class Mish(nn.Module):
+class CustMish(nn.Module):
 
 	def forward(self, x):
 
 		return x * nnFunc.softplus(x).tanh()
+
+try:
+	Mish = nn.Mish
+except:
+	Mish = CustMish
 
 class LGLU(nn.Module):
 
