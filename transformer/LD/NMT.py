@@ -3,6 +3,7 @@
 from utils.relpos.base import share_rel_pos_cache
 from utils.fmt.parser import parse_double_value_tuple
 
+# from transformer.LD.AttnEncoder import Encoder
 from transformer.LD.Encoder import Encoder
 from transformer.LD.Decoder import Decoder
 from transformer.NMT import NMT as NMTBase

@@ -31,12 +31,14 @@ class DecoderLayer(DecoderLayerBase):
 		self.ff = PositionwiseFF(isize, _fhsize, dropout)
 		self.scff = ResidueCombiner(isize, 2, _fhsize, dropout)
 
+		self.layer_normer1 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
+
 	def forward(self, inpute, inputh, inputo, src_pad_mask=None, chk_pad_mask=None, tgt_pad_mask=None, query_unit=None):
 
 		if query_unit is None:
 			context = self.self_attn(inputo, mask=tgt_pad_mask)
 		else:
-			context, states_return = self.self_attn(query_unit, states=inputo)
+			context, states_return = self.self_attn(query_unit, states=inputo, is_test=is_test)
 
 		_context = self.layer_normer1(context)
 
