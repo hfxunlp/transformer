@@ -38,7 +38,7 @@ class DecoderLayer(DecoderLayerBase):
 		if query_unit is None:
 			context = self.self_attn(inputo, mask=tgt_pad_mask)
 		else:
-			context, states_return = self.self_attn(query_unit, states=inputo, is_test=is_test)
+			context, states_return = self.self_attn(query_unit, states=inputo)
 
 		_context = self.layer_normer1(context)
 
@@ -170,7 +170,7 @@ class Decoder(DecoderBase):
 		states = {}
 
 		for _tmp, (net, inputu, inputhu) in enumerate(zip(self.nets, inpute.unbind(dim=-1), inputh.unbind(dim=-1))):
-			out, _state = net(inputu, inputhu, None, src_pad_mask, chk_pad_mask, None, out, True)
+			out, _state = net(inputu, inputhu, (None, None,), src_pad_mask, chk_pad_mask, None, out, True)
 			states[_tmp] = _state
 
 		out = self.lsm(self.classifier(out))
