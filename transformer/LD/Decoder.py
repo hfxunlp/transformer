@@ -33,7 +33,7 @@ class DecoderLayer(DecoderLayerBase):
 
 		self.layer_normer1 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
-	def forward(self, inpute, inputh, inputo, src_pad_mask=None, chk_pad_mask=None, tgt_pad_mask=None, query_unit=None):
+	def forward(self, inpute, inputh, inputo, src_pad_mask=None, chk_pad_mask=None, tgt_pad_mask=None, query_unit=None, unknown_meaning=False):
 
 		if query_unit is None:
 			context = self.self_attn(inputo, mask=tgt_pad_mask)
