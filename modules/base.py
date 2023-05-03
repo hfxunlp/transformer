@@ -486,7 +486,7 @@ class SelfAttn(nn.Module):
 		if self.c_available():
 			self.c_init()
 
-	def forward(self, iQ, mask=None, states=None):
+	def forward(self, iQ, mask=None, states=None, is_test=False):
 
 		bsize, nquery = iQ.size()[:2]
 		nheads = self.num_head
@@ -525,7 +525,7 @@ class SelfAttn(nn.Module):
 
 		out = self.outer(scores.matmul(real_iV).transpose(1, 2).contiguous().view(bsize, nquery, self.hsize))
 
-		if states is None:
+		if states is None and not is_test:
 			return out
 		else:
 			return out, (real_iK, real_iV,)
