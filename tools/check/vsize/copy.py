@@ -2,13 +2,13 @@
 
 import sys
 
-from utils.fmt.base import clean_list
+from utils.fmt.base import clean_list, sys_open
 
 def handle(srcfl, tgtfl):
 
 	nsrc = ntgt = ncopy = 0
 	for srcf, tgtf in zip(srcfl, tgtfl):
-		with open(srcf, "rb") as fsrc, open(tgtf, "rb") as ftgt:
+		with sys_open(srcf, "rb") as fsrc, sys_open(tgtf, "rb") as ftgt:
 			for srcl, tgtl in zip(fsrc, ftgt):
 				srcl, tgtl = srcl.strip(), tgtl.strip()
 				if srcl or tgtl:

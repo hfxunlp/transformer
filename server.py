@@ -1,14 +1,15 @@
 #encoding: utf-8
 
-from flask import Flask, request, render_template, send_from_directory
 import json
+from flask import Flask, render_template, request, send_from_directory
+
+from datautils.bpe import BPEApplier, BPERemover
+from datautils.moses import SentenceSplitter
+# import Tokenizer/Detokenizer/SentenceSplitter from datautils.zh for Chinese
+from datautils.pymoses import Detokenizer, Detruecaser, Normalizepunctuation, Tokenizer, Truecaser
+from modules.server.transformer import Translator, TranslatorCore
 
 import cnfg.base as cnfg
-# import Tokenizer/Detokenizer/SentenceSplitter from datautils.zh for Chinese
-from datautils.pymoses import Tokenizer, Detokenizer, Normalizepunctuation, Truecaser, Detruecaser
-from datautils.moses import SentenceSplitter
-from datautils.bpe import BPEApplier, BPERemover
-from translator import TranslatorCore, Translator
 
 """
 slang = "de"# source language

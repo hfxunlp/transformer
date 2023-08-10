@@ -39,6 +39,9 @@ export ngpu=1
 # sorting dataset and building vocabularies. true for the first time generation, false when only update the .h5 files.
 export do_sort=true
 export build_vocab=true
+
+# additional temporary file extension, support .xz/gz/bz2 compression to trade between I/O and CPU.
+export faext=".xz"
 ```
 
 ## `mktest.sh`
@@ -72,6 +75,11 @@ export ngpu=1
 export sort_decode=true
 # merge sub-words
 export debpe=true
+# use spm for bpe (instead of subword-nmt).
+export spm_bpe=false
+
+# additional temporary file extension, support .xz/gz/bz2 compression to trade between I/O and CPU.
+export faext=".xz"
 ```
 
 ## `bpe/`

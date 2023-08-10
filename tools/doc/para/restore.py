@@ -2,20 +2,20 @@
 
 import sys
 
-from utils.fmt.base import clean_str
+from utils.fmt.base import clean_str, sys_open
 
 def handle(srcfs, srtsf_base, srttf_base, srtsf, srttf, tgtf):
 
 	data = {}
 
-	with open(srtsf_base, "rb") as fs, open(srttf_base, "rb") as ft:
+	with sys_open(srtsf_base, "rb") as fs, sys_open(srttf_base, "rb") as ft:
 		for sl, tl in zip(fs, ft):
 			_sl, _tl = sl.strip(), tl.strip()
 			if _sl and _tl:
 				_sl = clean_str(_sl.decode("utf-8"))
 				_tl = clean_str(_tl.decode("utf-8"))
 				data[_sl] = _tl
-	with open(srtsf, "rb") as fs, open(srttf, "rb") as ft:
+	with sys_open(srtsf, "rb") as fs, sys_open(srttf, "rb") as ft:
 		for sl, tl in zip(fs, ft):
 			_sl, _tl = sl.strip(), tl.strip()
 			if _sl and _tl:
@@ -25,7 +25,7 @@ def handle(srcfs, srtsf_base, srttf_base, srtsf, srttf, tgtf):
 
 	ens = "\n".encode("utf-8")
 
-	with open(srcfs, "rb") as fs, open(tgtf, "wb") as ft:
+	with sys_open(srcfs, "rb") as fs, sys_open(tgtf, "wb") as ft:
 		for line in fs:
 			tmp = line.strip()
 			if tmp:

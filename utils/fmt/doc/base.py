@@ -2,17 +2,17 @@
 
 import sys
 
-from utils.fmt.base import clean_list
+from utils.fmt.base import clean_list, sys_open
 
-def doc_reader(fname):
+def doc_reader(fname, sep=None):
 
-	with sys.stdin.buffer if fname == "-" else open(fname, "rb") as frd:
+	with sys_open(fname, "rb") as frd:
 		cache = []
 		max_tok = 0
 		for line in frd:
 			tmp = line.strip()
 			if tmp:
-				tmp = clean_list(tmp.decode("utf-8").split())
+				tmp = clean_list(tmp.decode("utf-8").split(sep=sep))
 				_ld = len(tmp)
 				if _ld > max_tok:
 					max_tok = _ld

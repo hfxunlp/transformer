@@ -4,7 +4,7 @@ import torch
 
 class THRandomState:
 
-	def __init__(self, use_cuda=True):
+	def __init__(self, use_cuda=True, **kwargs):
 
 		self.use_cuda = torch.cuda.is_available() and use_cuda
 

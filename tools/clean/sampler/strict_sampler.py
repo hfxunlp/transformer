@@ -4,9 +4,9 @@
 #	python tools/clean/sampler/strict_sampler.py srcf1 ... srcfn tgtf1 ... tgtfn keep_ratio
 
 import sys
-from random import shuffle, seed as rpyseed
+from random import seed as rpyseed, shuffle
 
-from utils.fmt.base import FileList
+from utils.fmt.base import FileList, sys_open
 
 def handle(srcfl, tgtfl, ratio):
 
@@ -23,7 +23,7 @@ def handle(srcfl, tgtfl, ratio):
 
 	ens = "\n".encode("utf-8")
 	for data, tgtf in zip(rs, tgtfl):
-		with open(tgtf, "wb") as f:
+		with sys_open(tgtf, "wb") as f:
 			# following 3 lines for memory
 			#for line in data:
 				#f.write(line)

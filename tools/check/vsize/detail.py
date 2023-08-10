@@ -2,13 +2,13 @@
 
 import sys
 
-from utils.fmt.base import clean_list_iter
+from utils.fmt.base import clean_list_iter, sys_open
 
 def collect(fl):
 
 	vcb = set()
 	for srcf in fl:
-		with open(srcf, "rb") as f:
+		with sys_open(srcf, "rb") as f:
 			for line in f:
 				tmp = line.strip()
 				if tmp:

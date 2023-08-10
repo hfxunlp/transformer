@@ -3,14 +3,14 @@
 import torch
 from torch import nn
 
-from modules.base import Scorer, Linear, Dropout
 from modules.act import Custom_Act
+from modules.base import Dropout, Linear, Scorer
 
 from cnfg.ihyp import *
 
 class ATTNCombiner(nn.Module):
 
-	def __init__(self, isize, hsize=None, dropout=0.0, custom_act=use_adv_act_default):
+	def __init__(self, isize, hsize=None, dropout=0.0, custom_act=use_adv_act_default, **kwargs):
 
 		super(ATTNCombiner, self).__init__()
 
@@ -18,7 +18,7 @@ class ATTNCombiner(nn.Module):
 
 		self.net = nn.Sequential(Linear(isize * 2, _hsize), Dropout(dropout, inplace=True), Custom_Act() if custom_act else nn.Sigmoid(), Scorer(_hsize), nn.Sigmoid()) if dropout > 0.0 else nn.Sequential(Linear(isize * 2, _hsize), Custom_Act() if custom_act else nn.Sigmoid(), Scorer(_hsize), nn.Sigmoid())
 
-	def forward(self, input1, input2, mask=None):
+	def forward(self, input1, input2, mask=None, **kwargs):
 
 		scores = self.net(torch.cat((input1.expand_as(input2), input2,), dim=-1))
 
@@ -37,7 +37,7 @@ class ATTNCombiner(nn.Module):
 
 class DATTNCombiner(nn.Module):
 
-	def __init__(self, isize, hsize=None, dropout=0.0, custom_act=use_adv_act_default):
+	def __init__(self, isize, hsize=None, dropout=0.0, custom_act=use_adv_act_default, **kwargs):
 
 		super(DATTNCombiner, self).__init__()
 
@@ -48,7 +48,7 @@ class DATTNCombiner(nn.Module):
 	# input1: (bsize, 1, isize)
 	# input2: (bsize, seql, isize)
 	# mask: (bsize, seql, 1)
-	def forward(self, input1, input2, mask=None):
+	def forward(self, input1, input2, mask=None, **kwargs):
 
 		# scores: (bsize, seql, 1)
 		scores = self.net(torch.cat((input1.expand_as(input2), input2,), dim=-1))

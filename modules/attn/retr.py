@@ -1,15 +1,11 @@
 #encoding: utf-8
 
 import torch
-from torch import nn
-from torch.nn import functional as nnFunc
-from utils.base import exist_any
-
-from modules.sampler import Retriever
-
-from modules.base import SelfAttn as SelfAttnBase, CrossAttn as CrossAttnBase, ResSelfAttn as ResSelfAttnBase, ResCrossAttn as ResCrossAttnBase
-
 from math import sqrt
+
+from modules.base import CrossAttn as CrossAttnBase, ResCrossAttn as ResCrossAttnBase, ResSelfAttn as ResSelfAttnBase, SelfAttn as SelfAttnBase
+from modules.sampler import Retriever
+from utils.torch.comp import exist_any, torch_no_grad
 
 from cnfg.ihyp import *
 
@@ -23,12 +19,12 @@ class SelfAttn(SelfAttnBase):
 		self.smoothing, self.use_cumsum = smoothing if (smoothing is not None) and (smoothing > 0.0) and (smoothing < 1.0) else None, use_cumsum
 		if self.use_cumsum and (self.smoothing is not None):
 			self.num_pos = xseql
-			self.register_buffer("csum", torch.Tensor(xseql, 1))
+			self.register_buffer("csum", torch.Tensor(xseql, 1), persistent=False)
 			self.reset_parameters()
 		else:
-			self.register_buffer("csum", None)
+			self.register_buffer("csum", None, persistent=False)
 
-	def forward(self, iQ, mask=None, states=None):
+	def forward(self, iQ, mask=None, states=None, **kwargs):
 
 		bsize, nquery = iQ.size()[:2]
 		seql = nquery
@@ -116,7 +112,7 @@ class SelfAttn(SelfAttnBase):
 	def get_ext(self, npos):
 
 		_rs = torch.arange(npos, dtype=self.csum.dtype, device=self.csum.device)
-		with torch.no_grad():
+		with torch_no_grad():
 			_rs[0] = 1.0
 
 		return _rs.unsqueeze(-1)
@@ -130,7 +126,7 @@ class CrossAttn(CrossAttnBase):
 		self.retriever = Retriever()
 		self.smoothing = smoothing if (smoothing is not None) and (smoothing > 0.0) and (smoothing < 1.0) else None
 
-	def forward(self, iQ, iK, mask=None):
+	def forward(self, iQ, iK, mask=None, **kwargs):
 
 		bsize, nquery = iQ.size()[:2]
 		seql = iK.size(1)
@@ -138,12 +134,12 @@ class CrossAttn(CrossAttnBase):
 		adim = self.attn_dim
 
 		real_iQ = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2)
-		if (self.real_iK is not None) and self.iK.is_set_to(iK) and (not self.training):
+		if (self.real_iK is not None) and self.iK.is_set_to(iK) and self.is_decoding:
 			real_iK, real_iV = self.real_iK, self.real_iV
 		else:
 			real_iK, real_iV = self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim).unbind(2)
 			real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2).contiguous()
-			if not self.training:
+			if self.is_decoding:
 				self.iK, self.real_iK, self.real_iV = iK, real_iK, real_iV
 
 		scores = real_iQ.matmul(real_iK)

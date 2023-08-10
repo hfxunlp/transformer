@@ -1,13 +1,13 @@
 #encoding: utf-8
 
-import torch
-
-from math import log2, exp, pi, acos
+from math import acos, exp, log2, pi
 from random import random
-from utils.angle import prep_cos, cos_acc_pg
-from utils.random import multinomial
 
-# comment the following line and uncomment the 4 lines following it to load para_group_select_alpha from cnfg.dynb
+from utils.angle import cos_acc_pg
+from utils.random import multinomial
+from utils.torch.comp import torch_no_grad
+
+# comment the following line and uncomment the 4 lines below it to load para_group_select_alpha from cnfg.dynb
 para_group_select_alpha = 3.0
 """try:
 	from cnfg.dynb import select_alpha as para_group_select_alpha
@@ -36,19 +36,21 @@ def pos_norm(lin, alpha=1.0):
 	if alpha != 1.0:
 		tmp = [tmpu ** alpha for tmpu in tmp]
 	_mv = sum(tmp)
+	if _mv == 0.0:
+		_mv = 1.0
 
 	return [tmpu / _mv for tmpu in tmp]
 
 def backup_para_grad(plin):
 
-	with torch.no_grad():
+	with torch_no_grad():
 		rs = [pu.grad.clone() for pu in plin]
 
 	return rs
 
 class EffRecorder:
 
-	def __init__(self, num_choice, num_his=50, init_value=180.0):
+	def __init__(self, num_choice, num_his=50, init_value=180.0, **kwargs):
 
 		self.his = [[init_value] for i in range(num_choice)]
 		self.num_his = num_his
@@ -67,7 +69,7 @@ class EffRecorder:
 
 class MvAvgRecorder:
 
-	def __init__(self, num_choice, beta=None, num_his=50, init_value=180.0):
+	def __init__(self, num_choice, beta=None, num_his=50, init_value=180.0, **kwargs):
 
 		self.beta = (0.9 if num_his is None else (0.5 ** (1.0 / num_his))) if beta is None else beta
 		self.his = [(init_value * (1.0 - self.beta)) for i in range(num_choice)]
@@ -92,7 +94,7 @@ class GradientMonitor:
 	# num_his_gm: cache num_his_gm gradients into a history, and return this number of angle changes.
 	# returns: (update_r, angle_r), update_r: to performing an optimization step, angle_r: the angle change in current step.
 
-	def __init__(self, num_group, select_func, module=None, angle_alpha=1.1, num_tol_amin=3, num_his_record=50, num_his_gm=1):
+	def __init__(self, num_group, select_func, module=None, angle_alpha=1.1, num_tol_amin=3, num_his_record=50, num_his_gm=1, **kwargs):
 
 		self.scale = 180.0 / pi
 		self.num_group = num_group
@@ -160,6 +162,8 @@ def get_delta(lin):
 def get_delta_norm(lin):
 
 	_mv = max(*lin)
+	if _mv == 0.0:
+		_mv = 1.0
 
 	return (_mv - min(*lin)) / _mv
 

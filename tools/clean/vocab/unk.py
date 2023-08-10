@@ -2,11 +2,13 @@
 
 import sys
 
+from utils.fmt.base import sys_open
+
 def handle(srcf, rsf):
 
 	ens = "\n".encode("utf-8")
 
-	with open(srcf, "rb") as frd, open(rsf, "wb") as fwt:
+	with sys_open(srcf, "rb") as frd, sys_open(rsf, "wb") as fwt:
 		for ls in frd:
 			ls = ls.strip()
 			if ls:

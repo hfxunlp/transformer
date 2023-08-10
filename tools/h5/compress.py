@@ -1,9 +1,9 @@
 #encoding: utf-8
 
 import sys
-
 from h5py import Dataset
-from utils.h5serial import h5save, h5load, h5File
+
+from utils.h5serial import h5File, h5load, h5save
 
 from cnfg.ihyp import *
 

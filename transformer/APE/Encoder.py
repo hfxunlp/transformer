@@ -1,20 +1,21 @@
 #encoding: utf-8
 
-from torch import nn
-from modules.base import Dropout, PositionalEmb
-from utils.fmt.base import parse_double_value_tuple
-from cnfg.vocab.base import pad_id
-
-from transformer.Encoder import Encoder as EncoderBase
-from transformer.Decoder import DecoderLayer as MSEncoderLayerBase
-
 from math import sqrt
+from torch import nn
+
+from modules.base import Dropout, PositionalEmb
+from transformer.Decoder import DecoderLayer as MSEncoderLayerBase
+from transformer.Encoder import Encoder as EncoderBase
+from utils.fmt.base import parse_double_value_tuple
+from utils.fmt.parser import parse_none
+from utils.torch.comp import torch_no_grad
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import pad_id
 
 class MSEncoderLayer(MSEncoderLayerBase):
 
-	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None):
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, **kwargs):
 
 		context = self.self_attn(inputo, mask=tgt_pad_mask)
 
@@ -26,11 +27,11 @@ class MSEncoderLayer(MSEncoderLayerBase):
 
 class MSEncoder(nn.Module):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, emb_w=None, share_layer=False, disable_pemb=disable_std_pemb_encoder):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, emb_w=None, share_layer=False, disable_pemb=disable_std_pemb_encoder, **kwargs):
 
 		super(MSEncoder, self).__init__()
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
@@ -41,20 +42,18 @@ class MSEncoder(nn.Module):
 
 		self.pemb = None if disable_pemb else PositionalEmb(isize, xseql, 0, 0)
 		if share_layer:
-			_shared_layer = MSEncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
+			_shared_layer = MSEncoderLayer(isize, _fhsize, dropout, attn_drop, act_drop, num_head, _ahsize)
 			self.nets = nn.ModuleList([_shared_layer for i in range(num_layer)])
 		else:
-			self.nets = nn.ModuleList([MSEncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
+			self.nets = nn.ModuleList([MSEncoderLayer(isize, _fhsize, dropout, attn_drop, act_drop, num_head, _ahsize) for i in range(num_layer)])
 
 		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) if norm_output else None
 
-	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None):
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, **kwargs):
 
 		nquery = inputo.size(-1)
 
 		out = self.wemb(inputo)
-
-		out = out * sqrt(out.size(-1))
 		if self.pemb is not None:
 			out = self.pemb(inputo, expand=False).add(out, alpha=sqrt(out.size(-1)))
 
@@ -71,34 +70,33 @@ class MSEncoder(nn.Module):
 
 class Encoder(nn.Module):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, global_emb=False, **kwargs):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, global_emb=False, **kwargs):
 
 		super(Encoder, self).__init__()
 
 		nwd_src, nwd_tgt = parse_double_value_tuple(nwd)
 
-		self.src_enc = EncoderBase(isize, nwd_src, num_layer, fhsize, dropout, attn_drop, num_head, xseql, ahsize, norm_output, **kwargs)
+		self.src_enc = EncoderBase(isize, nwd_src, num_layer, fhsize, dropout, attn_drop, act_drop, num_head, xseql, ahsize, norm_output, **kwargs)
 
 		emb_w = self.src_enc.wemb.weight if global_emb else None
 
-		self.tgt_enc = MSEncoder(isize, nwd_tgt, num_layer, fhsize, dropout, attn_drop, num_head, xseql, ahsize, norm_output, emb_w, **kwargs)
+		self.tgt_enc = MSEncoder(isize, nwd_tgt, num_layer, fhsize, dropout, attn_drop, act_drop, num_head, xseql, ahsize, norm_output, emb_w, **kwargs)
 
-	def forward(self, inpute, inputo, src_mask=None, tgt_mask=None):
+	def forward(self, inpute, inputo, src_mask=None, tgt_mask=None, **kwargs):
 
 		enc_src = self.src_enc(inpute, src_mask)
 
 		return enc_src, self.tgt_enc(enc_src, inputo, src_mask, tgt_mask)
 
+	def get_embedding_weight(self):
+
+		return self.enc_src.get_embedding_weight()
+
 	def update_vocab(self, indices):
 
 		_bind_emb = self.src_enc.wemb.weight.is_set_to(self.tgt_enc.wemb.weight)
-		_swemb = nn.Embedding(len(indices), self.src_enc.wemb.weight.size(-1), padding_idx=pad_id)
-		_twemb = nn.Embedding(len(indices), self.tgt_enc.wemb.weight.size(-1), padding_idx=pad_id)
-		with torch.no_grad():
-			_swemb.weight.copy_(self.src_enc.wemb.weight.index_select(0, indices))
+		_ = self.src_enc.update_vocab(indices)
 		if _bind_emb:
-			_twemb.weight = _swemb.weight
-		else:
-			with torch.no_grad():
-				_twemb.weight.copy_(self.tgt_enc.wemb.weight.index_select(0, indices))
-		self.src_enc.wemb, self.tgt_enc.wemb = _swemb, _twemb
+			self.tgt_enc.wemb.weight = _
+
+		return _

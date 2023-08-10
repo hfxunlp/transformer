@@ -4,11 +4,13 @@
 
 import sys
 
+from utils.fmt.base import sys_open
+
 def handle(rankf, dkeep):
 
 	scores = []
 
-	with open(rankf, "rb") as f:
+	with sys_open(rankf, "rb") as f:
 		for line in f:
 			tmp = line.strip()
 			if tmp:

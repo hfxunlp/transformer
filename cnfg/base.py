@@ -19,7 +19,9 @@ fine_tune_m = None
 # "<pad>":0, "<sos>":1, "<eos>":2, "<unk>":3
 # add 3 to forbidden_indexes if there are <unk> tokens in data
 # must be None if use_fast_loss is set in cnfg/hyp.py
+
 #from fbind import fbl
+
 forbidden_indexes = None#[0, 1] + fbl
 
 save_auto_clean = True
@@ -55,6 +57,7 @@ nlayer = 6
 
 drop = 0.1
 attn_drop = drop
+act_drop = drop
 
 # False for Hier/Incept Models
 norm_output = True

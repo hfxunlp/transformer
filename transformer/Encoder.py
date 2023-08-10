@@ -1,13 +1,14 @@
 #encoding: utf-8
 
-import torch
-from torch import nn
-from modules.base import *
 from math import sqrt
+from torch import nn
 
-from cnfg.vocab.base import pad_id
+from modules.base import Dropout, PositionalEmb, PositionwiseFF, ResSelfAttn
+from utils.fmt.parser import parse_none
+from utils.torch.comp import torch_no_grad
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import pad_id
 
 # vocabulary:
 #	<pad>:0
@@ -27,20 +28,19 @@ class EncoderLayer(nn.Module):
 	# norm_residual: residue with layer normalized representation
 	# k_rel_pos: window size (one side) of relative positional embeddings in self attention
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_encoder, max_bucket_distance=relative_position_max_bucket_distance_encoder, **kwargs):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_encoder, max_bucket_distance=relative_position_max_bucket_distance_encoder, **kwargs):
 
 		super(EncoderLayer, self).__init__()
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.attn = ResSelfAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual, k_rel_pos=k_rel_pos, max_bucket_distance=max_bucket_distance)
-
-		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
+		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, act_drop=act_drop, norm_residual=norm_residual)
 
 	# inputs: input of this layer (bsize, seql, isize)
 
-	def forward(self, inputs, mask=None):
+	def forward(self, inputs, mask=None, **kwargs):
 
 		context = self.attn(inputs, mask=mask)
 
@@ -51,22 +51,22 @@ class EncoderLayer(nn.Module):
 # Not used, keep this class to remind the EncoderLayer implementation before v0.3.5.
 class NAWEncoderLayer(EncoderLayer):
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_encoder, max_bucket_distance=relative_position_max_bucket_distance_encoder, **kwargs):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_encoder, max_bucket_distance=relative_position_max_bucket_distance_encoder, **kwargs):
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		super(NAWEncoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, norm_residual=norm_residual, k_rel_pos=k_rel_pos, max_bucket_distance=max_bucket_distance)
+		super(NAWEncoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize, norm_residual=norm_residual, k_rel_pos=k_rel_pos, max_bucket_distance=max_bucket_distance)
 
 		#self.attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos, max_bucket_distance=max_bucket_distance)
-		#self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
+		#self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, act_drop=act_drop, norm_residual=norm_residual)
 		self.layer_normer, self.drop, self.norm_residual = self.attn.normer, self.attn.drop, self.attn.norm_residual
 		self.attn = self.attn.net
 		#self.layer_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 		#self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 		#self.norm_residual = norm_residual
 
-	def forward(self, inputs, mask=None):
+	def forward(self, inputs, mask=None, **kwargs):
 
 		_inputs = self.layer_normer(inputs)
 		context = self.attn(_inputs, mask=mask)
@@ -93,11 +93,11 @@ class Encoder(nn.Module):
 	# share_layer: using one shared encoder layer
 	# disable_pemb: disable the standard positional embedding, enable when use relative postional embeddings in self attention
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, share_layer=False, disable_pemb=disable_std_pemb_encoder, **kwargs):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, share_layer=False, disable_pemb=disable_std_pemb_encoder, **kwargs):
 
 		super(Encoder, self).__init__()
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
@@ -106,23 +106,22 @@ class Encoder(nn.Module):
 
 		self.pemb = None if disable_pemb else PositionalEmb(isize, xseql, 0, 0)
 		if share_layer:
-			_shared_layer = EncoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize)
+			_shared_layer = EncoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize)
 			self.nets = nn.ModuleList([_shared_layer for i in range(num_layer)])
 		else:
-			self.nets = nn.ModuleList([EncoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize) for i in range(num_layer)])
+			self.nets = nn.ModuleList([EncoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize) for i in range(num_layer)])
 
 		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) if norm_output else None
 
 	# inputs: (bsize, seql)
 	# mask: (bsize, 1, seql), generated with:
-	#	mask = inputs.eq(0).unsqueeze(1)
+	#	mask = inputs.eq(pad_id).unsqueeze(1)
 
-	def forward(self, inputs, mask=None):
+	def forward(self, inputs, mask=None, **kwargs):
 
 		out = self.wemb(inputs)
-		out = out * sqrt(out.size(-1))
 		if self.pemb is not None:
-			out = out + self.pemb(inputs, expand=False)
+			out = self.pemb(inputs, expand=False).add(out, alpha=sqrt(out.size(-1)))
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -146,16 +145,22 @@ class Encoder(nn.Module):
 
 		self.out_normer = None if self.out_normer is None else base_encoder.out_normer
 
+	def get_embedding_weight(self):
+
+		return self.wemb.weight
+
 	def update_vocab(self, indices):
 
-		_wemb = nn.Embedding(len(indices), self.wemb.weight.size(-1), padding_idx=self.wemb.padding_idx)
-		with torch.no_grad():
+		_wemb = nn.Embedding(indices.numel(), self.wemb.weight.size(-1), padding_idx=self.wemb.padding_idx)
+		with torch_no_grad():
 			_wemb.weight.copy_(self.wemb.weight.index_select(0, indices))
 		self.wemb = _wemb
+
+		return self.wemb.weight
 
 	def fix_init(self):
 
 		if hasattr(self, "fix_load"):
 			self.fix_load()
-		#with torch.no_grad():
+		#with torch_no_grad():
 		#	self.wemb.weight[pad_id].zero_()

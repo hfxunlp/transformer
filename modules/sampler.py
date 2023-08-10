@@ -3,7 +3,8 @@
 import torch
 from torch import nn
 from torch.autograd import Function
-from utils.torch import multinomial
+
+from utils.torch.ext import multinomial
 
 class SampleMaxFunction(Function):
 
@@ -64,7 +65,7 @@ RetrievalFunc = RetrievalFunction.apply
 
 class Retriever(nn.Module):
 
-	def forward(self, attnmat, vmat):
+	def forward(self, attnmat, vmat, **kwargs):
 
 		_idim = attnmat.dim()
 		if _idim > 3:
@@ -169,18 +170,18 @@ EffSamplerFunc = EffSamplerFunction.apply
 
 class Sampler(nn.Module):
 
-	def __init__(self, dim=-1):
+	def __init__(self, dim=-1, **kwargs):
 
 		super(Sampler, self).__init__()
 
 		self.dim = dim
 
-	def forward(self, inputs, bsize=None):
+	def forward(self, inputs, bsize=None, **kwargs):
 
 		return SamplerFunc(inputs, self.dim, bsize)
 
 class EffSampler(Sampler):
 
-	def forward(self, inputs, weight, add_bdim=False):
+	def forward(self, inputs, weight, add_bdim=False, **kwargs):
 
 		return EffSamplerFunc(inputs, weight, self.dim, add_bdim)

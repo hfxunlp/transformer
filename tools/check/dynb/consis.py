@@ -1,8 +1,9 @@
 #encoding: utf-8
 
 import sys
-
 from math import floor
+
+from utils.fmt.base import sys_open
 
 def load_log(fname):
 
@@ -14,7 +15,7 @@ def load_log(fname):
 			return False
 
 	cache = []
-	with open(fname, "rb") as frd:
+	with sys_open(fname, "rb") as frd:
 		for line in frd:
 			tmp = line.strip()
 			if tmp:

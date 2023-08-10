@@ -22,7 +22,4 @@ relative_position_max_bucket_distance_cattn = relative_position_max_bucket_dista
 disable_std_pemb_encoder, disable_std_pemb_decoder = parse_double_value_tuple(disable_std_pemb)
 relpos_reduction_with_zeros = True
 
-# learning rate
-init_lr = 1e-5
-
 ieps_ln_default = 1e-06

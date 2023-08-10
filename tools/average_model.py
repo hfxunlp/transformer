@@ -6,33 +6,37 @@
 
 import sys
 
-import torch
+from utils.h5serial import h5load, h5save
+from utils.torch.comp import secure_type_map
 
-from utils.base import secure_type_map
-from utils.h5serial import h5save, h5load
-
-from cnfg.ihyp import *
+from cnfg.ihyp import h5zipargs
 
 def handle(srcfl, rsf):
 
-	rsm = h5load(srcfl[0])
+	src_type = {}
+	map_type = {}
+	sec_rsm = {}
+	nmodel = {}
+	for modelf in srcfl:
+		_nmp = h5load(modelf, restore_list=False)
+		for _n, _p in sec_rsm.items():
+			if _n in _nmp:
+				_ = _nmp[_n]
+				_m_type = map_type[_n]
+				_p.add_(_ if _m_type is None else _.to(_m_type, non_blocking=True))
+				nmodel[_n] += 1
+		for _n, _p in _nmp.items():
+			if _n not in sec_rsm:
+				src_type[_n] = _p_dtype = _p.dtype
+				map_type[_n] = _m_type = secure_type_map.get(_p_dtype, None)
+				sec_rsm[_n] = _p if _m_type is None else _p.to(_m_type, non_blocking=True)
+				nmodel[_n] = 1
+		_nmp = None
 
-	src_type = [para.dtype for para in rsm]
-	map_type = [secure_type_map[para.dtype] if para.dtype in secure_type_map else None for para in rsm]
-	sec_rsm = [para if typ is None else para.to(typ) for para, typ in zip(rsm, map_type)]
+	for _n, _p in sec_rsm.items():
+		_p.div_(float(nmodel[_n]))
 
-	nmodel = 1
-	for modelf in srcfl[1:]:
-		for basep, mpload, typ in zip(sec_rsm, h5load(modelf), map_type):
-			basep.add_(mpload if typ is None else mpload.to(typ))
-		nmodel += 1
-	nmodel = float(nmodel)
-	for basep in sec_rsm:
-		basep.div_(nmodel)
-
-	rsm = [para if mtyp is None else para.to(styp) for para, mtyp, styp in zip(sec_rsm, map_type, src_type)]
-
-	h5save(rsm, rsf, h5args=h5zipargs)
+	h5save({_n: _p if map_type[_n] is None else _p.to(src_type[_n], non_blocking=True) for _n, _p in sec_rsm.items()}, rsf, h5args=h5zipargs)
 
 if __name__ == "__main__":
 	handle(sys.argv[2:], sys.argv[1])

@@ -3,7 +3,8 @@
 import sys
 
 # WARNING: all() might be too strict in some cases which may use any()
-from utils.fmt.base import clean_str, FileList
+
+from utils.fmt.base import FileList, clean_str, sys_open
 
 # srtfl: (k - 1) source + 1 target
 def handle(srcfl, srtfl, tgtf):
@@ -18,7 +19,7 @@ def handle(srcfl, srtfl, tgtf):
 				data[lines[:-1]] = lines[-1].encode("utf-8")
 
 	ens = "\n".encode("utf-8")
-	with FileList(srcfl, "rb") as fs, open(tgtf, "wb") as ft:
+	with FileList(srcfl, "rb") as fs, sys_open(tgtf, "wb") as ft:
 		for lines in zip(*fs):
 			lines = tuple(line.strip() for line in lines)
 			if all(lines):

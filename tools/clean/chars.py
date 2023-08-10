@@ -9,6 +9,8 @@ import sys
 # oratio: same as pratio but before bpe processing
 # num_rules_drop: choose from [1, 6], fewer data will be droped with larger value, none data would be droped if it was set to 6
 
+from utils.fmt.base import sys_open
+
 def handle(srcfs, srcft, tgtfs, tgtft, cratio=0.8, bratio=5.0, sratio=0.8, pratio=3.0, oratio=3.0, num_rules_drop=1):
 
 	def legal_mono(strin, cratio, bratio, sratio):
@@ -50,7 +52,7 @@ def handle(srcfs, srcft, tgtfs, tgtft, cratio=0.8, bratio=5.0, sratio=0.8, prati
 
 	ens = "\n".encode("utf-8")
 
-	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft, open(tgtfs, "wb") as fsw, open(tgtft, "wb") as ftw:
+	with sys_open(srcfs, "rb") as fs, sys_open(srcft, "rb") as ft, sys_open(tgtfs, "wb") as fsw, sys_open(tgtft, "wb") as ftw:
 		total = keep = 0
 		if num_rules_drop > 0:
 			for ls, lt in zip(fs, ft):

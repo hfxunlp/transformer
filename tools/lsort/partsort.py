@@ -3,9 +3,9 @@
 import sys
 from os.path import join as pjoin
 
-from utils.fmt.base import clean_liststr_lentok, all_le, iter_dict_sort, dict_insert_list, dict_insert_set, FileList
+from utils.fmt.base import FileList, all_le, clean_liststr_lentok, dict_insert_list, dict_insert_set, iter_dict_sort
 
-def handle(srcfl, tgtd, max_len=256, remove_same=False, cache_token=500000000):
+def handle(srcfl, tgtd, max_len=256, remove_same=True, cache_token=500000000):
 
 	def save_cache(cache, tgtfl):
 

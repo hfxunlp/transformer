@@ -54,16 +54,15 @@ rm -fr $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp
 
 if $share_bpe; then
 # to learn joint bpe
-	cat $tgtd/src.train.tok.clean $tgtd/tgt.train.tok.clean | shuf > $tgtd/bpe.train.txt
-	spm_train --input=$tgtd/bpe.train.txt --model_prefix=$src_cdsf --vocab_size=$bpeops --character_coverage=$charcov --model_type=$mtype --minloglevel=1
+	# --max_sentence_length=4096 --input_sentence_size=5000000 --shuffle_input_sentence=true --num_threads=32 --train_extremely_large_corpus=true
+	spm_train --input=$tgtd/src.train.tok.clean,$tgtd/tgt.train.tok.clean --model_prefix=$src_cdsf --vocab_size=$bpeops --character_coverage=$charcov --model_type=$mtype --unk_id=3 --bos_id=1 --eos_id=2 --pad_id=0 --unk_piece="<mask>" --bos_piece="<sos>" --eos_piece="<eos>" --unk_surface="<unk>" --minloglevel=1 --random_seed=666666
 	spm_encode --model=$src_cdsf.model --generate_vocabulary < $tgtd/src.train.tok.clean > $tgtd/src.vcb.bpe &
 	spm_encode --model=$tgt_cdsf.model --generate_vocabulary < $tgtd/tgt.train.tok.clean > $tgtd/tgt.vcb.bpe &
 	wait
-	rm $tgtd/bpe.train.txt
 else
 # to learn independent bpe:
-	spm_train --input=$tgtd/src.train.tok.clean --model_prefix=$src_cdsf --vocab_size=$bpeops --character_coverage=$charcov --model_type=$mtype --minloglevel=1 &
-	spm_train --input=$tgtd/tgt.train.tok.clean --model_prefix=$tgt_cdsf --vocab_size=$bpeops --character_coverage=$charcov --model_type=$mtype --minloglevel=1 &
+	spm_train --input=$tgtd/src.train.tok.clean --model_prefix=$src_cdsf --vocab_size=$bpeops --character_coverage=$charcov --model_type=$mtype --unk_id=3 --bos_id=1 --eos_id=2 --pad_id=0 --unk_piece="<mask>" --bos_piece="<sos>" --eos_piece="<eos>" --unk_surface="<unk>" --minloglevel=1 --random_seed=666666 &
+	spm_train --input=$tgtd/tgt.train.tok.clean --model_prefix=$tgt_cdsf --vocab_size=$bpeops --character_coverage=$charcov --model_type=$mtype --unk_id=3 --bos_id=1 --eos_id=2 --pad_id=0 --unk_piece="<mask>" --bos_piece="<sos>" --eos_piece="<eos>" --unk_surface="<unk>" --minloglevel=1 --random_seed=666666 &
 	wait
 	spm_encode --model=$src_cdsf.model --generate_vocabulary < $tgtd/src.train.tok.clean > $tgtd/src.vcb.bpe &
 	spm_encode --model=$tgt_cdsf.model --generate_vocabulary < $tgtd/tgt.train.tok.clean > $tgtd/tgt.vcb.bpe &

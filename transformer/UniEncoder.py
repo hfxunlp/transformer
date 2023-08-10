@@ -2,21 +2,22 @@
 
 import torch
 from torch import nn
-from modules.base import *
 
-from cnfg.vocab.base import pad_id
-
+from modules.base import ACT_Loss, CoordinateEmb, Dropout, Scorer
 from transformer.Encoder import EncoderLayer
+from utils.fmt.parser import parse_none
+from utils.torch.comp import torch_no_grad
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import pad_id
 
 class Encoder(nn.Module):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, **kwargs):
 
 		super(Encoder, self).__init__()
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.num_layer = num_layer
@@ -26,7 +27,7 @@ class Encoder(nn.Module):
 		self.wemb = nn.Embedding(nwd, isize, padding_idx=pad_id)
 
 		self.pemb = CoordinateEmb(isize, xseql, num_layer, 0, 0)
-		self.net = EncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
+		self.net = EncoderLayer(isize, _fhsize, dropout, attn_drop, act_drop, num_head, _ahsize)
 		self.halter = nn.Sequential(Scorer(isize), nn.Sigmoid())
 
 		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) if norm_output else None
@@ -35,9 +36,9 @@ class Encoder(nn.Module):
 
 	# inputs: (bsize, seql)
 	# mask: (bsize, 1, seql), generated with:
-	#	mask = inputs.eq(0).unsqueeze(1)
+	#	mask = inputs.eq(pad_id).unsqueeze(1)
 
-	def forward(self, inputs, mask=None):
+	def forward(self, inputs, mask=None, **kwargs):
 
 		bsize, seql = inputs.size()
 		out = self.wemb(inputs)
@@ -89,9 +90,15 @@ class Encoder(nn.Module):
 		else:
 			return out, loss_act
 
+	def get_embedding_weight(self):
+
+		return self.wemb.weight
+
 	def update_vocab(self, indices):
 
-		_wemb = nn.Embedding(len(indices), self.wemb.weight.size(-1), padding_idx=pad_id)
-		with torch.no_grad():
+		_wemb = nn.Embedding(indices.numel(), self.wemb.weight.size(-1), padding_idx=self.wemb.padding_idx)
+		with torch_no_grad():
 			_wemb.weight.copy_(self.wemb.weight.index_select(0, indices))
 		self.wemb = _wemb
+
+		return self.wemb.weight

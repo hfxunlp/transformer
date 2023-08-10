@@ -1,9 +1,9 @@
 #encoding: utf-8
 
 import sys
-
 import torch
-from utils.h5serial import h5save, h5load
+
+from utils.h5serial import h5load, h5save
 
 from cnfg.ihyp import *
 

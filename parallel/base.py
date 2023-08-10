@@ -1,23 +1,20 @@
 #encoding: utf-8
 
 import torch
-from torch import nn
 import torch.cuda.comm as comm
-from utils.comm import secure_broadcast_coalesced
-from utils.contpara import get_contiguous_parameters_m, get_all_contiguous_parameters_m, get_contiguous_parameters_p
-
-from torch.jit import ScriptModule
-from torch._C import ScriptMethod
 from collections import OrderedDict
-
+from threading import Lock, Thread
+from torch import nn
+#from torch._C import ScriptMethod
+from torch.jit import ScriptModule
 from torch.nn import DataParallel
 
-from threading import Lock, Thread
-
-from utils.base import autocast, is_autocast_enabled, filter_para_grad, divide_para_ind, reorder_by_sort, range_parameter_iter, filter_para_grad_iter
-from utils.fmt.base import clean_list
-
 from parallel.optm import MultiGPUOptimizer
+from utils.base import divide_para_ind, filter_para_grad, filter_para_grad_iter, range_parameter_iter, reorder_by_sort
+from utils.comm import secure_broadcast_coalesced
+from utils.contpara import get_all_contiguous_parameters_m, get_contiguous_parameters_m, get_contiguous_parameters_p
+from utils.fmt.base import clean_list
+from utils.torch.comp import torch_autocast, torch_inference_mode, torch_is_autocast_enabled, torch_is_grad_enabled, torch_is_inference_mode_enabled, torch_no_grad, torch_set_grad_enabled, using_inference_mode
 
 """	Example:
 
@@ -35,7 +32,7 @@ def replicate_fixing(module):
 class DataParallelModel(DataParallel):
 
 	# host replicates should improve a little bit performance if there are additional calls to update_replicas and collect_gradients in the training scripts.
-	def __init__(self, module, device_ids=None, output_device=None, dim=0, host_replicate=False, gather_output=True):
+	def __init__(self, module, device_ids=None, output_device=None, dim=0, host_replicate=False, gather_output=True, **kwargs):
 
 		super(DataParallelModel, self).__init__(module, device_ids=device_ids, output_device=output_device, dim=dim)
 
@@ -76,7 +73,7 @@ class DataParallelModel(DataParallel):
 	def zero_grad(self, set_to_none=True):
 
 		if self.is_contiguous_parameters:
-			with torch.no_grad():
+			with torch_no_grad():
 				for para in get_all_contiguous_parameters_m(self.module):
 					para.grad.zero_()
 				if self.nets is not None and self.ngradev > 1:
@@ -147,7 +144,7 @@ class DataParallelModel(DataParallel):
 			if self.is_contiguous_parameters:
 				params = [para.data for para in get_all_contiguous_parameters_m(self.module)]
 				param_copies = comm.broadcast_coalesced(params, self.device_ids)
-				with torch.no_grad():
+				with torch_no_grad():
 					for module, param_copy in zip(self.nets[1:], param_copies[1:]):
 						for mp, para in zip(get_all_contiguous_parameters_m(module), param_copy):
 							mp.data.copy_(para)
@@ -176,7 +173,7 @@ class DataParallelModel(DataParallel):
 				else:
 					param_copies = _dev_param_copies
 			if self.is_contiguous_parameters:
-				with torch.no_grad():
+				with torch_no_grad():
 					for module, param_copy in zip(self.nets, param_copies):
 						for mp, para in zip(get_all_contiguous_parameters_m(module), param_copy):
 							mp.data.copy_(para)
@@ -194,7 +191,7 @@ class DataParallelModel(DataParallel):
 			if self.is_contiguous_parameters:
 				params = [para.data for para in get_all_contiguous_parameters_m(self.module)]
 				param_copies = comm.broadcast_coalesced(params, self.device_ids)
-				with torch.no_grad():
+				with torch_no_grad():
 					for module, param_copy in zip(self.nets[1:], param_copies[1:]):
 						for mp, para in zip(get_all_contiguous_parameters_m(module), param_copy):
 							mp.data.copy_(para)
@@ -220,7 +217,7 @@ class DataParallelModel(DataParallel):
 				else:
 					param_copies = _dev_param_copies
 				if self.is_contiguous_parameters:
-					with torch.no_grad():
+					with torch_no_grad():
 						for module, param_copy in zip(self.nets, param_copies):
 							for mp, para in zip(get_all_contiguous_parameters_m(module), param_copy):
 								mp.data.copy_(para)
@@ -292,7 +289,7 @@ class DataParallelModel(DataParallel):
 class DataParallelCriterion(DataParallel):
 
 	# if there is no parameter update in criterion, turn on replicate_once should improve a little bit performance.
-	def __init__(self, module, device_ids=None, output_device=None, dim=0, replicate_once=False):
+	def __init__(self, module, device_ids=None, output_device=None, dim=0, replicate_once=False, **kwargs):
 
 		super(DataParallelCriterion, self).__init__(module, device_ids=device_ids, output_device=output_device, dim=dim)
 
@@ -421,23 +418,23 @@ def replicate(network, devices, no_gradient=False):
 
 	return [network] + [module_copies[j][0] for j in range(num_replicas)]
 
-# update these two functions with the update of parallel_apply(https://github.com/pytorch/pytorch/blob/master/torch/nn/parallel/parallel_apply.py)
+# update below functions with the update of parallel_apply(https://github.com/pytorch/pytorch/blob/master/torch/nn/parallel/parallel_apply.py)
 
-def parallel_apply(modules, inputs, devices, kwargs_tup=None, lock=None):
+def parallel_apply_inference(modules, inputs, devices, kwargs_tup=None, lock=None):
 
 	if kwargs_tup is None:
 		kwargs_tup = ({},) * len(modules)
 
 	lock = Lock() if lock is None else lock
 	results = {}
-	grad_enabled, autocast_enabled = torch.is_grad_enabled(), is_autocast_enabled()
+	grad_enabled, autocast_enabled, inference_mode_enabled = torch_is_grad_enabled(), torch_is_autocast_enabled(), torch_is_inference_mode_enabled()
 
 	def _worker(i, module, input, kwargs, device=None):
 
 		# this also avoids accidental slicing of `input` if it is a Tensor
 		if not isinstance(input, (list, tuple,)):
 			input = (input,)
-		with torch.set_grad_enabled(grad_enabled), torch.cuda.device(device), autocast(enabled=autocast_enabled):
+		with torch_set_grad_enabled(grad_enabled), torch_inference_mode(inference_mode_enabled), torch.cuda.device(device), torch_autocast(enabled=autocast_enabled):
 			output = module(*input, **kwargs)
 		with lock:
 			results[i] = output
@@ -456,14 +453,14 @@ def parallel_apply(modules, inputs, devices, kwargs_tup=None, lock=None):
 
 	return outputs
 
-def criterion_parallel_apply(modules, inputs, targets, devices, kwargs_tup=None, lock=None):
+def criterion_parallel_apply_inference(modules, inputs, targets, devices, kwargs_tup=None, lock=None):
 
 	if kwargs_tup is None:
 		kwargs_tup = ({},) * len(modules)
 
 	lock = Lock() if lock is None else lock
 	results = {}
-	grad_enabled, autocast_enabled = torch.is_grad_enabled(), is_autocast_enabled()
+	grad_enabled, autocast_enabled, inference_mode_enabled = torch_is_grad_enabled(), torch_is_autocast_enabled(), torch_is_inference_mode_enabled()
 
 	def _worker(i, module, input, target, kwargs, device):
 
@@ -471,7 +468,7 @@ def criterion_parallel_apply(modules, inputs, targets, devices, kwargs_tup=None,
 			input = (input,)
 		if not isinstance(target, (list, tuple,)):
 			target = (target,)
-		with torch.set_grad_enabled(grad_enabled), torch.cuda.device(device), autocast(enabled=autocast_enabled):
+		with torch_set_grad_enabled(grad_enabled), torch_inference_mode(inference_mode_enabled), torch.cuda.device(device), torch_autocast(enabled=autocast_enabled):
 			output = module(*(input + target), **kwargs)
 		with lock:
 			results[i] = output
@@ -489,3 +486,71 @@ def criterion_parallel_apply(modules, inputs, targets, devices, kwargs_tup=None,
 		outputs.append(output)
 
 	return outputs
+
+def parallel_apply_grad(modules, inputs, devices, kwargs_tup=None, lock=None):
+
+	if kwargs_tup is None:
+		kwargs_tup = ({},) * len(modules)
+
+	lock = Lock() if lock is None else lock
+	results = {}
+	grad_enabled, autocast_enabled = torch_is_grad_enabled(), torch_is_autocast_enabled()
+
+	def _worker(i, module, input, kwargs, device=None):
+
+		if not isinstance(input, (list, tuple,)):
+			input = (input,)
+		with torch_set_grad_enabled(grad_enabled), torch.cuda.device(device), torch_autocast(enabled=autocast_enabled):
+			output = module(*input, **kwargs)
+		with lock:
+			results[i] = output
+
+	threads = [Thread(target=_worker, args=(i, module, input, kwargs, device)) for i, (module, input, kwargs, device) in enumerate(zip(modules, inputs, kwargs_tup, devices))]
+
+	for thread in threads:
+		thread.start()
+	for thread in threads:
+		thread.join()
+
+	outputs = []
+	for i in range(len(inputs)):
+		output = results[i]
+		outputs.append(output)
+
+	return outputs
+
+def criterion_parallel_apply_grad(modules, inputs, targets, devices, kwargs_tup=None, lock=None):
+
+	if kwargs_tup is None:
+		kwargs_tup = ({},) * len(modules)
+
+	lock = Lock() if lock is None else lock
+	results = {}
+	grad_enabled, autocast_enabled = torch_is_grad_enabled(), torch_is_autocast_enabled()
+
+	def _worker(i, module, input, target, kwargs, device):
+
+		if not isinstance(input, (list, tuple,)):
+			input = (input,)
+		if not isinstance(target, (list, tuple,)):
+			target = (target,)
+		with torch_set_grad_enabled(grad_enabled), torch.cuda.device(device), torch_autocast(enabled=autocast_enabled):
+			output = module(*(input + target), **kwargs)
+		with lock:
+			results[i] = output
+
+	threads = [Thread(target=_worker, args=(i, module, input, target, kwargs, device)) for i, (module, input, target, kwargs, device) in enumerate(zip(modules, inputs, targets, kwargs_tup, devices))]
+
+	for thread in threads:
+		thread.start()
+	for thread in threads:
+		thread.join()
+
+	outputs = []
+	for i in range(len(inputs)):
+		output = results[i]
+		outputs.append(output)
+
+	return outputs
+
+parallel_apply, criterion_parallel_apply = (parallel_apply_inference, criterion_parallel_apply_inference,) if using_inference_mode else (parallel_apply_grad, criterion_parallel_apply_grad,)

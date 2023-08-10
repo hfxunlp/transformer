@@ -2,7 +2,7 @@
 
 import sys
 
-from math import floor
+from utils.fmt.base import sys_open
 
 def load_log(fname):
 
@@ -14,7 +14,7 @@ def load_log(fname):
 			return False
 
 	cache = []
-	with open(fname, "rb") as frd:
+	with sys_open(fname, "rb") as frd:
 		for line in frd:
 			tmp = line.strip()
 			if tmp:
@@ -38,7 +38,7 @@ def load_log(fname):
 def handle(srcf, rsf):
 
 	ens = "\n".encode("utf-8")
-	with open(rsf, "wb") as f:
+	with sys_open(rsf, "wb") as f:
 		for data in load_log(srcf):
 			f.write(data[-1].encode("utf-8"))
 			f.write(ens)

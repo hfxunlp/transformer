@@ -2,9 +2,10 @@
 
 import sys
 
-from utils.fmt.base import line_reader, reverse_dict
+from utils.fmt.base import line_reader, sys_open
+from utils.fmt.vocab.base import reverse_dict
 
-from cnfg.vocab.plm.bert import *
+from cnfg.vocab.plm.bert import eos_id, mask_id, pad_id, sos_id, unk_id, vocab_size
 
 def ldvocab(vfile, *args, **kwargs):
 
@@ -37,7 +38,7 @@ def save_vocab(vcb_dict, fname):
 	freqs.sort()
 
 	_ = "\n".join([r_vocab[_key] for _key in freqs])
-	with sys.stdout.buffer if fname == "-" else open(fname, "wb") as f:
+	with sys_open(fname, "wb") as f:
 		f.write(_.encode("utf-8"))
 		f.write("\n".encode("utf-8"))
 

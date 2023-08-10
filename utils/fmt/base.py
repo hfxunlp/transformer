@@ -1,21 +1,38 @@
 #encoding: utf-8
 
 import sys
-
+from bz2 import open as bz_open
+from gzip import open as gz_open
+from lzma import open as xz_open
 from random import shuffle
 
-from cnfg.vocab.base import *
+from cnfg.hyp import raw_cache_compression_level
+from cnfg.vocab.base import pad_id
 
 serial_func, deserial_func = repr, eval
 
-tostr = lambda lin: [str(lu) for lu in lin]
-toint = lambda lin: [int(lu) for lu in lin]
-tofloat = lambda lin: [float(lu) for lu in lin]
+iter_to_str = lambda lin: map(str, lin)
+iter_to_int = lambda lin: map(int, lin)
+iter_to_float = lambda lin: map(float, lin)
+
+def sys_open(fname, mode="r", compresslevel=raw_cache_compression_level, **kwargs):
+
+	if fname == "-":
+		return ((sys.stdin.buffer if "r" in mode else sys.stdout.buffer) if "b" in mode else (sys.stdin if "r" in mode else sys.stdout))
+	else:
+		if fname.endswith(".gz"):
+			return gz_open(fname, mode=mode, compresslevel=compresslevel, **kwargs)
+		elif fname.endswith(".bz2"):
+			return bz_open(fname, mode=mode, compresslevel=compresslevel, **kwargs)
+		elif fname.endswith(".xz"):
+			return xz_open(fname, mode=mode, **kwargs)
+		else:
+			return open(fname, mode=mode, **kwargs)
 
 def save_objects(fname, *inputs):
 
 	ens = "\n".encode("utf-8")
-	with sys.stdout.buffer if fname == "-" else open(fname, "wb") as f:
+	with sys_open(fname, "wb") as f:
 		for tmpu in inputs:
 			f.write(serial_func(tmpu).encode("utf-8"))
 			f.write(ens)
@@ -23,7 +40,7 @@ def save_objects(fname, *inputs):
 def load_objects(fname):
 
 	rs = []
-	with sys.stdin.buffer if fname == "-" else open(fname, "rb") as f:
+	with sys_open(fname, "rb") as f:
 		for line in f:
 			tmp = line.strip()
 			if tmp:
@@ -34,7 +51,7 @@ def load_objects(fname):
 def load_states(fname):
 
 	rs = []
-	with sys.stdin.buffer if fname == "-" else open(fname, "rb") as f:
+	with sys_open(fname, "rb") as f:
 		for line in f:
 			tmp = line.strip()
 			if tmp:
@@ -44,13 +61,13 @@ def load_states(fname):
 
 	return rs
 
-def list_reader(fname, keep_empty_line=True, print_func=print):
+def list_reader(fname, keep_empty_line=True, sep=None, print_func=print):
 
-	with sys.stdin.buffer if fname == "-" else open(fname, "rb") as frd:
+	with sys_open(fname, "rb") as frd:
 		for line in frd:
 			tmp = line.strip()
 			if tmp:
-				tmp = clean_list(tmp.decode("utf-8").split())
+				tmp = clean_list(tmp.decode("utf-8").split(sep=sep))
 				yield tmp
 			else:
 				if print_func is not None:
@@ -60,115 +77,66 @@ def list_reader(fname, keep_empty_line=True, print_func=print):
 
 def line_reader(fname, keep_empty_line=True, print_func=print):
 
-	with sys.stdin.buffer if fname == "-" else open(fname, "rb") as frd:
+	with sys_open(fname, "rb") as frd:
 		for line in frd:
 			tmp = line.strip()
 			if tmp:
 				yield tmp.decode("utf-8")
 			else:
 				if print_func is not None:
-					print_func("Reminder: encounter an empty line, which shall not be the case.")
+					print_func("Reminder: encounter an empty line, which may not be the case.")
 				if keep_empty_line:
 					yield ""
 
-def ldvocab(vfile, minf=False, omit_vsize=False, vanilla=False, init_vocab=init_vocab, init_normal_token_id=init_normal_token_id):
+def line_char_reader(fname, keep_empty_line=True, print_func=print):
 
-	if vanilla:
-		rs, cwd = {}, 0
-	else:
-		rs, cwd = init_vocab.copy(), init_normal_token_id
-	if omit_vsize:
-		vsize = omit_vsize
-	else:
-		vsize = False
-	for data in list_reader(vfile, keep_empty_line=False):
-		freq = int(data[0])
-		if (not minf) or freq > minf:
-			if vsize:
-				ndata = len(data) - 1
-				if vsize >= ndata:
-					for wd in data[1:]:
-						rs[wd] = cwd
-						cwd += 1
-				else:
-					for wd in data[1:vsize + 1]:
-						rs[wd] = cwd
-						cwd += 1
-						ndata = vsize
-					break
-				vsize -= ndata
-				if vsize <= 0:
-					break
+	with sys_open(fname, "rb") as frd:
+		for line in frd:
+			tmp = line.strip()
+			if tmp:
+				yield list(tmp.decode("utf-8"))
 			else:
-				for wd in data[1:]:
-					rs[wd] = cwd
-					cwd += 1
-		else:
-			break
-	return rs, cwd
+				if print_func is not None:
+					print_func("Reminder: encounter an empty line, which may not be the case.")
+				if keep_empty_line:
+					yield []
 
-def save_vocab(vcb_dict, fname, omit_vsize=False):
+def list_reader_wst(fname, keep_empty_line=True, sep=None, print_func=print):
 
-	r_vocab = {}
-	for k, v in vcb_dict.items():
-		if v not in r_vocab:
-			r_vocab[v]=[str(v), k]
-		else:
-			r_vocab[v].append(k)
+	with sys_open(fname, "rb") as frd:
+		for line in frd:
+			tmp = line.strip(b"\r\n")
+			if tmp:
+				tmp = clean_list(tmp.decode("utf-8").split(sep=sep))
+				yield tmp
+			else:
+				if print_func is not None:
+					print_func("Reminder: encounter an empty line, which may not be the case.")
+				if keep_empty_line:
+					yield []
 
-	freqs = list(r_vocab.keys())
-	freqs.sort(reverse=True)
+def line_reader_wst(fname, keep_empty_line=True, print_func=print):
+
+	with sys_open(fname, "rb") as frd:
+		for line in frd:
+			tmp = line.strip(b"\r\n")
+			if tmp:
+				yield tmp.decode("utf-8")
+			else:
+				if print_func is not None:
+					print_func("Reminder: encounter an empty line, which may not be the case.")
+				if keep_empty_line:
+					yield ""
+
+def loop_file_so(fsrc, frs, process_func=None, processor=None):
 
 	ens = "\n".encode("utf-8")
-	remain = omit_vsize
-	with sys.stdout.buffer if fname == "-" else open(fname, "wb") as f:
-		for freq in freqs:
-			cdata = r_vocab[freq]
-			ndata = len(cdata) - 1
-			if remain and (remain < ndata):
-				cdata = cdata[:remain + 1]
-				ndata = remain
-			f.write(" ".join(cdata).encode("utf-8"))
-			f.write(ens)
-			if remain:
-				remain -= ndata
-				if remain <= 0:
-					break
-
-def reverse_dict(din):
-
-	return {v:k for k, v in din.items()}
-
-def ldvocab_list(vfile, minf=False, omit_vsize=False):
-
-	rs = []
-	if omit_vsize:
-		vsize = omit_vsize
-	else:
-		vsize = False
-	cwd = 0
-	for data in list_reader(vfile, keep_empty_line=False):
-		freq = int(data[0])
-		if (not minf) or freq > minf:
-			if vsize:
-				ndata = len(data) - 1
-				if vsize >= ndata:
-					rs.extend(data[1:])
-					cwd += ndata
-				else:
-					rs.extend(data[1:vsize + 1])
-					cwd += vsize
-					break
-				vsize -= ndata
-				if vsize <= 0:
-					break
-			else:
-				rs.extend(data[1:])
-				cwd += len(data) - 1
-		else:
-			break
-
-	return rs, cwd
+	with sys_open(fsrc, "rb") as frd, sys_open(frs, "wb") as fwrt:
+		for line in frd:
+			tmp = line.strip()
+			if tmp:
+				fwrt.write(process_func(tmp.decode("utf-8"), processor).encode("utf-8"))
+			fwrt.write(ens)
 
 def clean_str(strin):
 
@@ -190,7 +158,60 @@ def clean_liststr_lentok(lin):
 
 	return " ".join(rs), len(rs)
 
-def maxfreq_filter_core(ls, lt):
+def maxfreq_filter_many(inputs):
+
+	tmp = {}
+	for _ in inputs:
+		us, ut = tuple(_[:-1]), _[-1]
+		if us in tmp:
+			tmp[us][ut] = tmp[us].get(ut, 0) + 1
+		else:
+			tmp[us] = {ut: 1}
+
+	rs = []
+	for tus, tlt in tmp.items():
+		_rs = []
+		_maxf = 0
+		for key, value in tlt.items():
+			if value > _maxf:
+				_maxf = value
+				_rs = [key]
+			elif value == _maxf:
+				_rs.append(key)
+		for tut in _rs:
+			rs.append((*tus, tut,))
+
+	return rs
+
+def maxfreq_filter_bi(inputs):
+
+	tmp = {}
+	for us, ut in inputs:
+		if us in tmp:
+			tmp[us][ut] = tmp[us].get(ut, 0) + 1
+		else:
+			tmp[us] = {ut: 1}
+
+	rs = []
+	for tus, tlt in tmp.items():
+		_rs = []
+		_maxf = 0
+		for key, value in tlt.items():
+			if value > _maxf:
+				_maxf = value
+				_rs = [key]
+			elif value == _maxf:
+				_rs.append(key)
+		for tut in _rs:
+			rs.append((tus, tut,))
+
+	return rs
+
+def maxfreq_filter(inputs):
+
+	return maxfreq_filter_many(inputs) if len(inputs[0]) > 2 else maxfreq_filter_bi(inputs)
+
+def maxfreq_filter_core_pair(ls, lt):
 
 	tmp = {}
 	for us, ut in zip(ls, lt):
@@ -215,14 +236,14 @@ def maxfreq_filter_core(ls, lt):
 
 	return rls, rlt
 
-def maxfreq_filter(*inputs):
+def maxfreq_filter_pair(*inputs):
 
 	if len(inputs) > 2:
 		# here we assume that we only have one target and it is at the last position
-		rsh, rst = maxfreq_filter_core(tuple(zip(*inputs[0:-1])), inputs[-1])
+		rsh, rst = maxfreq_filter_core_pair(tuple(zip(*inputs[:-1])), inputs[-1])
 		return *zip(*rsh), rst
 	else:
-		return maxfreq_filter_core(*inputs)
+		return maxfreq_filter_core_pair(*inputs)
 
 def shuffle_pair(*inputs):
 
@@ -238,19 +259,6 @@ def get_bsize(maxlen, maxtoken, maxbsize):
 		rs -= 1
 
 	return min(rs, maxbsize)
-
-def no_unk_mapper(vcb, ltm, print_func=None):
-
-	if print_func is None:
-		return [vcb[wd] for wd in ltm if wd in vcb]
-	else:
-		rs = []
-		for wd in ltm:
-			if wd in vcb:
-				rs.append(vcb[wd])
-			else:
-				print_func("Error mapping: "+ wd)
-		return rs
 
 def list2dict(lin, kfunc=None):
 
@@ -315,17 +323,23 @@ def dict_insert_list(dict_in, value, *keys):
 
 	return dict_in
 
-def legal_vocab(sent, ilgset, ratio):
+def seperate_list_iter(lin, k):
 
-	total = ilg = 0
-	for tmpu in sent.split():
-		if tmpu:
-			if tmpu in ilgset:
-				ilg += 1
-			total += 1
-	rt = float(ilg) / float(total)
+	i = 0
+	_ = []
+	for lu in lin:
+		_.append(lu)
+		i += 1
+		if i >= k:
+			yield _
+			_ = []
+			i = 0
+	if _:
+		yield _
 
-	return False if rt > ratio else True
+def seperate_list(lin, k):
+
+	return list(seperate_list_iter(lin, k))
 
 def all_in(lin, setin):
 
@@ -365,20 +379,6 @@ def get_bi_ratio(ls, lt):
 	else:
 		return float(lt) / float(ls)
 
-def map_batch_core(i_d, vocabi, use_unk=use_unk, sos_id=sos_id, eos_id=eos_id, unk_id=unk_id, **kwargs):
-
-	if isinstance(i_d[0], (tuple, list,)):
-		return [map_batch_core(idu, vocabi, use_unk=use_unk, sos_id=sos_id, eos_id=eos_id, unk_id=unk_id, **kwargs) for idu in i_d]
-	else:
-		rsi = [sos_id]
-		rsi.extend([vocabi.get(wd, unk_id) for wd in i_d] if use_unk else no_unk_mapper(vocabi, i_d))#[vocabi[wd] for wd in i_d if wd in vocabi]
-		rsi.append(eos_id)
-		return rsi
-
-def map_batch(i_d, vocabi, use_unk=use_unk, sos_id=sos_id, eos_id=eos_id, unk_id=unk_id, **kwargs):
-
-	return map_batch_core(i_d, vocabi, use_unk=use_unk, sos_id=sos_id, eos_id=eos_id, unk_id=unk_id, **kwargs), 2
-
 def pad_batch(i_d, mlen_i, pad_id=pad_id):
 
 	if isinstance(i_d[0], (tuple, list,)):
@@ -393,7 +393,7 @@ class FileList(list):
 
 	def __init__(self, files, *inputs, **kwargs):
 
-		super(FileList, self).__init__(open(fname, *inputs, **kwargs) for fname in files)
+		super(FileList, self).__init__(sys_open(fname, *inputs, **kwargs) for fname in files)
 
 	def __enter__(self):
 
@@ -408,9 +408,8 @@ def multi_line_reader(fname, *inputs, num_line=1, **kwargs):
 
 	_i = 0
 	rs = []
-	_enc = ("rb" in inputs) or ("rb" in kwargs.values())
-	ens = "\n".encode("utf-8") if _enc else "\n"
-	with (sys.stdin.buffer if _enc else sys.stdin) if fname == "-" else open(fname, *inputs, **kwargs) as frd:
+	ens = "\n".encode("utf-8") if ("rb" in inputs) or ("rb" in kwargs.values()) else "\n"
+	with sys_open(fname, *inputs, **kwargs) as frd:
 		for line in frd:
 			tmp = line.rstrip()
 			rs.append(tmp)
@@ -421,3 +420,11 @@ def multi_line_reader(fname, *inputs, num_line=1, **kwargs):
 				_i = 0
 	if rs:
 		yield ens.join(rs)
+
+def read_lines(fin, num_lines):
+
+	_last_ind = num_lines - 1
+	for i, _ in enumerate(fin, 1):
+		yield _
+		if i > _last_ind:
+			break

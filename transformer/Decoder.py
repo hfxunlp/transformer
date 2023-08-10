@@ -1,15 +1,18 @@
 #encoding: utf-8
 
 import torch
-from torch import nn
-from modules.base import *
-from utils.sampler import SampleMax
-from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_zero_, mask_tensor_type
 from math import sqrt
+from torch import nn
 
-from cnfg.vocab.base import pad_id
+from modules.base import CrossAttn, Dropout, Linear, MultiHeadAttn, PositionalEmb, PositionwiseFF, ResCrossAttn, ResSelfAttn
+from utils.base import index_tensors, select_zero_
+from utils.decode.beam import expand_bsize_for_beam
+from utils.fmt.parser import parse_none
+from utils.sampler import SampleMax
+from utils.torch.comp import all_done, mask_tensor_type, torch_no_grad
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import eos_id, pad_id
 
 class DecoderLayer(nn.Module):
 
@@ -21,26 +24,25 @@ class DecoderLayer(nn.Module):
 	# norm_residual: residue with layer normalized representation
 	# k_rel_pos: window size (one side) of relative positional embeddings in self attention
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_decoder, max_bucket_distance=relative_position_max_bucket_distance_decoder, **kwargs):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_decoder, max_bucket_distance=relative_position_max_bucket_distance_decoder, **kwargs):
 
 		super(DecoderLayer, self).__init__()
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.self_attn = ResSelfAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual, k_rel_pos=k_rel_pos, uni_direction_reduction=True, max_bucket_distance=max_bucket_distance)
 		self.cross_attn = ResCrossAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual)
-
-		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
+		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, act_drop=act_drop, norm_residual=norm_residual)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: embedding of decoded translation (bsize, nquery, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, nquery, seql), see Encoder, expanded after generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# tgt_pad_mask: mask to hide the future input
 	# query_unit: single query to decode, used to support decoding for given step
 
-	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None):
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, **kwargs):
 
 		if query_unit is None:
 			context = self.self_attn(inputo, mask=tgt_pad_mask)
@@ -59,12 +61,12 @@ class DecoderLayer(nn.Module):
 # Not used, keep this class to remind the DecoderLayer implementation before v0.3.5.
 class NAWDecoderLayer(DecoderLayer):
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_decoder, max_bucket_distance=relative_position_max_bucket_distance_decoder, **kwargs):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_decoder, max_bucket_distance=relative_position_max_bucket_distance_decoder, **kwargs):
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		super(NAWDecoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, norm_residual=norm_residual, k_rel_pos=k_rel_pos, max_bucket_distance=max_bucket_distance)
+		super(NAWDecoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize, norm_residual=norm_residual, k_rel_pos=k_rel_pos, max_bucket_distance=max_bucket_distance)
 
 		self.layer_normer1, self.drop, self.norm_residual = self.self_attn.normer, self.self_attn.drop, self.self_attn.norm_residual
 		self.self_attn = self.self_attn.net
@@ -72,13 +74,13 @@ class NAWDecoderLayer(DecoderLayer):
 		self.cross_attn = self.cross_attn.net
 		#self.self_attn = SelfAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, k_rel_pos=k_rel_pos, uni_direction_reduction=True, max_bucket_distance=max_bucket_distance)
 		#self.cross_attn = CrossAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop)
-		#self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual)
+		#self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, act_drop=act_drop, norm_residual=norm_residual)
 		#self.layer_normer1 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 		#self.layer_normer2 = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 		#self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 		#self.norm_residual = norm_residual
 
-	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None):
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, **kwargs):
 
 		if query_unit is None:
 			_inputo = self.layer_normer1(inputo)
@@ -130,17 +132,17 @@ class Decoder(nn.Module):
 	# share_layer: using one shared decoder layer
 	# disable_pemb: disable the standard positional embedding, can be enabled when use relative postional embeddings in self attention or AAN
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False, disable_pemb=disable_std_pemb_decoder, **kwargs):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False, disable_pemb=disable_std_pemb_decoder, **kwargs):
 
 		super(Decoder, self).__init__()
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
 		self.drop = Dropout(dropout, inplace=True) if dropout > 0.0 else None
 
 		self.xseql = xseql
-		self.register_buffer("mask", torch.ones(xseql, xseql, dtype=mask_tensor_type).triu(1).unsqueeze(0))
+		self.register_buffer("mask", torch.ones(xseql, xseql, dtype=mask_tensor_type).triu(1).unsqueeze(0), persistent=False)
 
 		self.wemb = nn.Embedding(nwd, isize, padding_idx=pad_id)
 		if emb_w is not None:
@@ -148,10 +150,10 @@ class Decoder(nn.Module):
 
 		self.pemb = None if disable_pemb else PositionalEmb(isize, xseql, 0, 0)
 		if share_layer:
-			_shared_layer = DecoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize)
+			_shared_layer = DecoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize)
 			self.nets = nn.ModuleList([_shared_layer for i in range(num_layer)])
 		else:
-			self.nets = nn.ModuleList([DecoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize) for i in range(num_layer)])
+			self.nets = nn.ModuleList([DecoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize) for i in range(num_layer)])
 
 		self.classifier = Linear(isize, nwd)
 		# be careful since this line of code is trying to share the weight of the wemb and the classifier, which may cause problems if torch.nn updates
@@ -167,9 +169,9 @@ class Decoder(nn.Module):
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: decoded translation (bsize, nquery)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 
-	def forward(self, inpute, inputo, src_pad_mask=None):
+	def forward(self, inpute, inputo, src_pad_mask=None, **kwargs):
 
 		nquery = inputo.size(-1)
 
@@ -184,7 +186,7 @@ class Decoder(nn.Module):
 
 		# the following line of code is to mask <pad> for the decoder,
 		# which I think is useless, since only <pad> may pay attention to previous <pad> tokens, whos loss will be omitted by the loss function.
-		#_mask = torch.gt(_mask + inputo.eq(0).unsqueeze(1), 0)
+		#_mask = torch.gt(_mask + inputo.eq(pad_id).unsqueeze(1), 0)
 
 		for net in self.nets:
 			out = net(inpute, out, src_pad_mask, _mask)
@@ -228,21 +230,21 @@ class Decoder(nn.Module):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, seql), see Encoder, get by:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# beam_size: the beam size for beam search
 	# max_len: maximum length to generate
 
-	def decode(self, inpute, src_pad_mask=None, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
+	def decode(self, inpute, src_pad_mask=None, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False, **kwargs):
 
-		return self.beam_decode(inpute, src_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad) if beam_size > 1 else self.greedy_decode(inpute, src_pad_mask, max_len, fill_pad=fill_pad)
+		return self.beam_decode(inpute, src_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad, **kwargs) if beam_size > 1 else self.greedy_decode(inpute, src_pad_mask, max_len, fill_pad=fill_pad, **kwargs)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# max_len: maximum length to generate
 	# sample: for back translation
 
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False):
+	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False, **kwargs):
 
 		bsize = inpute.size(0)
 
@@ -275,7 +277,7 @@ class Decoder(nn.Module):
 
 		# done_trans: (bsize, 1)
 
-		done_trans = wds.eq(2)
+		done_trans = wds.eq(eos_id)
 
 		for i in range(1, max_len):
 
@@ -297,7 +299,7 @@ class Decoder(nn.Module):
 
 			trans.append(wds.masked_fill(done_trans, pad_id) if fill_pad else wds)
 
-			done_trans = done_trans | wds.eq(2)
+			done_trans = done_trans | wds.eq(eos_id)
 			if all_done(done_trans, bsize):
 				break
 
@@ -305,11 +307,11 @@ class Decoder(nn.Module):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# beam_size: beam size
 	# max_len: maximum length to generate
 
-	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False):
+	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False, **kwargs):
 
 		bsize, seql = inpute.size()[:2]
 
@@ -318,7 +320,6 @@ class Decoder(nn.Module):
 		real_bsize = bsize * beam_size
 
 		out = self.get_sos_emb(inpute)
-		isize = out.size(-1)
 
 		if length_penalty > 0.0:
 			# lpv: length penalty vector for each beam (bsize * beam_size, 1)
@@ -326,7 +327,7 @@ class Decoder(nn.Module):
 			lpv_base = 6.0 ** length_penalty
 
 		if self.pemb is not None:
-			sqrt_isize = sqrt(isize)
+			sqrt_isize = sqrt(out.size(-1))
 			out = self.pemb.get_pos(0).add(out, alpha=sqrt_isize)
 
 		if self.drop is not None:
@@ -359,7 +360,7 @@ class Decoder(nn.Module):
 
 		# done_trans: (bsize, beam_size)
 
-		done_trans = wds.view(bsize, beam_size).eq(2)
+		done_trans = wds.view(bsize, beam_size).eq(eos_id)
 
 		# instead of update inpute: (bsize, seql, isize) => (bsize * beam_size, seql, isize) with the following line, we only update cross-attention buffers.
 		#inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
@@ -439,7 +440,7 @@ class Decoder(nn.Module):
 
 			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), pad_id) if fill_pad else wds), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(eos_id).squeeze(1)).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)
@@ -487,34 +488,49 @@ class Decoder(nn.Module):
 	def fix_init(self):
 
 		self.fix_load()
-		with torch.no_grad():
+		with torch_no_grad():
 			#self.wemb.weight[pad_id].zero_()
 			self.classifier.weight[pad_id].zero_()
 
 	def fix_load(self):
 
 		if (self.fbl is not None) and (self.classifier.bias is not None):
-			with torch.no_grad():
+			with torch_no_grad():
 				self.classifier.bias.index_fill_(0, torch.as_tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf_default)
+
+	def unbind_emb(self):
+
+		_bind_classifier_weight = self.classifier.weight.is_set_to(self.wemb.weight)
+		with torch_no_grad():
+			self.wemb.weight = nn.Parameter(self.wemb.weight.clone())
+		if _bind_classifier_weight:
+			self.classifier.weight = self.wemb.weight
 
 	def unbind_classifier_weight(self):
 
 		if self.classifier.weight.is_set_to(self.wemb.weight):
 			_tmp = self.classifier.weight
 			_new_w = nn.Parameter(torch.Tensor(_tmp.size()))
-			with torch.no_grad():
+			with torch_no_grad():
 				_new_w.data.copy_(_tmp.data)
 			self.classifier.weight = _new_w
 
-	# this function will untie the decoder embedding from the encoder
+	def get_embedding_weight(self):
 
-	def update_vocab(self, indices):
+		return self.wemb.weight
+
+	# this function will untie the decoder embedding from the encoder if wemb_weight is None
+
+	def update_vocab(self, indices, wemb_weight=None):
 
 		_nwd = indices.numel()
 		_wemb = nn.Embedding(_nwd, self.wemb.weight.size(-1), padding_idx=self.wemb.padding_idx)
 		_classifier = Linear(self.classifier.weight.size(-1), _nwd, bias=self.classifier.bias is not None)
-		with torch.no_grad():
-			_wemb.weight.copy_(self.wemb.weight.index_select(0, indices))
+		with torch_no_grad():
+			if wemb_weight is None:
+				_wemb.weight.copy_(self.wemb.weight.index_select(0, indices))
+			else:
+				_wemb.weight = wemb_weight
 			if self.classifier.weight.is_set_to(self.wemb.weight):
 				_classifier.weight = _wemb.weight
 			else:
@@ -529,7 +545,7 @@ class Decoder(nn.Module):
 
 		_nwd = indices.numel()
 		_classifier = Linear(self.classifier.weight.size(-1), _nwd, bias=self.classifier.bias is not None)
-		with torch.no_grad():
+		with torch_no_grad():
 			_classifier.weight.copy_(self.classifier.weight.index_select(0, indices))
 			if self.classifier.bias is not None:
 				_classifier.bias.copy_(self.classifier.bias.index_select(0, indices))
@@ -550,7 +566,7 @@ class Decoder(nn.Module):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, seql), see Encoder, get by:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# beam_size: the beam size for beam search
 	# max_len: maximum length to generate
 
@@ -560,7 +576,7 @@ class Decoder(nn.Module):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# max_len: maximum length to generate
 
 	def greedy_decode_clip(self, inpute, src_pad_mask=None, max_len=512, return_mat=True):
@@ -621,7 +637,7 @@ class Decoder(nn.Module):
 			trans.append(wds)
 
 			# done_trans: (bsize)
-			done_trans = wds.squeeze(1).eq(2)
+			done_trans = wds.squeeze(1).eq(eos_id)
 
 			_ndone = done_trans.int().sum().item()
 			if _ndone == bsize:
@@ -653,7 +669,7 @@ class Decoder(nn.Module):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# beam_size: beam size
 	# max_len: maximum length to generate
 
@@ -666,7 +682,6 @@ class Decoder(nn.Module):
 		real_bsize = bsize * beam_size
 
 		out = self.get_sos_emb(inpute)
-		isize = out.size(-1)
 
 		if length_penalty > 0.0:
 			# lpv: length penalty vector for each beam (bsize * beam_size, 1)
@@ -674,7 +689,7 @@ class Decoder(nn.Module):
 			lpv_base = 6.0 ** length_penalty
 
 		if self.pemb is not None:
-			sqrt_isize = sqrt(isize)
+			sqrt_isize = sqrt(out.size(-1))
 			out = self.pemb.get_pos(0).add(out, alpha=sqrt_isize)
 		if self.drop is not None:
 			out = self.drop(out)
@@ -704,7 +719,7 @@ class Decoder(nn.Module):
 
 		# done_trans: (bsize, beam_size)
 
-		done_trans = wds.view(bsize, beam_size).eq(2)
+		done_trans = wds.view(bsize, beam_size).eq(eos_id)
 
 		# inpute: (bsize, seql, isize) => (bsize * beam_size, seql, isize)
 		#inpute = inpute.repeat(1, beam_size, 1).view(real_bsize, seql, isize)
@@ -788,7 +803,7 @@ class Decoder(nn.Module):
 
 			trans = torch.cat((trans.index_select(0, _inds), wds), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(eos_id).squeeze(1)).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)

@@ -1,43 +1,41 @@
 #encoding: utf-8
 
 import torch
-
+from random import shuffle
 from torch.optim import Adam as Optimizer
 
+from loss.base import LabelSmoothingLoss
+from lrsch import GoogleLR as LRScheduler
 from parallel.base import DataParallelCriterion
-from parallel.parallelMT import DataParallelMT
 from parallel.optm import MultiGPUGradScaler
-
-from utils.base import *
-from utils.init.base import init_model_params
+from parallel.parallelMT import DataParallelMT
+from transformer.Doc.Para.Base.NMT import NMT
+from transformer.NMT import NMT as BaseNMT
+from utils.base import filter_para_grad, free_cache, get_logger, mkdir, set_random_seed
 from utils.contpara import get_model_parameters
+from utils.fmt.base import iter_to_str
+from utils.fmt.base4torch import load_emb, parse_cuda
+from utils.h5serial import h5File
+from utils.init.base import init_model_params
+from utils.io import load_model_cpu, save_model, save_states
 from utils.state.holder import Holder
 from utils.state.pyrand import PyRandomState
 from utils.state.thrand import THRandomState
-from utils.fmt.base import tostr
-from cnfg.vocab.base import pad_id
-from utils.fmt.base4torch import parse_cuda, load_emb
-
-from lrsch import GoogleLR as LRScheduler
-from loss.base import LabelSmoothingLoss
-
-from random import shuffle
-
+from utils.torch.comp import torch_autocast, torch_compile, torch_inference_mode
 from utils.tqdm import tqdm
-
-from utils.h5serial import h5File
+from utils.train.base import freeze_module, getlr, optm_step, optm_step_zero_grad_set_none
+from utils.train.dss import dynamic_sample
 
 import cnfg.docpara as cnfg
 from cnfg.ihyp import *
-
-from transformer.Doc.Para.Base.NMT import NMT
-from transformer.NMT import NMT as BaseNMT
+from cnfg.vocab.base import pad_id
 
 def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, multi_gpu_optimizer, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, state_holder=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False, scaler=None):
 
 	sum_loss = part_loss = 0.0
 	sum_wd = part_wd = 0
 	_done_tokens, _cur_checkid, _cur_rstep, _use_amp = done_tokens, cur_checkid, remain_steps, scaler is not None
+	global minerr, minloss, wkdir, save_auto_clean, namin
 	model.train()
 	cur_b, _ls = 1, {} if save_loss else None
 
@@ -56,7 +54,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 		seq_o = seq_o.narrow(1, 1, _nsent_use)
 		oi = seq_o.narrow(-1, 0, lo).contiguous()
 		ot = seq_o.narrow(-1, 1, lo).contiguous()
-		with autocast(enabled=_use_amp):
+		with torch_autocast(enabled=_use_amp):
 			output = model(seq_batch.narrow(1, 1, _nsent_use).contiguous(), oi, seq_batch.narrow(1, 0, _nsent_use).contiguous())
 			loss = lossf(output, ot)
 			if multi_gpu:
@@ -72,7 +70,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 		loss = output = oi = ot = seq_batch = seq_o = None
 		sum_loss += loss_add
 		if save_loss:
-			_ls[(i_d, t_d)] = loss_add / wd_add
+			_ls[(nsent, i_d,)] = loss_add / wd_add
 		sum_wd += wd_add
 		_done_tokens += wd_add
 
@@ -102,6 +100,16 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				if report_eva:
 					_leva, _eeva = eva(ed, nd, model, lossf, mv_device, multi_gpu, _use_amp)
 					logger.info("Average loss over %d tokens: %.3f, valid loss/error: %.3f %.2f" % (part_wd, part_loss / part_wd, _leva, _eeva))
+					if (_eeva < minerr) or (_leva < minloss):
+						save_model(model, wkdir + "eva_%.3f_%.2f.h5" % (_leva, _eeva,), multi_gpu, print_func=logger.info, mtyp="ieva" if save_auto_clean else None)
+						if statesf is not None:
+							save_states(state_holder.state_dict(update=False, **{"remain_steps": _cur_rstep, "checkpoint_id": _cur_checkid, "training_list": tl[cur_b - 1:]}), statesf, print_func=logger.info)
+						logger.info("New best model saved")
+						namin = 0
+						if _eeva < minerr:
+							minerr = _eeva
+						if _leva < minloss:
+							minloss = _leva
 					free_cache(mv_device)
 					model.train()
 				else:
@@ -109,7 +117,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				part_loss = 0.0
 				part_wd = 0
 
-		if save_checkp_epoch and (_cur_rstep is None) and (save_every is not None) and (cur_b % save_every == 0) and (chkpf is not None) and (cur_b < ndata):
+		if save_checkp_epoch and (_cur_rstep is None) and (save_every is not None) and (cur_b % save_every == 0) and (chkpf is not None) and (cur_b < ntrain):
 			if num_checkpoint > 1:
 				_fend = "_%d.h5" % (_cur_checkid)
 				_chkpf = chkpf[:-3] + _fend
@@ -130,7 +138,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	model.eval()
 
 	src_grp, tgt_grp = ed["src"], ed["tgt"]
-	with torch.no_grad():
+	with torch_inference_mode():
 		for nsent, i_d in tqdm(nd, mininterval=tqdm_mininterval):
 			seq_batch = torch.from_numpy(src_grp[nsent][i_d][()])
 			seq_o = torch.from_numpy(tgt_grp[nsent][i_d][()])
@@ -145,7 +153,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 			seq_o = seq_o.narrow(1, 1, _nsent_use)
 			oi = seq_o.narrow(-1, 0, lo).contiguous()
 			ot = seq_o.narrow(-1, 1, lo).contiguous()
-			with autocast(enabled=use_amp):
+			with torch_autocast(enabled=use_amp):
 				output = model(seq_batch.narrow(1, 1, _nsent_use).contiguous(), oi, seq_batch.narrow(1, 0, _nsent_use).contiguous())
 				loss = lossf(output, ot)
 				if multi_gpu:
@@ -216,7 +224,7 @@ ntrain = len(tl)
 vl = [(str(nsent), str(_curd),) for nsent, ndata in zip(vd["nsent"][()].tolist(), vd["ndata"][()].tolist()) for _curd in range(ndata)]
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
-mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
+mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.act_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_prev_sent, cnfg.num_layer_context)
 
 fine_tune_m = cnfg.fine_tune_m
 
@@ -224,9 +232,9 @@ mymodel = init_model_params(mymodel)
 mymodel.apply(init_fixing)
 if fine_tune_m is not None:
 	logger.info("Load pre-trained model from: " + fine_tune_m)
-	_tmpm = BaseNMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
+	_tmpm = BaseNMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.act_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 	_tmpm = load_model_cpu(fine_tune_m, _tmpm)
-	#with torch.no_grad():
+	#with torch_inference_mode():
 		#_tmpm.dec.classifier.bias[_tmpm.dec.classifier.bias.lt(-1e3)] = -1e3
 	if cnfg.freeze_load_model:
 		freeze_module(_tmpm)
@@ -265,6 +273,9 @@ optimizer.zero_grad(set_to_none=optm_step_zero_grad_set_none)
 
 lrsch = LRScheduler(optimizer, cnfg.isize, cnfg.warm_step, scale=cnfg.lr_scale)
 
+mymodel = torch_compile(mymodel, *torch_compile_args, **torch_compile_kwargs)
+lossf = torch_compile(lossf, *torch_compile_args, **torch_compile_kwargs)
+
 state_holder = None if statesf is None and cnt_states is None else Holder(**{"optm": optimizer, "lrsch": lrsch, "pyrand": PyRandomState(), "thrand": THRandomState(use_cuda=use_cuda)})
 
 num_checkpoint = cnfg.num_checkpoint
@@ -273,7 +284,7 @@ cur_checkid = 0
 tminerr = inf_default
 
 minloss, minerr = eva(vd, vl, mymodel, lossf, cuda_device, multi_gpu, use_amp)
-logger.info("".join(("Init lr: ", ",".join(tostr(getlr(optimizer))), ", Dev Loss/Error: %.3f %.2f" % (minloss, minerr))))
+logger.info("".join(("Init lr: ", ",".join(iter_to_str(getlr(optimizer))), ", Dev Loss/Error: %.3f %.2f" % (minloss, minerr))))
 
 if fine_tune_m is None:
 	save_model(mymodel, wkdir + "init.h5", multi_gpu, print_func=logger.info)

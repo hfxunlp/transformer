@@ -2,7 +2,7 @@
 
 import sys
 
-from utils.fmt.base import clean_liststr_lentok, all_le, FileList
+from utils.fmt.base import FileList, all_le, clean_liststr_lentok
 
 def handle(srcfl, tgtfl, max_len=256, drop_tail=False):
 

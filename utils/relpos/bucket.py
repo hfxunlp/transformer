@@ -3,7 +3,7 @@
 import torch
 from math import log
 
-'''
+"""
 relative postional encoding of T5, implementation of the transformers library for reference: https://github.com/huggingface/transformers/blob/v4.21.2/src/transformers/models/t5/modeling_t5.py#L374-L419
 
 def _relative_position_bucket(length, num_buckets=32, max_distance=128, bidirectional=True):
@@ -25,7 +25,7 @@ def _relative_position_bucket(length, num_buckets=32, max_distance=128, bidirect
 	relative_buckets += torch.where(is_small, relative_position, relative_position_if_large)
 
 	return relative_buckets
-'''
+"""
 
 def build_rel_pos_bucket_map(k_rel_pos=32, max_len=128, uni_direction=False, device=None):
 

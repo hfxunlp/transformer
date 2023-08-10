@@ -26,14 +26,18 @@ export wkd=$cachedir/$dataid
 
 mkdir -p $wkd
 
+export stsf=$wkd/src.train.srt$faext
+export ttsf=$wkd/tgt.train.srt$faext
+export sdsf=$wkd/src.dev.srt$faext
+export tdsf=$wkd/tgt.dev.srt$faext
 if $do_sort; then
-	python tools/sort.py $srcd/$srctf $srcd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens &
+	python tools/sort.py $srcd/$srctf $srcd/$tgttf $stsf $ttsf $maxtokens &
 	# use the following command to sort a very large dataset with limited memory
-	#bash tools/lsort/sort.sh $srcd/$srctf $srcd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens &
-	python tools/sort.py $srcd/$srcvf $srcd/$tgtvf $wkd/src.dev.srt $wkd/tgt.dev.srt 1048576 &
+	#bash tools/lsort/sort.sh $srcd/$srctf $srcd/$tgttf $stsf $ttsf $maxtokens &
+	python tools/sort.py $srcd/$srcvf $srcd/$tgtvf $sdsf $tdsf 1048576 &
 	wait
 fi
 
-python tools/plm/mkiodata.py $wkd/src.train.srt $wkd/tgt.train.srt $wkd/$rsf_train $ngpu &
-python tools/plm/mkiodata.py $wkd/src.dev.srt $wkd/tgt.dev.srt $wkd/$rsf_dev $ngpu &
+python tools/plm/mkiodata.py $stsf $ttsf $wkd/$rsf_train $ngpu &
+python tools/plm/mkiodata.py $sdsf $tdsf $wkd/$rsf_dev $ngpu &
 wait

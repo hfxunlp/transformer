@@ -1,15 +1,18 @@
 #encoding: utf-8
 
-from utils.fmt.base import list_reader, get_bsize, pad_batch, toint, pad_id
 from math import ceil
 
-def batch_loader(finput, bsize, maxpad, maxpart, maxtoken, minbsize):
+from utils.fmt.base import get_bsize, iter_to_int, list_reader as file_reader, pad_batch
+
+from cnfg.vocab.base import pad_id
+
+def batch_loader(finput, bsize, maxpad, maxpart, maxtoken, minbsize, get_bsize=get_bsize, file_reader=file_reader, iter_to_int=iter_to_int, **kwargs):
 
 	_f_maxpart = float(maxpart)
 	rsi = []
 	nd = maxlen = minlen = mlen_i = 0
-	for i_d in list_reader(finput, keep_empty_line=True):
-		i_d = toint(i_d)
+	for i_d in file_reader(finput, keep_empty_line=True):
+		i_d = list(iter_to_int(i_d))
 		lgth = len(i_d)
 		if maxlen == 0:
 			_maxpad = max(1, min(maxpad, ceil(lgth / _f_maxpart)) // 2)
@@ -33,8 +36,7 @@ def batch_loader(finput, bsize, maxpad, maxpart, maxtoken, minbsize):
 	if rsi:
 		yield rsi, mlen_i
 
-def batch_padder(finput, bsize, maxpad, maxpart, maxtoken, minbsize, custom_batch_loader=None, pad_id=pad_id, **kwargs):
+def batch_padder(finput, bsize, maxpad, maxpart, maxtoken, minbsize, pad_batch=pad_batch, batch_loader=batch_loader, pad_id=pad_id, **kwargs):
 
-	_batch_loader = batch_loader if custom_batch_loader is None else custom_batch_loader
-	for i_d, mlen_i in _batch_loader(finput, bsize, maxpad, maxpart, maxtoken, minbsize):
+	for i_d, mlen_i in batch_loader(finput, bsize, maxpad, maxpart, maxtoken, minbsize, **kwargs):
 		yield pad_batch(i_d, mlen_i, pad_id=pad_id)

@@ -2,13 +2,13 @@
 
 import sys
 
-from utils.fmt.base import clean_str
+from utils.fmt.base import clean_str, sys_open
 
 def handle(srcfs, srcft, srcfg, tgtfs, tgtft, tgtfg):
 
 	ens = "\n".encode("utf-8")
 
-	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft, open(srcfg, "rb") as fg, open(tgtfs, "wb") as fsw, open(tgtft, "wb") as ftw, open(tgtfg, "wb") as fgw:
+	with sys_open(srcfs, "rb") as fs, sys_open(srcft, "rb") as ft, sys_open(srcfg, "rb") as fg, sys_open(tgtfs, "wb") as fsw, sys_open(tgtft, "wb") as ftw, sys_open(tgtfg, "wb") as fgw:
 		total = keep = 0
 		for ls, lt, lg in zip(fs, ft, fg):
 			ls, lt, lg = ls.strip(), lt.strip(), lg.strip()

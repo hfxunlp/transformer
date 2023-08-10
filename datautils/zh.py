@@ -7,11 +7,11 @@ splitcode=set([u"。", u"？", u"！", u"；", u"\n"])
 class SentenceSplitter:
 	"""Wrapper for standard Moses sentence splitter."""
 
-	def __init__(self, splc=splitcode):
+	def __init__(self, splc=splitcode, **kwargs):
 
 		self.splc = splc
 
-	def __call__(self, input):
+	def __call__(self, input, **kwargs):
 
 		rs = []
 		ind = lind = 0
@@ -41,7 +41,7 @@ class Tokenizer:
 
 		nlpir.Exit()
 
-	def __call__(self, input):
+	def __call__(self, input, **kwargs):
 
 		def clear_tag(strin):
 
@@ -72,7 +72,7 @@ class Tokenizer:
 
 class Detokenizer:
 
-	def __call__(self, input):
+	def __call__(self, input, **kwargs):
 
 		if not isinstance(input, (list, tuple,)):
 			input = [input]

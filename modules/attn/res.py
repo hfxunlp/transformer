@@ -1,16 +1,15 @@
 #encoding: utf-8
 
 import torch
-from torch.nn import functional as nnFunc
 from math import sqrt
 
-from modules.base import SelfAttn as SelfAttnBase, CrossAttn as CrossAttnBase, ResSelfAttn as ResSelfAttnBase, ResCrossAttn as ResCrossAttnBase
+from modules.base import CrossAttn as CrossAttnBase, ResCrossAttn as ResCrossAttnBase, ResSelfAttn as ResSelfAttnBase, SelfAttn as SelfAttnBase
 
 from cnfg.ihyp import *
 
 class SelfAttn(SelfAttnBase):
 
-	def forward(self, iQ, mask=None, states=None, resin=None):
+	def forward(self, iQ, mask=None, states=None, resin=None, **kwargs):
 
 		bsize, nquery = iQ.size()[:2]
 		nheads = self.num_head
@@ -61,7 +60,7 @@ class SelfAttn(SelfAttnBase):
 
 class CrossAttn(CrossAttnBase):
 
-	def forward(self, iQ, iK, mask=None, resin=None):
+	def forward(self, iQ, iK, mask=None, resin=None, **kwargs):
 
 		bsize, nquery = iQ.size()[:2]
 		seql = iK.size(1)
@@ -69,12 +68,12 @@ class CrossAttn(CrossAttnBase):
 		adim = self.attn_dim
 
 		real_iQ = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2)
-		if (self.real_iK is not None) and self.iK.is_set_to(iK) and (not self.training):
+		if (self.real_iK is not None) and self.iK.is_set_to(iK) and self.is_decoding:
 			real_iK, real_iV = self.real_iK, self.real_iV
 		else:
 			real_iK, real_iV = self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim).unbind(2)
 			real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
-			if not self.training:
+			if self.is_decoding:
 				self.iK, self.real_iK, self.real_iV = iK, real_iK, real_iV
 
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)

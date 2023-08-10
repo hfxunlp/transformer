@@ -1,26 +1,27 @@
 #encoding: utf-8
 
 import torch
-from utils.sampler import SampleMax
-from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_zero_
 from math import sqrt
 
-from cnfg.vocab.base import pad_id
-
 from transformer.EnsembleDecoder import Decoder as DecoderBase
+from utils.base import index_tensors
+from utils.decode.beam import expand_bsize_for_beam
+from utils.sampler import SampleMax
+from utils.torch.comp import all_done
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import eos_id, pad_id
 
-# Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network (https://www.aclweb.org/anthology/P18-1166/)
+# Average Decoder is proposed in Accelerating Neural Transformer via an Average Attention Network (https://aclanthology.org/P18-1166/)
 
 class Decoder(DecoderBase):
 
 	# inpute: encoded representation from encoders [(bsize, seql, isize)...]
 	# inputo: decoded translation (bsize, nquery)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 
-	def forward(self, inpute, inputo, src_pad_mask=None):
+	def forward(self, inpute, inputo, src_pad_mask=None, **kwargs):
 
 		bsize, nquery = inputo.size()
 
@@ -47,14 +48,14 @@ class Decoder(DecoderBase):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# max_len: maximum length to generate
 
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False):
+	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False, **kwargs):
 
 		bsize, seql, isize = inpute[0].size()
 
-		sqrt_isize = sqrt(isize)
+		sqrt_isize = sqrt(self.nets[0].wemb.weight.size(-1))
 
 		outs = []
 
@@ -89,7 +90,7 @@ class Decoder(DecoderBase):
 
 		# done_trans: (bsize, 1)
 
-		done_trans = wds.eq(2)
+		done_trans = wds.eq(eos_id)
 
 		for step in range(2, max_len + 1):
 
@@ -118,7 +119,7 @@ class Decoder(DecoderBase):
 
 			trans.append(wds.masked_fill(done_trans, pad_id) if fill_pad else wds)
 
-			done_trans = done_trans | wds.eq(2)
+			done_trans = done_trans | wds.eq(eos_id)
 			if all_done(done_trans, bsize):
 				break
 
@@ -126,11 +127,11 @@ class Decoder(DecoderBase):
 
 	# inpute: encoded representation from encoders [(bsize, seql, isize)...]
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# beam_size: beam size
 	# max_len: maximum length to generate
 
-	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False):
+	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False, **kwargs):
 
 		bsize, seql, isize = inpute[0].size()
 
@@ -138,7 +139,7 @@ class Decoder(DecoderBase):
 		bsizeb2 = bsize * beam_size2
 		real_bsize = bsize * beam_size
 
-		sqrt_isize = sqrt(isize)
+		sqrt_isize = sqrt(self.nets[0].wemb.weight.size(-1))
 
 		if length_penalty > 0.0:
 			# lpv: length penalty vector for each beam (bsize * beam_size, 1)
@@ -187,7 +188,7 @@ class Decoder(DecoderBase):
 
 		# done_trans: (bsize, beam_size)
 
-		done_trans = wds.view(bsize, beam_size).eq(2)
+		done_trans = wds.view(bsize, beam_size).eq(eos_id)
 
 		# inpute: (bsize, seql, isize) => (bsize * beam_size, seql, isize)
 
@@ -269,7 +270,7 @@ class Decoder(DecoderBase):
 
 			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), pad_id) if fill_pad else wds), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(eos_id).squeeze(1)).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)

@@ -2,7 +2,8 @@
 
 import torch
 from torch.nn import ModuleList
-from modules.plm.t5 import SelfAttn, CrossAttn
+
+from modules.plm.t5 import CrossAttn, SelfAttn
 
 def reorder_pemb(w):
 

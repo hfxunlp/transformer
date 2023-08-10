@@ -5,9 +5,9 @@ from transformers import BertTokenizerFast as Tokenizer
 
 from utils.fmt.plm.token import map_back_file as map_func
 
-def handle(*inputs, **kwargs):
+def handle(fsrc, vcb, frs):
 
-	return map_func(*inputs, **kwargs, Tokenizer=Tokenizer)
+	return map_func(fsrc, frs, processor=Tokenizer(tokenizer_file=vcb).decode)
 
 if __name__ == "__main__":
 	handle(sys.argv[1], sys.argv[2], sys.argv[3])

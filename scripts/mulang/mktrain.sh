@@ -26,13 +26,19 @@ export ngpu=1
 export do_sort=true
 export build_vocab=true
 
+export faext=".xz"
+
 export wkd=$cachedir/$dataid
 
 mkdir -p $wkd
 
+export stsf=$wkd/src.train.srt$faext
+export ttsf=$wkd/tgt.train.srt$faext
+export sdsf=$wkd/src.dev.srt$faext
+export tdsf=$wkd/tgt.dev.srt$faext
 if $do_sort; then
-	python tools/mulang/eff/sort.py $srcd/$srctf $srcd/$tgttf $wkd/src.train.srt $wkd/tgt.train.srt $maxtokens &
-	python tools/mulang/eff/sort.py $srcd/$srcvf $srcd/$tgtvf $wkd/src.dev.srt $wkd/tgt.dev.srt 1048576 &
+	python tools/mulang/eff/sort.py $srcd/$srctf $srcd/$tgttf $stsf $ttsf $maxtokens &
+	python tools/mulang/eff/sort.py $srcd/$srcvf $srcd/$tgtvf $sdsf $tdsf 1048576 &
 	wait
 fi
 
@@ -40,20 +46,20 @@ if $share_vcb; then
 	export src_vcb=$wkd/common.vcb
 	export tgt_vcb=$src_vcb
 	if $build_vocab; then
-		python tools/mulang/share_vocab.py $wkd/src.train.srt --target $wkd/tgt.train.srt $src_vcb $wkd/lang.vcb $vsize
-		python tools/check/mulang/fbindexes.py $tgt_vcb $wkd/src.train.srt $wkd/tgt.train.srt $wkd/src.dev.srt $wkd/tgt.dev.srt $wkd/lang.vcb $wkd/fbind.py &
+		python tools/mulang/vocab/token/share.py $stsf --target $ttsf $src_vcb $wkd/lang.vcb $vsize
+		python tools/check/mulang/fbindexes.py $tgt_vcb $stsf $ttsf $sdsf $tdsf $wkd/lang.vcb $wkd/fbind.py &
 	fi
 else
 	export src_vcb=$wkd/src.vcb
 	export tgt_vcb=$wkd/tgt.vcb
 	if $build_vocab; then
-		python tools/mulang/vocab.py $wkd/src.train.srt $src_vcb $wkd/lang.vcb $vsize &
-		python tools/vocab.py $wkd/tgt.train.srt $tgt_vcb $vsize &
+		python tools/mulang/vocab/token/single.py $stsf $src_vcb $wkd/lang.vcb $vsize &
+		python tools/vocab/token/single.py $ttsf $tgt_vcb $vsize &
 		wait
-		python tools/check/mulang/fbindexes.py $tgt_vcb $wkd/src.train.srt $wkd/tgt.train.srt $wkd/src.dev.srt $wkd/tgt.dev.srt $wkd/lang.vcb $wkd/fbind.py &
+		python tools/check/mulang/fbindexes.py $tgt_vcb $stsf $ttsf $sdsf $tdsf $wkd/lang.vcb $wkd/fbind.py &
 	fi
 fi
 
-python tools/mulang/eff/mkiodata.py $wkd/src.train.srt $wkd/tgt.train.srt $src_vcb $tgt_vcb $wkd/lang.vcb $wkd/$rsf_train $ngpu &
-python tools/mulang/eff/mkiodata.py $wkd/src.dev.srt $wkd/tgt.dev.srt $src_vcb $tgt_vcb $wkd/lang.vcb $wkd/$rsf_dev $ngpu &
+python tools/mulang/eff/mkiodata.py $stsf $ttsf $src_vcb $tgt_vcb $wkd/lang.vcb $wkd/$rsf_train $ngpu &
+python tools/mulang/eff/mkiodata.py $sdsf $tdsf $src_vcb $tgt_vcb $wkd/lang.vcb $wkd/$rsf_dev $ngpu &
 wait

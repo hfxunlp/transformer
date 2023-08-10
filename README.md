@@ -100,7 +100,7 @@ Tokenized case-sensitive BLEU measured with [multi-bleu.perl](https://github.com
 
 ## Acknowledgments
 
-Hongfei Xu enjoys a doctoral grant from [China Scholarship Council](https://www.csc.edu.cn/) ([2018]3101, 201807040056) while maintaining this project.
+Hongfei Xu is partially supported by the Education Department of Henan Province (Grant No. 232300421386) while maintaining this project.
 
 Details of this project can be found [here](https://arxiv.org/abs/1903.07402), and please cite it if you enjoy the implementation :)
 

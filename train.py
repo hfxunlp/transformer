@@ -1,42 +1,41 @@
 #encoding: utf-8
 
 import torch
+from random import shuffle
 #from torch import nn
-
 from torch.optim import Adam as Optimizer
 
+from loss.base import LabelSmoothingLoss
+from lrsch import GoogleLR as LRScheduler
 from parallel.base import DataParallelCriterion
-from parallel.parallelMT import DataParallelMT
 from parallel.optm import MultiGPUGradScaler
-
-from utils.base import *
-from utils.init.base import init_model_params
+from parallel.parallelMT import DataParallelMT
+from transformer.NMT import NMT
+from utils.base import free_cache, get_logger, mkdir, set_random_seed
 from utils.contpara import get_model_parameters
+from utils.fmt.base import iter_to_str
+from utils.fmt.base4torch import load_emb, parse_cuda
+from utils.h5serial import h5File
+from utils.init.base import init_model_params
+from utils.io import load_model_cpu, save_model, save_states
 from utils.state.holder import Holder
 from utils.state.pyrand import PyRandomState
 from utils.state.thrand import THRandomState
-from utils.fmt.base import tostr, pad_id
-from utils.fmt.base4torch import parse_cuda, load_emb
-
-from lrsch import GoogleLR as LRScheduler
-from loss.base import LabelSmoothingLoss
-
-from random import shuffle
-
+from utils.torch.comp import torch_autocast, torch_compile, torch_inference_mode
 from utils.tqdm import tqdm
-
-from utils.h5serial import h5File
+from utils.train.base import getlr, optm_step, optm_step_zero_grad_set_none, reset_Adam
+from utils.train.dss import dynamic_sample
 
 import cnfg.base as cnfg
 from cnfg.ihyp import *
-
-from transformer.NMT import NMT
+from cnfg.vocab.base import pad_id
 
 def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tokens, multi_gpu, multi_gpu_optimizer, tokens_optm=32768, nreport=None, save_every=None, chkpf=None, state_holder=None, statesf=None, num_checkpoint=1, cur_checkid=0, report_eva=True, remain_steps=None, save_loss=False, save_checkp_epoch=False, scaler=None):
 
 	sum_loss = part_loss = 0.0
 	sum_wd = part_wd = 0
 	_done_tokens, _cur_checkid, _cur_rstep, _use_amp = done_tokens, cur_checkid, remain_steps, scaler is not None
+	global minerr, minloss, wkdir, save_auto_clean, namin
 	model.train()
 	cur_b, _ls = 1, {} if save_loss else None
 	src_grp, tgt_grp = td["src"], td["tgt"]
@@ -45,13 +44,13 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 		seq_o = torch.from_numpy(tgt_grp[i_d][()])
 		lo = seq_o.size(1) - 1
 		if mv_device:
-			seq_batch = seq_batch.to(mv_device)
-			seq_o = seq_o.to(mv_device)
+			seq_batch = seq_batch.to(mv_device, non_blocking=True)
+			seq_o = seq_o.to(mv_device, non_blocking=True)
 		seq_batch, seq_o = seq_batch.long(), seq_o.long()
 
 		oi = seq_o.narrow(1, 0, lo)
 		ot = seq_o.narrow(1, 1, lo).contiguous()
-		with autocast(enabled=_use_amp):
+		with torch_autocast(enabled=_use_amp):
 			output = model(seq_batch, oi)
 			loss = lossf(output, ot)
 			if multi_gpu:
@@ -69,7 +68,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 		loss = output = oi = ot = seq_batch = seq_o = None
 		sum_loss += loss_add
 		if save_loss:
-			_ls[(i_d, t_d)] = loss_add / wd_add
+			_ls[i_d] = loss_add / wd_add
 		sum_wd += wd_add
 		_done_tokens += wd_add
 
@@ -99,6 +98,16 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				if report_eva:
 					_leva, _eeva = eva(ed, nd, model, lossf, mv_device, multi_gpu, _use_amp)
 					logger.info("Average loss over %d tokens: %.3f, valid loss/error: %.3f %.2f" % (part_wd, part_loss / part_wd, _leva, _eeva,))
+					if (_eeva < minerr) or (_leva < minloss):
+						save_model(model, wkdir + "eva_%.3f_%.2f.h5" % (_leva, _eeva,), multi_gpu, print_func=logger.info, mtyp="ieva" if save_auto_clean else None)
+						if statesf is not None:
+							save_states(state_holder.state_dict(update=False, **{"remain_steps": _cur_rstep, "checkpoint_id": _cur_checkid, "training_list": tl[cur_b - 1:]}), statesf, print_func=logger.info)
+						logger.info("New best model saved")
+						namin = 0
+						if _eeva < minerr:
+							minerr = _eeva
+						if _leva < minloss:
+							minloss = _leva
 					free_cache(mv_device)
 					model.train()
 				else:
@@ -106,7 +115,7 @@ def train(td, tl, ed, nd, optm, lrsch, model, lossf, mv_device, logger, done_tok
 				part_loss = 0.0
 				part_wd = 0
 
-		if save_checkp_epoch and (_cur_rstep is None) and (save_every is not None) and (cur_b % save_every == 0) and (chkpf is not None) and (cur_b < ndata):
+		if save_checkp_epoch and (_cur_rstep is None) and (save_every is not None) and (cur_b % save_every == 0) and (chkpf is not None) and (cur_b < ntrain):
 			if num_checkpoint > 1:
 				_fend = "_%d.h5" % (_cur_checkid)
 				_chkpf = chkpf[:-3] + _fend
@@ -127,23 +136,23 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	sum_loss = 0.0
 	model.eval()
 	src_grp, tgt_grp = ed["src"], ed["tgt"]
-	with torch.no_grad():
+	with torch_inference_mode():
 		for i in tqdm(range(nd), mininterval=tqdm_mininterval):
 			bid = str(i)
 			seq_batch = torch.from_numpy(src_grp[bid][()])
 			seq_o = torch.from_numpy(tgt_grp[bid][()])
 			lo = seq_o.size(1) - 1
 			if mv_device:
-				seq_batch = seq_batch.to(mv_device)
-				seq_o = seq_o.to(mv_device)
+				seq_batch = seq_batch.to(mv_device, non_blocking=True)
+				seq_o = seq_o.to(mv_device, non_blocking=True)
 			seq_batch, seq_o = seq_batch.long(), seq_o.long()
 			ot = seq_o.narrow(1, 1, lo).contiguous()
-			with autocast(enabled=use_amp):
+			with torch_autocast(enabled=use_amp):
 				output = model(seq_batch, seq_o.narrow(1, 0, lo))
 				loss = lossf(output, ot)
 				if multi_gpu:
 					loss = loss.sum()
-					trans = torch.cat([outu.argmax(-1).to(mv_device) for outu in output], 0)
+					trans = torch.cat([outu.argmax(-1).to(mv_device, non_blocking=True) for outu in output], 0)
 				else:
 					trans = output.argmax(-1)
 			sum_loss += loss.data.item()
@@ -213,7 +222,7 @@ nwordi, nwordt = nword[0], nword[-1]
 tl = [str(i) for i in range(ntrain)]
 
 logger.info("Design models with seed: %d" % torch.initial_seed())
-mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
+mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.act_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes)
 
 fine_tune_m = cnfg.fine_tune_m
 
@@ -235,8 +244,8 @@ if cnfg.tgt_emb is not None:
 	load_emb(cnfg.tgt_emb, mymodel.dec.wemb.weight, nwordt, cnfg.scale_down_emb, cnfg.freeze_tgtemb)
 
 if cuda_device:
-	mymodel.to(cuda_device)
-	lossf.to(cuda_device)
+	mymodel.to(cuda_device, non_blocking=True)
+	lossf.to(cuda_device, non_blocking=True)
 
 use_amp = cnfg.use_amp and use_cuda
 scaler = (MultiGPUGradScaler() if multi_gpu_optimizer else GradScaler()) if use_amp else None
@@ -256,6 +265,9 @@ optimizer.zero_grad(set_to_none=optm_step_zero_grad_set_none)
 # lrsch.step() will be automatically called with the constructor
 lrsch = LRScheduler(optimizer, cnfg.isize, cnfg.warm_step, scale=cnfg.lr_scale)
 
+mymodel = torch_compile(mymodel, *torch_compile_args, **torch_compile_kwargs)
+lossf = torch_compile(lossf, *torch_compile_args, **torch_compile_kwargs)
+
 state_holder = None if statesf is None and cnt_states is None else Holder(**{"optm": optimizer, "lrsch": lrsch, "pyrand": PyRandomState(), "thrand": THRandomState(use_cuda=use_cuda)})
 
 num_checkpoint = cnfg.num_checkpoint
@@ -264,7 +276,7 @@ cur_checkid = 0
 tminerr = inf_default
 
 minloss, minerr = eva(vd, nvalid, mymodel, lossf, cuda_device, multi_gpu, use_amp)
-logger.info("Init lr: %s, Dev Loss/Error: %.3f %.2f" % (" ".join(tostr(getlr(optimizer))), minloss, minerr,))
+logger.info("Init lr: %s, Dev Loss/Error: %.3f %.2f" % (" ".join(iter_to_str(getlr(optimizer))), minloss, minerr,))
 
 if fine_tune_m is None:
 	save_model(mymodel, wkdir + "init.h5", multi_gpu, print_func=logger.info)
@@ -361,7 +373,7 @@ for i in range(1, maxrun + 1):
 	#lrsch.step(terr)
 	#newlr = getlr(optimizer)
 	#if updated_lr(oldlr, newlr):
-		#logger.info("".join(("lr update from: ", ",".join(tostr(oldlr)), ", to: ", ",".join(tostr(newlr)))))
+		#logger.info("".join(("lr update from: ", ",".join(iter_to_str(oldlr)), ", to: ", ",".join(iter_to_str(newlr)))))
 		#hook_lr_update(optimizer, use_ams)
 
 if done_tokens > 0:

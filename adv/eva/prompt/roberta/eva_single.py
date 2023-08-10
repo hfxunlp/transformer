@@ -1,25 +1,23 @@
 #encoding: utf-8
 
 import sys
-
 import torch
 
-from utils.tqdm import tqdm
-
+from loss.base import NLLLoss
+from parallel.base import DataParallelCriterion
+from parallel.parallelMT import DataParallelMT
+from transformer.Prompt.RoBERTa.NMT import NMT
+from utils.base import set_random_seed
+from utils.fmt.base4torch import parse_cuda
+from utils.fmt.plm.base import fix_parameter_name
 from utils.h5serial import h5File
+from utils.io import load_model_cpu
+from utils.torch.comp import torch_autocast, torch_compile, torch_inference_mode
+from utils.tqdm import tqdm
 
 import cnfg.prompt.roberta.base as cnfg
 from cnfg.prompt.roberta.ihyp import *
 from cnfg.vocab.plm.roberta import vocab_size
-
-from transformer.Prompt.RoBERTa.NMT import NMT
-from loss.base import NLLLoss
-from parallel.base import DataParallelCriterion
-from parallel.parallelMT import DataParallelMT
-
-from utils.base import *
-from utils.fmt.base4torch import parse_cuda
-from utils.fmt.plm.base import fix_parameter_name
 
 def load_fixing(module):
 
@@ -31,7 +29,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	sum_loss = 0.0
 	model.eval()
 	src_grp, tgt_grp = ed["src"], ed["tgt"]
-	with torch.no_grad():
+	with torch_inference_mode():
 		for i in tqdm(range(nd), mininterval=tqdm_mininterval):
 			bid = str(i)
 			seq_batch = torch.from_numpy(src_grp[bid][()])
@@ -40,7 +38,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 				seq_batch = seq_batch.to(mv_device, non_blocking=True)
 				seq_o = seq_o.to(mv_device, non_blocking=True)
 			seq_batch, seq_o = seq_batch.long(), seq_o.long()
-			with autocast(enabled=use_amp):
+			with torch_autocast(enabled=use_amp):
 				output = model(seq_batch)
 				loss = lossf(output, seq_o)
 				if multi_gpu:
@@ -55,12 +53,9 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	w = float(w)
 	return sum_loss / w, (w - r) / w * 100.0
 
-td = h5File(sys.argv[1], "r")
-
-ntest = td["ndata"][()].item()
 nwordi = nwordt = vocab_size
 
-mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, fhsize=cnfg.ff_hsize, dropout=cnfg.drop, attn_drop=cnfg.attn_drop, global_emb=cnfg.share_emb, num_head=cnfg.nhead, xseql=cache_len_default, ahsize=cnfg.attn_hsize, norm_output=cnfg.norm_output, bindDecoderEmb=cnfg.bindDecoderEmb, forbidden_index=cnfg.forbidden_indexes, model_name=cnfg.model_name)
+mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, fhsize=cnfg.ff_hsize, dropout=cnfg.drop, attn_drop=cnfg.attn_drop, act_drop=cnfg.act_drop, global_emb=cnfg.share_emb, num_head=cnfg.nhead, xseql=cache_len_default, ahsize=cnfg.attn_hsize, norm_output=cnfg.norm_output, bindDecoderEmb=cnfg.bindDecoderEmb, forbidden_index=cnfg.forbidden_indexes, model_name=cnfg.model_name)
 
 # important to load the pre-trained model, as the load_plm function not only load parameters, but also may introduce new parameters, which affects the parameter alignment.
 pre_trained_m = cnfg.pre_trained_m
@@ -93,10 +88,12 @@ if cuda_device:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 		lossf = DataParallelCriterion(lossf, device_ids=cuda_devices, output_device=cuda_device.index, replicate_once=True)
 
+mymodel = torch_compile(mymodel, *torch_compile_args, **torch_compile_kwargs)
+lossf = torch_compile(lossf, *torch_compile_args, **torch_compile_kwargs)
+
 use_amp = cnfg.use_amp and use_cuda
 
-vloss, vprec = eva(td, ntest, mymodel, lossf, cuda_device, multi_gpu, use_amp)
-
-td.close()
+with h5File(sys.argv[1], "r") as td:
+	vloss, vprec = eva(td, td["ndata"][()].item(), mymodel, lossf, cuda_device, multi_gpu, use_amp)
 
 print("loss/error: %.3f %.2f" % (vloss, vprec,))

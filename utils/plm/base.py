@@ -29,10 +29,11 @@ def copy_plm_parameter(src, plm_parameters, keys, func=None, func_args=None, fun
 					_mdl.append(_i)
 			_src.copy_(_tgt)
 			if _mdl and (print_func is not None):
-				print("size mismatch for %s at dimension(s) %s" % (_p_k, ",".join([str(_) for _ in _mdl]),))
-				print(_s_size, _t_size)
+				print_func("size mismatch for %s at dimension(s) %s" % (_p_k, ",".join([str(_) for _ in _mdl]),))
+				print_func(_s_size, _t_size)
 		elif print_func is not None:
 			print_func("dimension mismatch for %s" % _p_k)
+			print_func(_s_size, _t_size)
 	elif print_func is not None:
 		print_func("%s does not exist" % _p_k)
 

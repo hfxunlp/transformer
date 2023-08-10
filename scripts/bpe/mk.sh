@@ -30,8 +30,8 @@ python tools/clean/token_repeat.py $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp $tgtd
 mv $tgtd/src.clean.rtmp $tgtd/src.clean.tmp
 mv $tgtd/tgt.clean.rtmp $tgtd/tgt.clean.tmp
 
-python tools/vocab.py $tgtd/src.clean.tmp $tgtd/src.full.vcb 1048576 &
-python tools/vocab.py $tgtd/tgt.clean.tmp $tgtd/tgt.full.vcb 1048576 &
+python tools/vocab/token/single.py $tgtd/src.clean.tmp $tgtd/src.full.vcb 1048576 &
+python tools/vocab/token/single.py $tgtd/tgt.clean.tmp $tgtd/tgt.full.vcb 1048576 &
 wait
 python tools/clean/vocab/ratio.py $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp $tgtd/src.train.tok.clean $tgtd/tgt.train.tok.clean $tgtd/src.full.vcb $tgtd/tgt.full.vcb $vratio
 rm -fr $tgtd/src.full.vcb $tgtd/tgt.full.vcb $tgtd/src.clean.tmp $tgtd/tgt.clean.tmp

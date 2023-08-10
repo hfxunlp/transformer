@@ -2,19 +2,20 @@
 
 import torch
 from torch import nn
+
 from modules.base import Linear
 
 class GateResidual(nn.Module):
 
 	# isize: input dimension
 
-	def __init__(self, isize):
+	def __init__(self, isize, **kwargs):
 
 		super(GateResidual, self).__init__()
 
 		self.net = nn.Sequential(Linear(isize * 2, isize), nn.Sigmoid())
 
-	def forward(self, x1, x2):
+	def forward(self, x1, x2, **kwargs):
 
 		gate = self.net(torch.cat((x1, x2,), dim=-1))
 

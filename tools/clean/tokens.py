@@ -2,13 +2,13 @@
 
 import sys
 
-from utils.fmt.base import clean_liststr_lentok
+from utils.fmt.base import clean_liststr_lentok, sys_open
 
 def handle(srcfs, srcft, tgtfs, tgtft, maxlen=256):
 
 	ens = "\n".encode("utf-8")
 
-	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft, open(tgtfs, "wb") as fsw, open(tgtft, "wb") as ftw:
+	with sys_open(srcfs, "rb") as fs, sys_open(srcft, "rb") as ft, sys_open(tgtfs, "wb") as fsw, sys_open(tgtft, "wb") as ftw:
 		total = keep = 0
 		for ls, lt in zip(fs, ft):
 			ls, lt = ls.strip(), lt.strip()

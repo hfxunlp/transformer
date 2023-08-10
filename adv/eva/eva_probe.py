@@ -1,24 +1,22 @@
 #encoding: utf-8
 
 import sys
-
 import torch
 
-from utils.tqdm import tqdm
-
-from utils.h5serial import h5File
-
-import cnfg.probe as cnfg
-from cnfg.ihyp import *
-
-from transformer.Probe.NMT import NMT
 from loss.base import LabelSmoothingLoss
 from parallel.base import DataParallelCriterion
 from parallel.parallelMT import DataParallelMT
-
-from utils.base import *
-from cnfg.vocab.base import pad_id
+from transformer.Probe.NMT import NMT
+from utils.base import set_random_seed
 from utils.fmt.base4torch import parse_cuda
+from utils.h5serial import h5File
+from utils.io import load_model_cpu
+from utils.torch.comp import torch_autocast, torch_compile, torch_inference_mode
+from utils.tqdm import tqdm
+
+import cnfg.probe as cnfg
+from cnfg.ihyp import *
+from cnfg.vocab.base import pad_id
 
 probe_reorder = cnfg.probe_reorder
 
@@ -37,7 +35,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 	sum_loss = 0.0
 	model.eval()
 	src_grp, tgt_grp = ed["src"], ed["tgt"]
-	with torch.no_grad():
+	with torch_inference_mode():
 		for i in tqdm(range(nd), mininterval=tqdm_mininterval):
 			bid = str(i)
 			seq_batch = torch.from_numpy(src_grp[bid][()])
@@ -48,7 +46,7 @@ def eva(ed, nd, model, lossf, mv_device, multi_gpu, use_amp=False):
 				seq_o = seq_o.to(mv_device, non_blocking=True)
 			seq_batch, seq_o = seq_batch.long(), seq_o.long()
 			ot = seq_o.narrow(1, ind_shift, lo).contiguous()
-			with autocast(enabled=use_amp):
+			with torch_autocast(enabled=use_amp):
 				output = model(seq_batch, seq_o.narrow(1, 0, lo))
 				loss = lossf(output, ot)
 				if multi_gpu:
@@ -71,7 +69,7 @@ ntest = td["ndata"][()].item()
 nword = td["nword"][()].tolist()
 nwordi, nwordt = nword[0], nword[-1]
 
-mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_layer_fwd)
+mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, cnfg.ff_hsize, cnfg.drop, cnfg.attn_drop, cnfg.act_drop, cnfg.share_emb, cnfg.nhead, cache_len_default, cnfg.attn_hsize, cnfg.norm_output, cnfg.bindDecoderEmb, cnfg.forbidden_indexes, cnfg.num_layer_fwd)
 
 mymodel = load_model_cpu(sys.argv[2], mymodel)
 mymodel.apply(load_fixing)
@@ -99,6 +97,9 @@ if cuda_device:
 	if multi_gpu:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 		lossf = DataParallelCriterion(lossf, device_ids=cuda_devices, output_device=cuda_device.index, replicate_once=True)
+
+mymodel = torch_compile(mymodel, *torch_compile_args, **torch_compile_kwargs)
+lossf = torch_compile(lossf, *torch_compile_args, **torch_compile_kwargs)
 
 use_amp = cnfg.use_amp and use_cuda
 

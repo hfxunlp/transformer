@@ -2,7 +2,7 @@
 
 import sys
 
-from utils.fmt.base import clean_list, all_gt, FileList
+from utils.fmt.base import FileList, all_gt, clean_list
 
 def handle(srcfl, tgtfl, r=0.4):
 

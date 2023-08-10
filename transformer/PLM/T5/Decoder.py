@@ -1,38 +1,40 @@
 #encoding: utf-8
 
 import torch
+from math import sqrt
 from torch import nn
+
 from modules.dropout import Dropout
 from modules.norm import RMSNorm as Norm
-from modules.plm.t5 import ResSelfAttn, ResCrossAttn, PositionwiseFF
-from utils.sampler import SampleMax
-from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_zero_, mask_tensor_type
+from modules.plm.t5 import PositionwiseFF, ResCrossAttn, ResSelfAttn
+from transformer.Decoder import Decoder as DecoderBase, DecoderLayer as DecoderLayerBase
+from utils.base import index_tensors, select_zero_
+from utils.decode.beam import expand_bsize_for_beam
+from utils.fmt.parser import parse_none
 from utils.plm.base import copy_plm_parameter
 from utils.plm.t5 import reorder_pemb
-from cnfg.vocab.plm.t5 import pad_id, eos_id, sos_id
-from math import sqrt
-
-from transformer.Decoder import DecoderLayer as DecoderLayerBase, Decoder as DecoderBase
+from utils.sampler import SampleMax
+from utils.torch.comp import all_done, torch_no_grad
 
 from cnfg.plm.t5.base import remove_classifier_bias
 from cnfg.plm.t5.ihyp import *
+from cnfg.vocab.plm.t5 import eos_id, pad_id, sos_id
 
 class DecoderLayer(DecoderLayerBase):
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_decoder, max_bucket_distance=relative_position_max_bucket_distance_decoder, k_rel_pos_cattn=use_k_relative_position_cattn, max_bucket_distance_cattn=relative_position_max_bucket_distance_cattn, model_name="decoder", **kwargs):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, ahsize=None, norm_residual=norm_residual_default, k_rel_pos=use_k_relative_position_decoder, max_bucket_distance=relative_position_max_bucket_distance_decoder, k_rel_pos_cattn=use_k_relative_position_cattn, max_bucket_distance_cattn=relative_position_max_bucket_distance_cattn, model_name="decoder", **kwargs):
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		super(DecoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, norm_residual=norm_residual, k_rel_pos=k_rel_pos, max_bucket_distance=max_bucket_distance, **kwargs)
+		super(DecoderLayer, self).__init__(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize, norm_residual=norm_residual, k_rel_pos=k_rel_pos, max_bucket_distance=max_bucket_distance, **kwargs)
 
 		self.model_name = model_name
-
 		self.self_attn = ResSelfAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual, k_rel_pos=k_rel_pos, uni_direction_reduction=True, max_bucket_distance=max_bucket_distance)
 		self.cross_attn = ResCrossAttn(isize, _ahsize, num_head=num_head, dropout=attn_drop, norm_residual=norm_residual, k_rel_pos=k_rel_pos_cattn, max_bucket_distance=max_bucket_distance_cattn)
-		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, norm_residual=norm_residual, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, use_glu=use_glu_ffn)
+		self.ff = PositionwiseFF(isize, hsize=_fhsize, dropout=dropout, act_drop=act_drop, norm_residual=norm_residual, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, use_glu=use_glu_ffn)
 
-	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None):
+	def forward(self, inpute, inputo, src_pad_mask=None, tgt_pad_mask=None, query_unit=None, **kwargs):
 
 		if query_unit is None:
 			context = self.self_attn(inputo, mask=tgt_pad_mask)
@@ -48,19 +50,19 @@ class DecoderLayer(DecoderLayerBase):
 		else:
 			return context, states_return
 
-	def load_plm(self, plm_parameters, model_name=None, layer_idx=None):
+	def load_plm(self, plm_parameters, model_name=None, layer_idx=None, **kwargs):
 
-		_model_name = self.model_name if model_name is None else model_name
-		with torch.no_grad():
+		_model_name = parse_none(model_name, self.model_name)
+		with torch_no_grad():
 			copy_plm_parameter(self.self_attn.net.adaptor.weight, plm_parameters, ["%s.block.%d.layer.0.SelfAttention.q.weight" % (_model_name, layer_idx,), "%s.block.%d.layer.0.SelfAttention.k.weight" % (_model_name, layer_idx,), "%s.block.%d.layer.0.SelfAttention.v.weight" % (_model_name, layer_idx,)], func=torch.cat, func_kwargs={"dim": 0})
 			_bias_key = "%s.block.%d.layer.0.SelfAttention.q.bias" % (_model_name, layer_idx,)
-			if self.self_attn.net.adaptor.bias is None and (_bias_key in plm_parameters):
+			if (self.self_attn.net.adaptor.bias is None) and (_bias_key in plm_parameters):
 				self.self_attn.net.adaptor.bias = nn.Parameter(torch.zeros(self.attn.net.adaptor.weight.size(0)))
 			if self.self_attn.net.adaptor.bias is not None:
 				copy_plm_parameter(self.self_attn.net.adaptor.bias, plm_parameters, [_bias_key, "%s.block.%d.layer.0.SelfAttention.k.bias" % (_model_name, layer_idx,), "%s.block.%d.layer.0.SelfAttention.v.bias" % (_model_name, layer_idx,)], func=torch.cat, func_kwargs={"dim": 0})
 			copy_plm_parameter(self.self_attn.net.outer.weight, plm_parameters, "%s.block.%d.layer.0.SelfAttention.o.weight" % (_model_name, layer_idx,))
 			_bias_key = "%s.block.%d.layer.0.SelfAttention.o.bias" % (_model_name, layer_idx,)
-			if self.self_attn.net.outer.bias is None and (_bias_key in plm_parameters):
+			if (self.self_attn.net.outer.bias is None) and (_bias_key in plm_parameters):
 				self.self_attn.net.outer.bias = nn.Parameter(torch.zeros(self.attn.net.outer.weight.size(0)))
 			if self.self_attn.net.outer.bias is not None:
 				copy_plm_parameter(self.self_attn.net.outer.bias, plm_parameters, _bias_key)
@@ -73,19 +75,19 @@ class DecoderLayer(DecoderLayerBase):
 				copy_plm_parameter(self.self_attn.normer.bias, plm_parameters, _bias_key)
 			copy_plm_parameter(self.cross_attn.net.query_adaptor.weight, plm_parameters, "%s.block.%d.layer.1.EncDecAttention.q.weight" % (_model_name, layer_idx,))
 			_bias_key = "%s.block.%d.layer.1.EncDecAttention.q.bias" % (_model_name, layer_idx,)
-			if self.cross_attn.net.query_adaptor.bias is None and (_bias_key in plm_parameters):
+			if (self.cross_attn.net.query_adaptor.bias is None) and (_bias_key in plm_parameters):
 				self.cross_attn.net.query_adaptor.bias = nn.Parameter(torch.zeros(self.cross_attn.net.query_adaptor.weight.size(0)))
 			if self.cross_attn.net.query_adaptor.bias is not None:
 				copy_plm_parameter(self.cross_attn.net.query_adaptor.bias, plm_parameters, _bias_key)
 			copy_plm_parameter(self.cross_attn.net.kv_adaptor.weight, plm_parameters, ["%s.block.%d.layer.1.EncDecAttention.k.weight" % (_model_name, layer_idx,), "%s.block.%d.layer.1.EncDecAttention.v.weight" % (_model_name, layer_idx,)], func=torch.cat, func_kwargs={"dim": 0})
 			_bias_key = "%s.block.%d.layer.1.EncDecAttention.k.bias" % (_model_name, layer_idx,)
-			if self.cross_attn.net.kv_adaptor.bias is None and (_bias_key in plm_parameters):
+			if (self.cross_attn.net.kv_adaptor.bias is None) and (_bias_key in plm_parameters):
 				self.cross_attn.net.kv_adaptor.bias = nn.Parameter(torch.zeros(self.cross_attn.net.kv_adaptor.weight.size(0)))
 			if self.cross_attn.net.kv_adaptor.bias is not None:
 				copy_plm_parameter(self.cross_attn.net.kv_adaptor.bias, plm_parameters, [_bias_key, "%s.block.%d.layer.1.EncDecAttention.v.bias" % (_model_name, layer_idx,)], func=torch.cat, func_kwargs={"dim": 0})
 			copy_plm_parameter(self.cross_attn.net.outer.weight, plm_parameters, "%s.block.%d.layer.1.EncDecAttention.o.weight" % (_model_name, layer_idx,))
 			_bias_key = "%s.block.%d.layer.1.EncDecAttention.o.bias" % (_model_name, layer_idx,)
-			if self.cross_attn.net.outer.bias is None and (_bias_key in plm_parameters):
+			if (self.cross_attn.net.outer.bias is None) and (_bias_key in plm_parameters):
 				self.cross_attn.net.outer.bias = nn.Parameter(torch.zeros(self.cross_attn.net.outer.weight.size(0)))
 			if self.cross_attn.net.outer.bias is not None:
 				copy_plm_parameter(self.cross_attn.net.outer.bias, plm_parameters, _bias_key)
@@ -120,25 +122,24 @@ class DecoderLayer(DecoderLayerBase):
 
 class Decoder(DecoderBase):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False, disable_pemb=disable_std_pemb_decoder, model_name="decoder", **kwargs):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False, disable_pemb=disable_std_pemb_decoder, model_name="decoder", **kwargs):
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=_ahsize, norm_output=norm_output, bindemb=bindemb, forbidden_index=forbidden_index, share_layer=share_layer, disable_pemb=disable_pemb, **kwargs)
+		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=_ahsize, norm_output=norm_output, bindemb=bindemb, forbidden_index=forbidden_index, share_layer=share_layer, disable_pemb=disable_pemb, **kwargs)
 
 		self.model_name = model_name
 		self.wemb.padding_idx = pad_id
 
 		if share_layer:
-			_shared_layer = DecoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, model_name=model_name)
+			_shared_layer = DecoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize, model_name=model_name)
 			self.nets = nn.ModuleList([_shared_layer for i in range(num_layer)])
 		else:
-			# Cross-attention layers have relative position encoding in the original T5 but not in v1.1.
-			self.nets = nn.ModuleList([DecoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, k_rel_pos=use_k_relative_position_decoder if i == 0 else 0, max_bucket_distance=relative_position_max_bucket_distance_decoder if i==0 else 0, k_rel_pos_cattn=use_k_relative_position_cattn if i == 0 else 0, max_bucket_distance_cattn=relative_position_max_bucket_distance_cattn if i==0 else 0, model_name=model_name) for i in range(num_layer)])
+			self.nets = nn.ModuleList([DecoderLayer(isize, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize, k_rel_pos=use_k_relative_position_decoder, max_bucket_distance=relative_position_max_bucket_distance_decoder, k_rel_pos_cattn=use_k_relative_position_cattn, max_bucket_distance_cattn=relative_position_max_bucket_distance_cattn, model_name=model_name) for i in range(num_layer)])# if i == 0 else 0
 		self.out_normer = Norm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) if norm_output else None
 
-	def forward(self, inpute, inputo, src_pad_mask=None, word_prediction=False):
+	def forward(self, inpute, inputo, src_pad_mask=None, word_prediction=False, **kwargs):
 
 		nquery = inputo.size(-1)
 
@@ -166,7 +167,7 @@ class Decoder(DecoderBase):
 
 		return out
 
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False):
+	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False, **kwargs):
 
 		bsize = inpute.size(0)
 
@@ -222,7 +223,7 @@ class Decoder(DecoderBase):
 
 		return torch.cat(trans, 1)
 
-	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False):
+	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False, **kwargs):
 
 		bsize, seql = inpute.size()[:2]
 
@@ -231,13 +232,12 @@ class Decoder(DecoderBase):
 		real_bsize = bsize * beam_size
 
 		out = self.get_sos_emb(inpute)
-		isize = out.size(-1)
 
 		if length_penalty > 0.0:
 			lpv = out.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
-		sqrt_isize = sqrt(isize)
+		sqrt_isize = sqrt(out.size(-1))
 		if self.pemb is not None:
 			out = self.pemb.get_pos(0).add(out, alpha=sqrt_isize)
 		if self.drop is not None:
@@ -348,14 +348,14 @@ class Decoder(DecoderBase):
 	def fix_init(self):
 
 		self.fix_load()
-		with torch.no_grad():
+		with torch_no_grad():
 			#self.wemb.weight[pad_id].zero_()
 			self.classifier.weight[pad_id].zero_()
 
-	def load_plm(self, plm_parameters, model_name=None, layer_idx=None):
+	def load_plm(self, plm_parameters, model_name=None, **kwargs):
 
-		_model_name = self.model_name if model_name is None else model_name
-		with torch.no_grad():
+		_model_name = parse_none(model_name, self.model_name)
+		with torch_no_grad():
 			if "lm_head.weight" in plm_parameters:
 				copy_plm_parameter(self.classifier.weight, plm_parameters, "lm_head.weight")
 			_ = "%s.embed_tokens.weight" % _model_name
@@ -365,7 +365,7 @@ class Decoder(DecoderBase):
 			if (self.out_normer.bias is not None) and (_bias_key in plm_parameters):
 				copy_plm_parameter(self.out_normer.bias, plm_parameters, _bias_key)
 			for i, net in enumerate(self.nets):
-				net.load_plm(plm_parameters, model_name=_model_name, layer_idx=i)
+				net.load_plm(plm_parameters, model_name=_model_name, layer_idx=i, **kwargs)
 		# T5 does NOT have the bias vector in the classifier
 		if remove_classifier_bias:
 			self.classifier.bias = None

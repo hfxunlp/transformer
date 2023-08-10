@@ -3,17 +3,17 @@
 import torch
 from torch import nn
 
-from utils.base import all_done, select_zero_
-from utils.relpos.base import share_rel_pos_cache
-from utils.fmt.parser import parse_double_value_tuple
-
 from transformer.Encoder import Encoder
-
 # switch the comment between the following two lines to choose standard decoder or average decoder. Using transformer.TA.Decoder for Transparent Decoder.
 from transformer.Decoder import Decoder
 #from transformer.AvgDecoder import Decoder
+from utils.base import select_zero_
+from utils.fmt.parser import parse_double_value_tuple
+from utils.relpos.base import share_rel_pos_cache
+from utils.torch.comp import all_done
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import eos_id, pad_id
 
 class NMT(nn.Module):
 
@@ -28,18 +28,18 @@ class NMT(nn.Module):
 	# xseql: maxmimum length of sequence
 	# ahsize: number of hidden units for MultiHeadAttention
 
-	def __init__(self, isize, snwd, tnwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, global_emb=False, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindDecoderEmb=True, forbidden_index=None):
+	def __init__(self, isize, snwd, tnwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, global_emb=False, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindDecoderEmb=True, forbidden_index=None, **kwargs):
 
 		super(NMT, self).__init__()
 
 		enc_layer, dec_layer = parse_double_value_tuple(num_layer)
 
-		self.enc = Encoder(isize, snwd, enc_layer, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output)
+		self.enc = Encoder(isize, snwd, enc_layer, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output)
 
 		emb_w = self.enc.wemb.weight if global_emb else None
 
-		self.dec = Decoder(isize, tnwd, dec_layer, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output, bindemb=bindDecoderEmb, forbidden_index=forbidden_index)
-		#self.dec = Decoder(isize, tnwd, dec_layer, dropout=dropout, attn_drop=attn_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output, bindemb=bindDecoderEmb, forbidden_index=forbidden_index)# for RNMT
+		self.dec = Decoder(isize, tnwd, dec_layer, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output, bindemb=bindDecoderEmb, forbidden_index=forbidden_index)
+		#self.dec = Decoder(isize, tnwd, dec_layer, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=ahsize, norm_output=norm_output, bindemb=bindDecoderEmb, forbidden_index=forbidden_index)# for RNMT
 
 		if rel_pos_enabled:
 			share_rel_pos_cache(self)
@@ -47,11 +47,11 @@ class NMT(nn.Module):
 	# inpute: source sentences from encoder (bsize, seql)
 	# inputo: decoded translation (bsize, nquery)
 	# mask: user specified mask, otherwise it will be:
-	#	inpute.eq(0).unsqueeze(1)
+	#	inpute.eq(pad_id).unsqueeze(1)
 
-	def forward(self, inpute, inputo, mask=None):
+	def forward(self, inpute, inputo, mask=None, **kwargs):
 
-		_mask = inpute.eq(0).unsqueeze(1) if mask is None else mask
+		_mask = inpute.eq(pad_id).unsqueeze(1) if mask is None else mask
 
 		return self.dec(self.enc(inpute, _mask), inputo, _mask)
 
@@ -59,9 +59,9 @@ class NMT(nn.Module):
 	# beam_size: the beam size for beam search
 	# max_len: maximum length to generate
 
-	def decode(self, inpute, beam_size=1, max_len=None, length_penalty=0.0):
+	def decode(self, inpute, beam_size=1, max_len=None, length_penalty=0.0, **kwargs):
 
-		mask = inpute.eq(0).unsqueeze(1)
+		mask = inpute.eq(pad_id).unsqueeze(1)
 
 		_max_len = (inpute.size(1) + max(64, inpute.size(1) // 4)) if max_len is None else max_len
 
@@ -80,18 +80,25 @@ class NMT(nn.Module):
 
 	def update_vocab(self, src_indices=None, tgt_indices=None):
 
-		if (src_indices is not None) and hasattr(self.enc, "update_vocab"):
-			self.enc.update_vocab(src_indices)
-		if (tgt_indices is not None) and hasattr(self.dec, "update_vocab"):
-			self.dec.update_vocab(tgt_indices)
+		_share_emb, _sembw = False, None
+		_update_src, _update_tgt = src_indices is not None, tgt_indices is not None
+		if _update_src and _update_tgt and src_indices.equal(tgt_indices) and hasattr(self.enc, "get_embedding_weight") and hasattr(self.dec, "get_embedding_weight"):
+			_share_emb = self.enc.get_embedding_weight().is_set_to(self.dec.get_embedding_weight())
+		if _update_src and hasattr(self.enc, "update_vocab"):
+			_ = self.enc.update_vocab(src_indices)
+			if _share_emb:
+				_sembw = _
+		if _update_tgt and hasattr(self.dec, "update_vocab"):
+			self.dec.update_vocab(tgt_indices, wemb_weight=_sembw)
 
 	def update_classifier(self, *args, **kwargs):
 
-		self.dec.update_classifier(*args, **kwargs)
+		if hasattr(self.dec, "update_classifier"):
+			self.dec.update_classifier(*args, **kwargs)
 
 	def train_decode(self, inpute, beam_size=1, max_len=None, length_penalty=0.0, mask=None):
 
-		_mask = inpute.eq(0).unsqueeze(1) if mask is None else mask
+		_mask = inpute.eq(pad_id).unsqueeze(1) if mask is None else mask
 
 		_max_len = (inpute.size(1) + max(64, inpute.size(1) // 4)) if max_len is None else max_len
 
@@ -120,7 +127,7 @@ class NMT(nn.Module):
 			out = torch.cat((out, wds), -1)
 
 			# done_trans: (bsize)
-			done_trans = wds.squeeze(1).eq(2) if done_trans is None else (done_trans | wds.squeeze(1).eq(2))
+			done_trans = wds.squeeze(1).eq(eos_id) if done_trans is None else (done_trans | wds.squeeze(1).eq(eos_id))
 
 			if all_done(done_trans, bsize):
 				break
@@ -190,7 +197,7 @@ class NMT(nn.Module):
 			out = torch.cat((out.index_select(0, _inds), wds), -1)
 
 			# done_trans: (bsize, beam_size)
-			done_trans = wds.view(bsize, beam_size).eq(2) if done_trans is None else (done_trans.view(real_bsize).index_select(0, _inds) | wds.view(real_bsize).eq(2)).view(bsize, beam_size)
+			done_trans = wds.view(bsize, beam_size).eq(eos_id) if done_trans is None else (done_trans.view(real_bsize).index_select(0, _inds) | wds.view(real_bsize).eq(eos_id)).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)

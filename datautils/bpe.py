@@ -6,7 +6,7 @@ from random import random
 
 class BPE(object):
 
-	def __init__(self, codes, merges=-1, separator="@@", vocab=None, glossaries=None):
+	def __init__(self, codes, merges=-1, separator="@@", vocab=None, glossaries=None, **kwargs):
 
 		codes.seek(0)
 		offset=1
@@ -222,7 +222,7 @@ def isolate_glossary(word, glossary):
 
 class BPERemover:
 
-	def __call__(self, input):
+	def __call__(self, input, **kwargs):
 
 		if isinstance(input, (list, tuple,)):
 			rs = []
@@ -234,7 +234,7 @@ class BPERemover:
 
 class BPEApplier:
 
-	def __init__(self, codesf, bpe_vcb=None, vocabulary_threshold=None, separator="@@", merges=-1, glossaries=None):
+	def __init__(self, codesf, bpe_vcb=None, vocabulary_threshold=None, separator="@@", merges=-1, glossaries=None, **kwargs):
 
 		if bpe_vcb is not None:
 			vocabulary = read_vocabulary(codecs.open(bpe_vcb, encoding="utf-8"), vocabulary_threshold)
@@ -244,7 +244,7 @@ class BPEApplier:
 			glossaries = [g.decode("utf-8") for g in glossaries]
 		self.bpe = BPE(codecs.open(codesf, encoding="utf-8"), merges, separator, vocabulary, glossaries)
 
-	def __call__(self, input):
+	def __call__(self, input, **kwargs):
 
 		if isinstance(input, (list, tuple,)):
 			rs = []

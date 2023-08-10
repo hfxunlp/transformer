@@ -1,29 +1,30 @@
 #encoding: utf-8
 
 import torch
-from torch import nn
-from modules.base import ResCrossAttn
-
-from transformer.Decoder import DecoderLayer as DecoderLayerBase, Decoder as DecoderBase
-
-from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_zero_, mask_tensor_type
 from math import sqrt
+from torch import nn
 
-from cnfg.vocab.base import pad_id
+from modules.base import ResCrossAttn
+from transformer.Decoder import Decoder as DecoderBase, DecoderLayer as DecoderLayerBase
+from utils.base import index_tensors, select_zero_
+from utils.decode.beam import expand_bsize_for_beam
+from utils.fmt.parser import parse_none
+from utils.torch.comp import all_done
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import eos_id, pad_id
 
 class DecoderLayer(DecoderLayerBase):
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, **kwargs):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, ahsize=None, **kwargs):
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 
-		super(DecoderLayer, self).__init__(isize, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize, **kwargs)
+		super(DecoderLayer, self).__init__(isize, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize, **kwargs)
 
 		self.cross_attn_mt = ResCrossAttn(isize, _ahsize, isize, num_head=num_head, dropout=attn_drop, norm_residual=self.cross_attn.norm_residual)
 
-	def forward(self, inpute, inputm, inputo, src_pad_mask=None, mt_pad_mask=None, tgt_pad_mask=None, query_unit=None):
+	def forward(self, inpute, inputm, inputo, src_pad_mask=None, mt_pad_mask=None, tgt_pad_mask=None, query_unit=None, **kwargs):
 
 		if query_unit is None:
 			context = self.self_attn(inputo, mask=tgt_pad_mask)
@@ -43,20 +44,20 @@ class DecoderLayer(DecoderLayerBase):
 
 class Decoder(DecoderBase):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False, **kwargs):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False, **kwargs):
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=_ahsize, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False, **kwargs)
+		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=_ahsize, norm_output=True, bindemb=True, forbidden_index=None, share_layer=False, **kwargs)
 
 		if share_layer:
-			_shared_layer = DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize)
+			_shared_layer = DecoderLayer(isize, _fhsize, dropout, attn_drop, act_drop, num_head, _ahsize)
 			self.nets = nn.ModuleList([_shared_layer for i in range(num_layer)])
 		else:
-			self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
+			self.nets = nn.ModuleList([DecoderLayer(isize, _fhsize, dropout, attn_drop, act_drop, num_head, _ahsize) for i in range(num_layer)])
 
-	def forward(self, inpute, inputm, inputo, src_pad_mask=None, mt_pad_mask=None):
+	def forward(self, inpute, inputm, inputo, src_pad_mask=None, mt_pad_mask=None, **kwargs):
 
 		nquery = inputo.size(-1)
 
@@ -79,11 +80,11 @@ class Decoder(DecoderBase):
 
 		return out
 
-	def decode(self, inpute, inputm, src_pad_mask, mt_pad_mask, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False):
+	def decode(self, inpute, inputm, src_pad_mask, mt_pad_mask, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False, **kwargs):
 
-		return self.beam_decode(inpute, inputm, src_pad_mask, mt_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad) if beam_size > 1 else self.greedy_decode(inpute, inputm, src_pad_mask, mt_pad_mask, max_len, fill_pad=fill_pad)
+		return self.beam_decode(inpute, inputm, src_pad_mask, mt_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad, **kwargs) if beam_size > 1 else self.greedy_decode(inpute, inputm, src_pad_mask, mt_pad_mask, max_len, fill_pad=fill_pad, **kwargs)
 
-	def greedy_decode(self, inpute, inputm, src_pad_mask=None, mt_pad_mask=None, max_len=512, fill_pad=False, sample=False):
+	def greedy_decode(self, inpute, inputm, src_pad_mask=None, mt_pad_mask=None, max_len=512, fill_pad=False, sample=False, **kwargs):
 
 		bsize = inpute.size(0)
 
@@ -109,7 +110,7 @@ class Decoder(DecoderBase):
 
 		trans = [wds]
 
-		done_trans = wds.eq(2)
+		done_trans = wds.eq(eos_id)
 
 		for i in range(1, max_len):
 
@@ -131,13 +132,13 @@ class Decoder(DecoderBase):
 
 			trans.append(wds.masked_fill(done_trans, pad_id) if fill_pad else wds)
 
-			done_trans = done_trans | wds.eq(2)
+			done_trans = done_trans | wds.eq(eos_id)
 			if all_done(done_trans, bsize):
 				break
 
 		return torch.cat(trans, 1)
 
-	def beam_decode(self, inpute, inputm, src_pad_mask=None, mt_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False):
+	def beam_decode(self, inpute, inputm, src_pad_mask=None, mt_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False, **kwargs):
 
 		bsize, seql = inpute.size()[:2]
 		mtl = inputm.size(1)
@@ -147,8 +148,7 @@ class Decoder(DecoderBase):
 		real_bsize = bsize * beam_size
 
 		out = self.get_sos_emb(inpute)
-		isize = out.size(-1)
-		sqrt_isize = sqrt(isize)
+		sqrt_isize = sqrt(out.size(-1))
 
 		if length_penalty > 0.0:
 			lpv = out.new_ones(real_bsize, 1)
@@ -178,7 +178,7 @@ class Decoder(DecoderBase):
 		_inds_add_beam2 = torch.arange(0, bsizeb2, beam_size2, dtype=wds.dtype, device=wds.device).unsqueeze(1).expand(bsize, beam_size)
 		_inds_add_beam = torch.arange(0, real_bsize, beam_size, dtype=wds.dtype, device=wds.device).unsqueeze(1).expand(bsize, beam_size)
 
-		done_trans = wds.view(bsize, beam_size).eq(2)
+		done_trans = wds.view(bsize, beam_size).eq(eos_id)
 
 		#inputm = inputm.repeat(1, beam_size, 1).view(real_bsize, mtl, isize)
 		self.repeat_cross_attn_buffer(beam_size)
@@ -227,7 +227,7 @@ class Decoder(DecoderBase):
 
 			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), pad_id) if fill_pad else wds), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(eos_id).squeeze(1)).view(bsize, beam_size)
 
 			_done = False
 			if length_penalty > 0.0:

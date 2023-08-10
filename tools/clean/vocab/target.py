@@ -2,7 +2,8 @@
 
 import sys
 
-from utils.fmt.base import ldvocab_list, all_in
+from utils.fmt.base import all_in, sys_open
+from utils.fmt.vocab.token import ldvocab_list
 
 def handle(srcfs, srcft, tgtfs, tgtft, vcbft):
 
@@ -11,7 +12,7 @@ def handle(srcfs, srcft, tgtfs, tgtft, vcbft):
 	vcbt, nvt = ldvocab_list(vcbft)
 	vcbt = set(vcbt)
 
-	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft, open(tgtfs, "wb") as fsw, open(tgtft, "wb") as ftw:
+	with sys_open(srcfs, "rb") as fs, sys_open(srcft, "rb") as ft, sys_open(tgtfs, "wb") as fsw, sys_open(tgtft, "wb") as ftw:
 		total = keep = 0
 		for ls, lt in zip(fs, ft):
 			ls, lt = ls.strip(), lt.strip()

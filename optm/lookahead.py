@@ -5,7 +5,7 @@ from torch.optim.optimizer import Optimizer
 
 class Lookahead(Optimizer):
 
-	def __init__(self, params, optimizer, steps=5, alpha=0.8, pullback_momentum=None):
+	def __init__(self, params, optimizer, steps=5, alpha=0.8, pullback_momentum=None, **kwargs):
 
 		super(Lookahead, self).__init__(params, {})
 

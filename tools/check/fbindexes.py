@@ -2,7 +2,8 @@
 
 import sys
 
-from utils.fmt.base import ldvocab, init_vocab
+from utils.fmt.base import sys_open
+from utils.fmt.vocab.token import init_vocab, ldvocab
 
 def handle(vcbf, srcfl, rsf, minfreq=False, vsize=False):
 
@@ -11,7 +12,7 @@ def handle(vcbf, srcfl, rsf, minfreq=False, vsize=False):
 	fvcb = set(init_vocab.keys())
 
 	for srcf in srcfl:
-		with open(srcf, "rb") as f:
+		with sys_open(srcf, "rb") as f:
 			for line in f:
 				tmp = line.strip()
 				if tmp:
@@ -24,7 +25,7 @@ def handle(vcbf, srcfl, rsf, minfreq=False, vsize=False):
 		if wd not in fvcb:
 			rsl.append(ind)
 
-	with open(rsf, "wb") as f:
+	with sys_open(rsf, "wb") as f:
 		f.write("#encoding: utf-8\n\nfbl = ".encode("utf-8"))
 		f.write(repr(rsl).encode("utf-8"))
 		f.write("\n".encode("utf-8"))

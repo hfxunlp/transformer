@@ -21,5 +21,6 @@ nlayer = 12
 
 drop = 0.1
 attn_drop = drop
+act_drop = drop
 
 norm_output = True

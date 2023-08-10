@@ -1,12 +1,11 @@
 #encoding: utf-8
 
 import sys
-
 from numpy import array as np_array, int32 as np_int32
-from utils.h5serial import h5File
 
 # import batch_padder of the corresponding model for different padding indices.
 from utils.fmt.plm.roberta.single import batch_padder
+from utils.h5serial import h5File
 
 from cnfg.ihyp import *
 

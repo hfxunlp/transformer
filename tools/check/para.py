@@ -5,8 +5,8 @@
 """
 
 import sys
-
 from h5py import Dataset
+
 from utils.h5serial import h5File
 
 def handle_group(srcg):

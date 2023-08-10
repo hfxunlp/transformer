@@ -1,22 +1,26 @@
 #encoding: utf-8
 
-from utils.fmt.base import list_reader, get_bsize, pad_batch, toint, pad_id
 from math import ceil
 
-def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
+from utils.fmt.base import get_bsize, iter_to_int, list_reader as file_reader, pad_batch
+
+from cnfg.vocab.base import pad_id
+
+def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize, get_bsize=get_bsize, file_reader=file_reader, iter_to_int=iter_to_int, **kwargs):
 
 	_f_maxpart = float(maxpart)
 	rsi = []
 	rst = []
 	nd = maxlen = mlen_i = mlen_t = 0
-	for i_d, td in zip(list_reader(finput, keep_empty_line=True), list_reader(ftarget, keep_empty_line=True)):
-		i_d, td = toint(i_d), toint(td)
+	for i_d, td in zip(file_reader(finput, keep_empty_line=True), file_reader(ftarget, keep_empty_line=True)):
+		i_d, td = list(iter_to_int(i_d)), list(iter_to_int(td))
 		lid = len(i_d)
 		ltd = len(td)
 		lgth = lid + ltd
 		if maxlen == 0:
-			maxlen = lgth + min(maxpad, ceil(lgth / _f_maxpart))
-			_bsize = get_bsize(maxlen, maxtoken, bsize)
+			_maxpad = min(maxpad, ceil(lgth / _f_maxpart))
+			maxlen = lgth + _maxpad
+			_bsize = get_bsize(maxlen + _maxpad, maxtoken, bsize)
 		if (nd < minbsize) or (lgth <= maxlen and nd < _bsize):
 			rsi.append(i_d)
 			rst.append(td)
@@ -31,14 +35,14 @@ def batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
 			rst = [td]
 			mlen_i = lid
 			mlen_t = ltd
-			maxlen = lgth + min(maxpad, ceil(lgth / _f_maxpart))
-			_bsize = get_bsize(maxlen, maxtoken, bsize)
+			_maxpad = min(maxpad, ceil(lgth / _f_maxpart))
+			maxlen = lgth + _maxpad
+			_bsize = get_bsize(maxlen + _maxpad, maxtoken, bsize)
 			nd = 1
 	if rsi:
 		yield rsi, rst, mlen_i, mlen_t
 
-def batch_padder(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize, custom_batch_loader=None, pad_id=pad_id, **kwargs):
+def batch_padder(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize, pad_batch=pad_batch, batch_loader=batch_loader, pad_id=pad_id, **kwargs):
 
-	_batch_loader = batch_loader if custom_batch_loader is None else custom_batch_loader
-	for i_d, td, mlen_i, mlen_t in _batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize):
+	for i_d, td, mlen_i, mlen_t in batch_loader(finput, ftarget, bsize, maxpad, maxpart, maxtoken, minbsize, **kwargs):
 		yield pad_batch(i_d, mlen_i, pad_id=pad_id), pad_batch(td, mlen_t, pad_id=pad_id)

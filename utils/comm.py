@@ -1,7 +1,8 @@
 #encoding: utf-8
 
 import torch.cuda.comm as comm
-from utils.base import nccl_type_map
+
+from utils.torch.comp import nccl_type_map
 
 def secure_broadcast_coalesced(tensors, devices, buffer_size=10485760):
 

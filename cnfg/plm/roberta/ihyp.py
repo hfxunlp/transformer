@@ -14,7 +14,4 @@ use_adv_act_default = advance_activation_function is not None
 adv_act = advance_activation_function.lower() if use_adv_act_default else None
 inplace_after_Custom_Act = use_adv_act_default and (adv_act not in set(["sigmoid"]))
 
-# learning rate
-init_lr = 1e-5
-
 ieps_ln_default = 1e-05

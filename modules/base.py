@@ -1,18 +1,19 @@
 #encoding: utf-8
 
-from math import sqrt, log, exp
 import torch
+from math import exp, log, sqrt
 from torch import nn
-from torch.nn import functional as nnFunc
 from torch.autograd import Function
 from torch.utils.cpp_extension import load
 
-from utils.base import reduce_model_list, repeat_bsize_for_beam_tensor
-from utils.relpos.bucket import build_rel_pos_bucket_map, build_rel_pos_bucket
 from modules.act import Custom_Act, LGLU, get_act, reduce_model as reduce_model_act
 from modules.dropout import Dropout, reduce_model as reduce_model_drop
-
-from utils.pyctorch import transfer_CNone_tuple
+from utils.base import reduce_model_list
+from utils.decode.beam import repeat_bsize_for_beam_tensor
+from utils.fmt.parser import parse_none
+from utils.relpos.bucket import build_rel_pos_bucket, build_rel_pos_bucket_map
+from utils.torch.comp import torch_no_grad
+from utils.torch.pyc import transfer_CNone_tuple
 
 from cnfg.ihyp import *
 
@@ -23,11 +24,12 @@ class PositionwiseFF(nn.Module):
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, use_glu=use_glu_ffn):
+	def __init__(self, isize, hsize=None, dropout=0.0, act_drop=None, norm_residual=norm_residual_default, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, use_glu=use_glu_ffn, **kwargs):
 
 		super(PositionwiseFF, self).__init__()
 
 		_hsize = isize * 4 if hsize is None else hsize
+		_act_drop = parse_none(act_drop, dropout)
 
 		if (use_glu is not None) and (_hsize % 2 == 1):
 			_hsize += 1
@@ -49,7 +51,8 @@ class PositionwiseFF(nn.Module):
 			_.append(Linear(_hsize // 2, isize, bias=enable_bias))
 		if dropout > 0.0:
 			_.append(Dropout(dropout, inplace=True))
-			_.insert(_drop_ind, Dropout(dropout, inplace=inplace_after_Custom_Act))
+		if _act_drop > 0.0:
+			_.insert(_drop_ind, Dropout(_act_drop, inplace=inplace_after_Custom_Act))
 		self.net = nn.Sequential(*_)
 
 		self.normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
@@ -59,7 +62,7 @@ class PositionwiseFF(nn.Module):
 		if self.c_available() and (use_glu is None):
 			self.c_init()
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		_out = self.normer(x)
 
@@ -126,7 +129,7 @@ class PositionalEmb(nn.Module):
 	# pos_offset: initial offset for position
 	# dim_offset: initial offset for dimension
 
-	def __init__(self, num_dim, num_pos=cache_len_default, pos_offset=0, dim_offset=0, alpha=1.0):
+	def __init__(self, num_dim, num_pos=cache_len_default, pos_offset=0, dim_offset=0, alpha=1.0, **kwargs):
 
 		super(PositionalEmb, self).__init__()
 
@@ -135,12 +138,12 @@ class PositionalEmb(nn.Module):
 		self.poff = pos_offset
 		self.doff = dim_offset
 		self.alpha = alpha
-		self.register_buffer("w", torch.Tensor(num_pos, num_dim))
+		self.register_buffer("w", torch.Tensor(num_pos, num_dim), persistent=False)
 		self.reset_parameters()
 
 	# x: input (bsize, seql)
 
-	def forward(self, x, expand=True):
+	def forward(self, x, expand=True, **kwargs):
 
 		bsize, seql = x.size()
 
@@ -197,7 +200,7 @@ class MultiHeadAttn(nn.Module):
 	# sparsenorm: using sparse normer or standard softmax
 	# bind_qk: query and key can share a same linear transformation for the Reformer: The Efficient Transformer (https://arxiv.org/abs/2001.04451) paper.
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=0, uni_direction_reduction=False, is_left_to_right_reduction=True, zero_reduction=relpos_reduction_with_zeros, max_bucket_distance=0, sparsenorm=False, bind_qk=False, xseql=cache_len_default):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, v_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=0, uni_direction_reduction=False, is_left_to_right_reduction=True, zero_reduction=relpos_reduction_with_zeros, max_bucket_distance=0, sparsenorm=False, bind_qk=False, xseql=cache_len_default, is_decoding=False, **kwargs):
 
 		super(MultiHeadAttn, self).__init__()
 
@@ -206,7 +209,7 @@ class MultiHeadAttn(nn.Module):
 		self.num_head = num_head
 
 		self.query_adaptor = Linear(isize, self.hsize, bias=enable_proj_bias)
-		_k_isize = isize if k_isize is None else k_isize
+		_k_isize = parse_none(k_isize, isize)
 		self.key_adaptor = self.query_adaptor if bind_qk and isize == _k_isize else Linear(_k_isize, self.hsize, bias=enable_proj_bias)
 		self.value_adaptor = Linear(_k_isize if v_isize is None else v_isize, self.hsize, bias=enable_proj_bias)
 
@@ -220,8 +223,8 @@ class MultiHeadAttn(nn.Module):
 		if k_rel_pos > 0:
 			self.rel_shift = k_rel_pos
 			if max_bucket_distance > 0:
-				self.register_buffer("rel_pos_map", build_rel_pos_bucket_map(k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction))
-				self.register_buffer("rel_pos", build_rel_pos_bucket(xseql, k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction, dis_map=self.rel_pos_map))
+				self.register_buffer("rel_pos_map", build_rel_pos_bucket_map(k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction), persistent=False)
+				self.register_buffer("rel_pos", build_rel_pos_bucket(xseql, k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction, dis_map=self.rel_pos_map), persistent=False)
 				self.rel_pemb = nn.Embedding((k_rel_pos + 1) if uni_direction else (k_rel_pos + k_rel_pos + 1), self.num_head)
 				self.clamp_max, self.clamp_min = max_bucket_distance, uni_direction_reduction
 			else:
@@ -246,19 +249,20 @@ class MultiHeadAttn(nn.Module):
 					self.clamp_min, self.clamp_max = -k_rel_pos, k_rel_pos
 				self.rel_pemb = nn.Embedding(_n_pemb, self.attn_dim, padding_idx=padding_idx)
 				_rpm = torch.arange(0, xseql, dtype=torch.long)
-				self.register_buffer("rel_pos", (_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
-				self.register_buffer("rel_pos_map", None)
+				self.register_buffer("rel_pos", (_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift, persistent=False)
+				self.register_buffer("rel_pos_map", None, persistent=False)
 			self.xseql = xseql
 			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
 			self.ref_rel_posm = None
-			self.register_buffer("rel_pos_cache", None)
+			self.register_buffer("rel_pos_cache", None, persistent=False)
 		else:
 			self.rel_pemb = None
 
-		self.register_buffer("real_iK", None)
-		self.register_buffer("real_iV", None)
-		self.register_buffer("iK", None)
-		self.register_buffer("iV", None)
+		self.register_buffer("real_iK", None, persistent=False)
+		self.register_buffer("real_iV", None, persistent=False)
+		self.register_buffer("iK", None, persistent=False)
+		self.register_buffer("iV", None, persistent=False)
+		self.is_decoding = is_decoding
 
 		if self.c_available():
 			self.c_init()
@@ -268,7 +272,7 @@ class MultiHeadAttn(nn.Module):
 	# iV: values (bsize, seql, vsize)
 	# mask (bsize, num_query, seql)
 
-	def forward(self, iQ, iK, iV, mask=None, states=None):
+	def forward(self, iQ, iK, iV, mask=None, states=None, **kwargs):
 
 		bsize, nquery = iQ.size()[:2]
 		seql = iK.size(1)
@@ -281,11 +285,11 @@ class MultiHeadAttn(nn.Module):
 
 		real_iQ = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2)
 
-		if (self.real_iK is not None) and self.iK.is_set_to(iK) and (not self.training):
+		if (self.real_iK is not None) and self.iK.is_set_to(iK) and self.is_decoding:
 			real_iK = self.real_iK
 		else:
 			real_iK = self.key_adaptor(iK).view(bsize, seql, nheads, adim).permute(0, 2, 3, 1)
-			if not self.training:
+			if self.is_decoding:
 				self.iK, self.real_iK = iK, real_iK
 		if (self.real_iV is not None) and self.iV.is_set_to(iV) and (not self.training):
 			real_iV = self.real_iV
@@ -428,7 +432,7 @@ class MultiHeadAttn(nn.Module):
 # Accelerated MultiHeadAttn for self attention, use when Q == K == V
 class SelfAttn(nn.Module):
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=use_k_relative_position, uni_direction_reduction=False, is_left_to_right_reduction=True, zero_reduction=relpos_reduction_with_zeros, max_bucket_distance=0, sparsenorm=False, xseql=cache_len_default):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, k_rel_pos=use_k_relative_position, uni_direction_reduction=False, is_left_to_right_reduction=True, zero_reduction=relpos_reduction_with_zeros, max_bucket_distance=0, sparsenorm=False, xseql=cache_len_default, **kwargs):
 
 		super(SelfAttn, self).__init__()
 
@@ -448,8 +452,8 @@ class SelfAttn(nn.Module):
 		if k_rel_pos > 0:
 			self.rel_shift = k_rel_pos
 			if max_bucket_distance > 0:
-				self.register_buffer("rel_pos_map", build_rel_pos_bucket_map(k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction))
-				self.register_buffer("rel_pos", build_rel_pos_bucket(xseql, k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction, dis_map=self.rel_pos_map))
+				self.register_buffer("rel_pos_map", build_rel_pos_bucket_map(k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction), persistent=False)
+				self.register_buffer("rel_pos", build_rel_pos_bucket(xseql, k_rel_pos=k_rel_pos, max_len=max_bucket_distance, uni_direction=uni_direction_reduction, dis_map=self.rel_pos_map), persistent=False)
 				self.rel_pemb = nn.Embedding((k_rel_pos + 1) if uni_direction_reduction else (k_rel_pos + k_rel_pos + 1), self.num_head)
 				self.clamp_max, self.clamp_min = max_bucket_distance, uni_direction_reduction
 			else:
@@ -474,19 +478,19 @@ class SelfAttn(nn.Module):
 					self.clamp_min, self.clamp_max = -k_rel_pos, k_rel_pos
 				self.rel_pemb = nn.Embedding(_n_pemb, self.attn_dim, padding_idx=padding_idx)
 				_rpm = torch.arange(0, xseql, dtype=torch.long)
-				self.register_buffer("rel_pos", (_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift)
-				self.register_buffer("rel_pos_map", None)
+				self.register_buffer("rel_pos", (_rpm.unsqueeze(0) - _rpm.unsqueeze(1)).clamp(min=self.clamp_min, max=self.clamp_max) + self.rel_shift, persistent=False)
+				self.register_buffer("rel_pos_map", None, persistent=False)
 			self.xseql = xseql
 			# the buffer can be shared inside the encoder or the decoder across layers for saving memory, by setting self.ref_rel_posm of self attns in deep layers to SelfAttn in layer 0, and sharing corresponding self.rel_pos
 			self.ref_rel_posm = None
-			self.register_buffer("rel_pos_cache", None)
+			self.register_buffer("rel_pos_cache", None, persistent=False)
 		else:
 			self.rel_pemb = None
 
 		if self.c_available():
 			self.c_init()
 
-	def forward(self, iQ, mask=None, states=None):
+	def forward(self, iQ, mask=None, states=None, **kwargs):
 
 		bsize, nquery = iQ.size()[:2]
 		nheads = self.num_head
@@ -598,7 +602,7 @@ class SelfAttn(nn.Module):
 # Accelerated MultiHeadAttn for cross attention, use when K == V
 class CrossAttn(nn.Module):
 
-	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, sparsenorm=False):
+	def __init__(self, isize, hsize, osize, num_head=8, dropout=0.0, k_isize=None, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, sparsenorm=False, is_decoding=False, **kwargs):
 
 		super(CrossAttn, self).__init__()
 
@@ -617,14 +621,15 @@ class CrossAttn(nn.Module):
 
 		self.drop = Dropout(dropout, inplace=sparsenorm) if dropout > 0.0 else None
 
-		self.register_buffer("real_iK", None)
-		self.register_buffer("real_iV", None)
-		self.register_buffer("iK", None)
+		self.register_buffer("real_iK", None, persistent=False)
+		self.register_buffer("real_iV", None, persistent=False)
+		self.register_buffer("iK", None, persistent=False)
+		self.is_decoding = is_decoding
 
 		if self.c_available():
 			self.c_init()
 
-	def forward(self, iQ, iK, mask=None):
+	def forward(self, iQ, iK, mask=None, **kwargs):
 
 		bsize, nquery = iQ.size()[:2]
 		seql = iK.size(1)
@@ -632,12 +637,12 @@ class CrossAttn(nn.Module):
 		adim = self.attn_dim
 
 		real_iQ = self.query_adaptor(iQ).view(bsize, nquery, nheads, adim).transpose(1, 2)
-		if (self.real_iK is not None) and self.iK.is_set_to(iK) and (not self.training):
+		if (self.real_iK is not None) and self.iK.is_set_to(iK) and self.is_decoding:
 			real_iK, real_iV = self.real_iK, self.real_iV
 		else:
 			real_iK, real_iV = self.kv_adaptor(iK).view(bsize, seql, 2, nheads, adim).unbind(2)
 			real_iK, real_iV = real_iK.permute(0, 2, 3, 1), real_iV.transpose(1, 2)
-			if not self.training:
+			if self.is_decoding:
 				self.iK, self.real_iK, self.real_iV = iK, real_iK, real_iV
 
 		scores = real_iQ.matmul(real_iK) / sqrt(adim)
@@ -658,6 +663,7 @@ class CrossAttn(nn.Module):
 
 		if mode:
 			self.reset_buffer()
+		self.is_decoding = not mode
 
 		return self
 
@@ -1011,7 +1017,7 @@ class ResidueCombiner(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
+	def __init__(self, isize, ncomb=2, hsize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, **kwargs):
 
 		super(ResidueCombiner, self).__init__()
 
@@ -1022,7 +1028,7 @@ class ResidueCombiner(nn.Module):
 
 		self.out_normer = nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
-	def forward(self, *xl):
+	def forward(self, *xl, **kwargs):
 
 		# faster only when len(xl) is very large
 		#out = torch.stack([self.net(torch.cat(xl, -1))] + list(xl), -2).sum(-2)
@@ -1034,14 +1040,14 @@ class ResidueCombiner(nn.Module):
 
 class Scorer(nn.Module):
 
-	def __init__(self, isize, bias=True):
+	def __init__(self, isize, bias=True, **kwargs):
 
 		super(Scorer, self).__init__()
 
 		self.w = nn.Parameter(torch.Tensor(isize).uniform_(- sqrt(1.0 / isize), sqrt(1.0 / isize)))
 		self.bias = nn.Parameter(torch.zeros(1)) if bias else None
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		xsize = x.size()
 
@@ -1054,7 +1060,7 @@ class Scorer(nn.Module):
 
 class NDWrapper(nn.Module):
 
-	def __init__(self, module, num_dim):
+	def __init__(self, module, num_dim, **kwargs):
 
 		super(NDWrapper, self).__init__()
 
@@ -1081,7 +1087,7 @@ class GradientReversalFunction(Function):
 	@staticmethod
 	def backward(ctx, grad_outputs):
 
-		if grad_outputs is not None and ctx.needs_input_grad[0]:
+		if (grad_outputs is not None) and ctx.needs_input_grad[0]:
 			_adv_weight = ctx.adv_weight
 			return -grad_outputs if _adv_weight == 1.0 else (grad_outputs * -_adv_weight), None
 		else:
@@ -1091,13 +1097,13 @@ GradientReversalFunc = GradientReversalFunction.apply
 
 class GradientReversalLayer(nn.Module):
 
-	def __init__(self, adv_weight=1.0):
+	def __init__(self, adv_weight=1.0, **kwargs):
 
 		super(GradientReversalLayer, self).__init__()
 
 		self.adv_weight = adv_weight
 
-	def forward(self, *inputs):
+	def forward(self, *inputs, **kwargs):
 
 		return tuple(GradientReversalFunc(inputu, self.adv_weight) for inputu in inputs) if len(inputs) > 1 else GradientReversalFunc(inputs[0], self.adv_weight)
 
@@ -1128,18 +1134,18 @@ class ACT_Loss(nn.Module):
 
 		super(ACT_Loss, self).__init__()
 
-	def forward(self, weight, weight_loss, remain_value):
+	def forward(self, weight, weight_loss, remain_value, **kwargs):
 
 		return ACTLossFunction.apply(weight, weight_loss, remain_value)
 
 class ApproximateEmb(nn.Module):
 
-	def __init__(self, weight):
+	def __init__(self, weight, **kwargs):
 
 		super(ApproximateEmb, self).__init__()
 		self.weight = weight
 
-	def forward(self, inpute):
+	def forward(self, inpute, **kwargs):
 
 		isize = list(inpute.size())
 		out = inpute.view(-1, isize[-1])
@@ -1152,7 +1158,7 @@ class SparseNormer(nn.Module):
 
 	# dim: dimension to normalize
 
-	def __init__(self, dim=-1, eps=ieps_default):
+	def __init__(self, dim=-1, eps=ieps_default, **kwargs):
 
 		super(SparseNormer, self).__init__()
 
@@ -1161,7 +1167,7 @@ class SparseNormer(nn.Module):
 		self.act = nn.ReLU(inplace=True)
 		self.eps = eps
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		_tmp = self.act(x + self.bias)
 		_tmp = _tmp * _tmp
@@ -1174,7 +1180,7 @@ class MHSparseNormer(nn.Module):
 	# nheads: number of heads
 	# dim: dimension to normalize
 
-	def __init__(self, nheads, dim=-1, eps=ieps_default):
+	def __init__(self, nheads, dim=-1, eps=ieps_default, **kwargs):
 
 		super(MHSparseNormer, self).__init__()
 
@@ -1184,7 +1190,7 @@ class MHSparseNormer(nn.Module):
 		self.eps = eps
 
 	# input should be: (bsize, nheads, nquery, seql)
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		_tmp = self.act(x + self.bias)
 		_tmp = _tmp * _tmp
@@ -1194,12 +1200,12 @@ class MHSparseNormer(nn.Module):
 
 	def fix_init(self):
 
-		with torch.no_grad():
+		with torch_no_grad():
 			self.bias.data.zero_()
 
 class MHAttnSummer(nn.Module):
 
-	def __init__(self, isize, ahsize=None, num_head=8, attn_drop=0.0):
+	def __init__(self, isize, ahsize=None, num_head=8, attn_drop=0.0, **kwargs):
 
 		super(MHAttnSummer, self).__init__()
 
@@ -1207,13 +1213,13 @@ class MHAttnSummer(nn.Module):
 		self.attn = CrossAttn(isize, isize if ahsize is None else ahsize, isize, num_head, dropout=attn_drop)
 
 	# x: (bsize, seql, isize)
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		return self.attn(self.w, x).squeeze(1)
 
 class FertSummer(nn.Module):
 
-	def __init__(self, isize):
+	def __init__(self, isize, **kwargs):
 
 		super(FertSummer, self).__init__()
 
@@ -1221,7 +1227,7 @@ class FertSummer(nn.Module):
 		self.normer = nn.Softmax(dim=1)
 
 	# x: (bsize, seql, isize)
-	def forward(self, x, mask=None):
+	def forward(self, x, mask=None, **kwargs):
 
 		_weight = self.net(x)
 		if mask is not None:
@@ -1238,7 +1244,7 @@ class CoordinateEmb(nn.Module):
 	# pos_offset: initial offset for position
 	# dim_offset: initial offset for dimension
 
-	def __init__(self, num_dim, num_pos=cache_len_default, num_steps=8, pos_offset=0, dim_offset=0, alpha=1.0):
+	def __init__(self, num_dim, num_pos=cache_len_default, num_steps=8, pos_offset=0, dim_offset=0, alpha=1.0, **kwargs):
 
 		super(CoordinateEmb, self).__init__()
 
@@ -1248,12 +1254,12 @@ class CoordinateEmb(nn.Module):
 		self.poff = pos_offset
 		self.doff = dim_offset
 		self.alpha = alpha
-		self.register_buffer("w", torch.Tensor(num_steps, num_pos, num_dim))
+		self.register_buffer("w", torch.Tensor(num_steps, num_pos, num_dim), persistent=False)
 		self.reset_parameters()
 
 	# x: input (bsize, seql)
 
-	def forward(self, x, step, expand=True):
+	def forward(self, x, step, expand=True, **kwargs):
 
 		bsize, seql = x.size()[:2]
 
@@ -1305,7 +1311,7 @@ class CoordinateEmb(nn.Module):
 
 class Temperature(nn.Module):
 
-	def __init__(self, isize, minv=0.125):
+	def __init__(self, isize, minv=0.125, **kwargs):
 
 		super(Temperature, self).__init__()
 
@@ -1315,7 +1321,7 @@ class Temperature(nn.Module):
 		self.k = nn.Parameter(torch.ones(1))
 		self.minv = minv
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		xsize = x.size()
 
@@ -1328,7 +1334,7 @@ class Temperature(nn.Module):
 
 	def fix_init(self):
 
-		with torch.no_grad():
+		with torch_no_grad():
 			self.k.data.fill_(1.0)
 			self.bias.data.zero_()
 

@@ -1,13 +1,13 @@
 #encoding: utf-8
 
 import torch
-from torch.nn.modules.loss import _Loss, NLLLoss as NLLLossBase
-
-from torch.nn.functional import kl_div, nll_loss
+from torch.nn.functional import cross_entropy, kl_div, nll_loss
+from torch.nn.modules.loss import CrossEntropyLoss as CrossEntropyLossBase, NLLLoss as NLLLossBase, _Loss
 
 from utils.base import clear_pad_mask, eq_indexes
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import pad_id
 
 # ignores forbidden_index
 class FastLabelSmoothingLoss(_Loss):
@@ -19,7 +19,7 @@ class FastLabelSmoothingLoss(_Loss):
 		self.conf = 1.0 - label_smoothing - self.smoothing_value
 
 	# Faster implementation from fairseq: https://github.com/pytorch/fairseq/blob/master/fairseq/criterions/label_smoothed_cross_entropy.py#L33-L50, but do not support fbil.
-	def forward(self, input, target, mask=None):
+	def forward(self, input, target, mask=None, **kwargs):
 
 		_tsize = list(input.size())
 		_tsize[-1] = 1
@@ -52,7 +52,7 @@ class FastLabelSmoothingLoss(_Loss):
 
 class StdLabelSmoothingLoss(_Loss):
 
-	def __init__(self, nclass, label_smoothing=0.1, ignore_index=-1, reduction="mean", forbidden_index=-1):
+	def __init__(self, nclass, label_smoothing=0.1, ignore_index=-1, reduction="mean", forbidden_index=-1, **kwargs):
 
 		super(StdLabelSmoothingLoss, self).__init__()
 
@@ -62,10 +62,9 @@ class StdLabelSmoothingLoss(_Loss):
 		if isinstance(ignore_index, (list, tuple,)):
 			tmp = []
 			for _tmp in ignore_index:
-				if (_tmp >= 0) and (_tmp not in tmp):
+				if (_tmp >= 0) and (_tmp not in fbil):
 					tmp.append(_tmp)
-					if _tmp not in fbil:
-						fbil.add(_tmp)
+					fbil.add(_tmp)
 			_nid = len(tmp)
 			if _nid > 0:
 				self.ignore_index = tuple(tmp) if _nid > 1 else tmp[0]
@@ -89,14 +88,14 @@ class StdLabelSmoothingLoss(_Loss):
 		weight = torch.full((nclass,), smoothing_value)
 		if fbil:
 			weight.index_fill_(0, torch.as_tensor(tuple(fbil), dtype=torch.long, device=weight.device), 0.0)
-		self.register_buffer("weight", weight.unsqueeze(0))
+		self.register_buffer("weight", weight.unsqueeze(0), persistent=False)
 		self.conf = 1.0 - label_smoothing
 
 	# input: (batch size, num_classes)
 	# target: (batch size)
 	# they will be flattened automatically if the dimension of input is larger than 2.
 
-	def forward(self, input, target, mask=None):
+	def forward(self, input, target, mask=None, **kwargs):
 
 		_input = input.view(-1, input.size(-1)) if input.dim() > 2 else input
 		_target = target.view(-1, 1)
@@ -122,9 +121,17 @@ LabelSmoothingLoss = FastLabelSmoothingLoss if use_fast_loss else StdLabelSmooth
 
 class NLLLoss(NLLLossBase):
 
-	def forward(self, input, target):
+	def forward(self, input, target, **kwargs):
 
 		rs = nll_loss(input.view(-1, input.size(-1)), target.view(-1), weight=self.weight, ignore_index=self.ignore_index, reduction=self.reduction)
+
+		return rs.view(input.size()) if self.reduction == "none" and target.dim() > 1 else rs
+
+class CrossEntropyLoss(CrossEntropyLossBase):
+
+	def forward(self, input, target, **kwargs):
+
+		rs = cross_entropy(input.view(-1, input.size(-1)), target.view(-1), weight=self.weight, ignore_index=self.ignore_index, reduction=self.reduction)#, label_smoothing=self.label_smoothing
 
 		return rs.view(input.size()) if self.reduction == "none" and target.dim() > 1 else rs
 
@@ -132,7 +139,7 @@ class RankingLoss(_Loss):
 
 	# input: (batch size)
 	# target: (batch size)
-	def forward(self, input, target):
+	def forward(self, input, target, **kwargs):
 
 		loss = input * target
 		if self.reduction == "mean":
@@ -142,7 +149,7 @@ class RankingLoss(_Loss):
 
 class MultiLabelSmoothingLoss(_Loss):
 
-	def __init__(self, nclass, label_smoothing=0.1, ignore_index=-1, reduction="mean", forbidden_index=-1):
+	def __init__(self, nclass, label_smoothing=0.1, ignore_index=-1, reduction="mean", forbidden_index=-1, **kwargs):
 
 		super(MultiLabelSmoothingLoss, self).__init__()
 
@@ -186,10 +193,10 @@ class MultiLabelSmoothingLoss(_Loss):
 			if fbilu:
 				_tmp_w.index_fill_(0, torch.as_tensor(tuple(fbilu), dtype=torch.long, device=_tmp_w.device), 0.0)
 			_weight.append(_tmp_w)
-		self.register_buffer("weight", torch.stack(_weight, 0).unsqueeze(1))
+		self.register_buffer("weight", torch.stack(_weight, 0).unsqueeze(1), persistent=False)
 		self.conf = 1.0 - label_smoothing
 
-	def forward(self, input, target, lang_id=0, mask=None):
+	def forward(self, input, target, lang_id=0, mask=None, **kwargs):
 
 		_input = input.view(-1, input.size(-1)) if input.dim() > 2 else input
 		_target = target.view(-1, 1)
@@ -214,16 +221,16 @@ class MultiLabelSmoothingLoss(_Loss):
 
 class ReducedLabelSmoothingLoss(StdLabelSmoothingLoss):
 
-	def __init__(self, nclass, label_smoothing=0.1, ignore_index=-1, reduction="mean", forbidden_index=-1, reduce_dim=None):
+	def __init__(self, nclass, label_smoothing=0.1, ignore_index=-1, reduction="mean", forbidden_index=-1, reduce_dim=None, pad_id=pad_id, **kwargs):
 
 		super(ReducedLabelSmoothingLoss, self).__init__(nclass, label_smoothing=label_smoothing, ignore_index=ignore_index, reduction=reduction, forbidden_index=forbidden_index)
 
-		self.reduce_dim = reduce_dim
+		self.reduce_dim, self.pad_id = reduce_dim, pad_id
 
-	def forward(self, input, target, mask=None):
+	def forward(self, input, target, mask=None, pad_id=None, **kwargs):
 
 		if self.reduce_dim is not None:
-			input, target = clear_pad_mask([input, target], target.eq(0), [self.reduce_dim - 1, self.reduce_dim], mask_dim=self.reduce_dim, return_contiguous=True)[0]
+			input, target = clear_pad_mask([input, target], target.eq(self.pad_id if pad_id is None else pad_id), [self.reduce_dim - 1, self.reduce_dim], mask_dim=self.reduce_dim, return_contiguous=True)[0]
 
 		_input = input.view(-1, input.size(-1)) if input.dim() > 2 else input
 		_target = target.view(-1, 1)

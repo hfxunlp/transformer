@@ -1,10 +1,12 @@
 #encoding: utf-8
 
-from math import sqrt
 import torch
+from math import sqrt
 from torch import nn
 
-from cnfg.ihyp import use_c_backend_group, bind_c_forward
+from utils.torch.comp import torch_no_grad
+
+from cnfg.ihyp import bind_c_forward, use_c_backend_group
 
 class GroupLinear(nn.Module):
 
@@ -16,7 +18,7 @@ class GroupLinear(nn.Module):
 	# shuffle: shuffle across groups for output
 	# flatten_output: concatenate outputs of groups
 
-	def __init__(self, isize, osize, ngroup, bias=True, trans_input=True, shuffle=False, flatten_output=True):
+	def __init__(self, isize, osize, ngroup, bias=True, trans_input=True, shuffle=False, flatten_output=True, **kwargs):
 
 		super(GroupLinear, self).__init__()
 
@@ -37,7 +39,7 @@ class GroupLinear(nn.Module):
 
 	# inputu: (..., isize)
 
-	def forward(self, inputu, weight=None, bias=None):
+	def forward(self, inputu, weight=None, bias=None, **kwargs):
 
 		_size = list(inputu.size())
 		_id = inputu.view(-1, self.ngroup, self.isize if self.trans_input else _size[-1]) if (inputu.dim() != 3) or self.trans_input else inputu
@@ -64,7 +66,7 @@ class GroupLinear(nn.Module):
 
 	def fix_init(self):
 
-		with torch.no_grad():
+		with torch_no_grad():
 			self.weight.uniform_(- sqrt(1.0 / self.isize), sqrt(1.0 / self.isize))
 			if self.bias is not None:
 				self.bias.zero_()

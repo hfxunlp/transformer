@@ -1,12 +1,12 @@
 #encoding: utf-8
 
-from sacremoses import MosesPunctNormalizer, MosesTokenizer, MosesDetokenizer, MosesTruecaser, MosesDetruecaser
+from sacremoses import MosesDetokenizer, MosesDetruecaser, MosesPunctNormalizer, MosesTokenizer, MosesTruecaser
 
 from utils.fmt.base import clean_list
 
 class BatchProcessor():
 
-	def __call__(self, input):
+	def __call__(self, input, **kwargs):
 
 		return [self.process(inputu) for inputu in input] if isinstance(input, (list, tuple,)) else self.process(input)
 
@@ -17,7 +17,7 @@ class BatchProcessor():
 class Tokenizer(BatchProcessor):
 
 	# default args: ["-a", "-no-escape"]
-	def __init__(self, lang, args=["-a"]):
+	def __init__(self, lang, args=["-a"], **kwargs):
 
 		self.handler = MosesTokenizer(lang=lang)
 		self.escape = not ("-no-escape" in args or "--no-escape" in args)
@@ -29,7 +29,7 @@ class Tokenizer(BatchProcessor):
 
 class Normalizepunctuation(BatchProcessor):
 
-	def __init__(self, lang):
+	def __init__(self, lang, **kwargs):
 
 		self.handler = MosesPunctNormalizer(lang=lang)
 
@@ -39,7 +39,7 @@ class Normalizepunctuation(BatchProcessor):
 
 class Truecaser(BatchProcessor):
 
-	def __init__(self, model):
+	def __init__(self, model, **kwargs):
 
 		self.handler = MosesTruecaser(load_from=model)
 
@@ -51,7 +51,7 @@ class Detruecaser(BatchProcessor):
 
 	def __init__(self):
 
-		self.handler = MosesTruecaser()
+		self.handler = MosesDetruecaser()
 
 	def process(self, input, is_headline=False):
 
@@ -59,7 +59,7 @@ class Detruecaser(BatchProcessor):
 
 class Detokenizer(BatchProcessor):
 
-	def __init__(self, lang):
+	def __init__(self, lang, **kwargs):
 
 		self.handler = MosesDetokenizer(lang=lang)
 

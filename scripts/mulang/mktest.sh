@@ -19,6 +19,8 @@ export sort_decode=true
 export debpe=true
 export spm_bpe=false
 
+export faext=".xz"
+
 export tgtd=$cachedir/$dataid
 
 export bpef=out.bpe
@@ -34,7 +36,7 @@ fi
 mkdir -p $rsd
 
 if $sort_decode; then
-	export srt_input_f=$tgtd/$srctf.srt
+	export srt_input_f=$tgtd/$srctf.srt$faext
 	python tools/mulang/eff/sort.py $srcd/$srctf $srt_input_f 1048576
 else
 	export srt_input_f=$srcd/$srctf
@@ -57,6 +59,8 @@ if $debpe; then
 	else
 		sed -r 's/(@@ )|(@@ ?$)//g' < $tgtd/$bpef > $rsf
 	fi
+	rm $tgtd/$bpef
 else
 	mv $tgtd/$bpef $rsf
 fi
+rm $tgtd/test.h5

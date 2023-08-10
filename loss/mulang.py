@@ -1,20 +1,18 @@
 #encoding: utf-8
 
-import torch
 from torch.nn.functional import kl_div
 
-from utils.base import eq_indexes
-
 from loss.base import MultiLabelSmoothingLoss as MultiLabelSmoothingLossBase
+from utils.base import eq_indexes
 
 class MultiLabelSmoothingLoss(MultiLabelSmoothingLossBase):
 
 	def __init__(self, *inputs, **kwargs):
 
 		super(MultiLabelSmoothingLoss, self).__init__(*inputs, **kwargs)
-		self.register_buffer("weight", self.weight.squeeze(1))
+		self.register_buffer("weight", self.weight.squeeze(1), persistent=False)
 
-	def forward(self, input, target, tinput, mask=None):
+	def forward(self, input, target, tinput, mask=None, **kwargs):
 
 		_rsize = list(input.size())
 		_nclass = _rsize[-1]

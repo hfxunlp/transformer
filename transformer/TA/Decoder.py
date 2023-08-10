@@ -1,20 +1,21 @@
 #encoding: utf-8
 
 import torch
-from utils.sampler import SampleMax
-from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_zero_
 from math import sqrt
 
-from cnfg.vocab.base import pad_id
-
 from transformer.Decoder import Decoder as DecoderBase
+from utils.base import index_tensors, select_zero_
+from utils.decode.beam import expand_bsize_for_beam
+from utils.sampler import SampleMax
+from utils.torch.comp import all_done
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import eos_id, pad_id
 
 class Decoder(DecoderBase):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize, num_layer)
-	def forward(self, inpute, inputo, src_pad_mask=None):
+	def forward(self, inpute, inputo, src_pad_mask=None, **kwargs):
 
 		bsize, nquery = inputo.size()
 
@@ -38,7 +39,7 @@ class Decoder(DecoderBase):
 		return out
 
 	# inpute: encoded representation from encoder (bsize, seql, isize, num_layer)
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False):
+	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False, **kwargs):
 
 		bsize = inpute.size(0)
 
@@ -53,7 +54,7 @@ class Decoder(DecoderBase):
 		states = {}
 
 		for _tmp, (net, inputu) in enumerate(zip(self.nets, inpute.unbind(dim=-1))):
-			out, _state = net(inputu, None, src_pad_mask, None, out, True)
+			out, _state = net(inputu, (None, None,), src_pad_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -64,7 +65,7 @@ class Decoder(DecoderBase):
 
 		trans = [wds]
 
-		done_trans = wds.eq(2)
+		done_trans = wds.eq(eos_id)
 
 		for i in range(1, max_len):
 
@@ -75,7 +76,7 @@ class Decoder(DecoderBase):
 				out = self.drop(out)
 
 			for _tmp, (net, inputu) in enumerate(zip(self.nets, inpute.unbind(dim=-1))):
-				out, _state = net(inputu, states[_tmp], src_pad_mask, None, out, True)
+				out, _state = net(inputu, states[_tmp], src_pad_mask, None, out)
 				states[_tmp] = _state
 
 			if self.out_normer is not None:
@@ -86,14 +87,14 @@ class Decoder(DecoderBase):
 
 			trans.append(wds.masked_fill(done_trans, pad_id) if fill_pad else wds)
 
-			done_trans = done_trans | wds.eq(2)
+			done_trans = done_trans | wds.eq(eos_id)
 			if all_done(done_trans, bsize):
 				break
 
 		return torch.cat(trans, 1)
 
 	# inpute: encoded representation from encoder (bsize, seql, isize, num_layer)
-	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False):
+	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False, **kwargs):
 
 		bsize, seql = inpute.size()[:2]
 
@@ -102,14 +103,13 @@ class Decoder(DecoderBase):
 		real_bsize = bsize * beam_size
 
 		out = self.get_sos_emb(inpute)
-		isize = out.size(-1)
 
 		if length_penalty > 0.0:
 			lpv = out.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
 		if self.pemb is not None:
-			sqrt_isize = sqrt(isize)
+			sqrt_isize = sqrt(out.size(-1))
 			out = self.pemb.get_pos(0).add(out, alpha=sqrt_isize)
 		if self.drop is not None:
 			out = self.drop(out)
@@ -117,7 +117,7 @@ class Decoder(DecoderBase):
 		states = {}
 
 		for _tmp, (net, inputu) in enumerate(zip(self.nets, inpute.unbind(dim=-1))):
-			out, _state = net(inputu, None, src_pad_mask, None, out, True)
+			out, _state = net(inputu, (None, None,), src_pad_mask, None, out)
 			states[_tmp] = _state
 
 		if self.out_normer is not None:
@@ -133,7 +133,7 @@ class Decoder(DecoderBase):
 		_inds_add_beam2 = torch.arange(0, bsizeb2, beam_size2, dtype=wds.dtype, device=wds.device).unsqueeze(1).expand(bsize, beam_size)
 		_inds_add_beam = torch.arange(0, real_bsize, beam_size, dtype=wds.dtype, device=wds.device).unsqueeze(1).expand(bsize, beam_size)
 
-		done_trans = wds.view(bsize, beam_size).eq(2)
+		done_trans = wds.view(bsize, beam_size).eq(eos_id)
 
 		self.repeat_cross_attn_buffer(beam_size)
 
@@ -150,7 +150,7 @@ class Decoder(DecoderBase):
 				out = self.drop(out)
 
 			for _tmp, (net, inputu) in enumerate(zip(self.nets, inpute.unbind(dim=-1))):
-				out, _state = net(inputu, states[_tmp], _src_pad_mask, None, out, True)
+				out, _state = net(inputu, states[_tmp], _src_pad_mask, None, out)
 				states[_tmp] = _state
 
 			if self.out_normer is not None:
@@ -180,7 +180,7 @@ class Decoder(DecoderBase):
 
 			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), pad_id) if fill_pad else wds), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(eos_id).squeeze(1)).view(bsize, beam_size)
 
 			_done = False
 			if length_penalty > 0.0:

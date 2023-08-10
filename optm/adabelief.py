@@ -3,20 +3,21 @@
 # Portal from: https://github.com/juntang-zhuang/Adabelief-Optimizer
 
 import torch
+from math import sqrt
 from torch.optim.optimizer import Optimizer
 
-from math import sqrt
+from utils.torch.comp import torch_no_grad
 
 class AdaBelief(Optimizer):
 
-	def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False, weight_decouple=False, fixed_decay=False, rectify=False):
+	def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0, amsgrad=False, weight_decouple=False, fixed_decay=False, rectify=False, **kwargs):
 
 		defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, amsgrad=amsgrad)
 		super(AdaBelief, self).__init__(params, defaults)
 
 		self.weight_decouple, self.rectify, self.fixed_decay = weight_decouple, rectify, fixed_decay
 
-	@torch.no_grad()
+	@torch_no_grad()
 	def step(self, closure=None):
 
 		if closure is None:

@@ -1,13 +1,13 @@
 #encoding: utf-8
 
 import torch
+from math import sqrt
 from torch import nn
 from torch.autograd import Function
 from torch.nn import functional as nnFunc
 
 from utils.base import reduce_model_list
-
-from math import sqrt
+from utils.torch.comp import torch_no_grad
 
 from cnfg.ihyp import *
 
@@ -21,7 +21,7 @@ class GeLU_GPT(nn.Module):
 
 		self.k = sqrt(2.0 / pi)
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		return 0.5 * x * (1.0 + (self.k * (x + 0.044715 * x.pow(3.0))).tanh())
 
@@ -33,7 +33,7 @@ class GeLU_BERT(nn.Module):
 
 		self.k = sqrt(2.0)
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		return 0.5 * x * (1.0 + (x / self.k).erf())
 
@@ -46,7 +46,7 @@ except Exception as e:
 # GELU is nonmonotonic function that has a shape similar to Swish with beta = 1.4 (https://arxiv.org/abs/1710.05941).
 class CustSwish(nn.Module):
 
-	def __init__(self, beta=1.0, freeze_beta=True, isize=None, dim=-1 if adv_act == "normswish" else None, eps=ieps_default):
+	def __init__(self, beta=1.0, freeze_beta=True, isize=None, dim=-1 if adv_act == "normswish" else None, eps=ieps_default, **kwargs):
 
 		super(CustSwish, self).__init__()
 
@@ -58,7 +58,7 @@ class CustSwish(nn.Module):
 			self.beta = nn.Parameter(torch.as_tensor([beta])) if isize is None else nn.Parameter(torch.as_tensor([beta]).repeat(isize))
 		self.dim, self.eps = dim, eps
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		if self.dim is None:
 			_norm_x = x
@@ -70,7 +70,7 @@ class CustSwish(nn.Module):
 
 	def fix_init(self):
 
-		with torch.no_grad():
+		with torch_no_grad():
 			if self.reset_beta is not None:
 				self.beta.fill_(self.reset_beta)
 
@@ -81,19 +81,19 @@ except Exception as e:
 
 class SReLU(nn.Module):
 
-	def __init__(self, inplace=False, k=2.0):
+	def __init__(self, inplace=False, k=2.0, **kwargs):
 
 		super(SReLU, self).__init__()
 
 		self.inplace, self.k = inplace, k
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		return nnFunc.relu(x, inplace=self.inplace).pow(self.k)
 
 class CustMish(nn.Module):
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		return x * nnFunc.softplus(x).tanh()
 
@@ -104,13 +104,13 @@ except:
 
 class LGLU(nn.Module):
 
-	def __init__(self, dim=-1):
+	def __init__(self, dim=-1, **kwargs):
 
 		super(LGLU, self).__init__()
 
 		self.dim = dim
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		_h, _t = x.tensor_split(2, self.dim)
 
@@ -118,14 +118,14 @@ class LGLU(nn.Module):
 
 class GLU_Act(LGLU):
 
-	def __init__(self, act=None, dim=-1):
+	def __init__(self, act=None, dim=-1, **kwargs):
 
 		super(GLU_Act, self).__init__()
 
 		self.dim = dim
 		self.act = nn.Sigmoid() if act is None else act
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		_h, _t = x.tensor_split(2, self.dim)
 
@@ -133,7 +133,7 @@ class GLU_Act(LGLU):
 
 class GEGLU(GLU_Act):
 
-	def __init__(self, dim=-1):
+	def __init__(self, dim=-1, **kwargs):
 
 		_act = GELU()
 		super(GEGLU, self).__init__(act=_act, dim=dim)
@@ -199,12 +199,12 @@ class SparsemaxFunction(Function):
 
 class Sparsemax(nn.Module):
 
-	def __init__(self, dim=-1):
+	def __init__(self, dim=-1, **kwargs):
 
 		super(Sparsemax, self).__init__()
 		self.dim = dim
 
-	def forward(self, input):
+	def forward(self, input, **kwargs):
 
 		return SparsemaxFunction.apply(input, self.dim)
 

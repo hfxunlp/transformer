@@ -2,8 +2,10 @@
 
 import torch
 from torch import nn
-from modules.base import *
+
 from modules.act import Custom_Act
+from modules.base import Dropout, Linear
+from utils.fmt.parser import parse_none
 
 from cnfg.ihyp import *
 
@@ -19,11 +21,11 @@ class LSTMCell4RNMT(nn.Module):
 	# isize: input size of Feed-forward NN
 	# dropout: dropout over hidden units, disabling it and applying dropout to outputs (_out) in most cases
 
-	def __init__(self, isize, osize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
+	def __init__(self, isize, osize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, **kwargs):
 
 		super(LSTMCell4RNMT, self).__init__()
 
-		_osize = isize if osize is None else osize
+		_osize = parse_none(osize, isize)
 
 		# layer normalization is also applied for the computation of hidden for efficiency. bias might be disabled in case provided by LayerNorm
 		self.trans = Linear(isize + _osize, _osize * 4, bias=enable_bias)
@@ -34,7 +36,7 @@ class LSTMCell4RNMT(nn.Module):
 
 		self.osize = _osize
 
-	def forward(self, inpute, state):
+	def forward(self, inpute, state, **kwargs):
 
 		_out, _cell = state
 
@@ -57,11 +59,11 @@ class GRUCell4RNMT(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize, osize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default):
+	def __init__(self, isize, osize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, **kwargs):
 
 		super(GRUCell4RNMT, self).__init__()
 
-		_osize = isize if osize is None else osize
+		_osize = parse_none(osize, isize)
 
 		self.trans = Linear(isize + _osize, _osize * 2, bias=enable_bias)
 		self.transi = Linear(isize, _osize, bias=enable_bias)
@@ -75,7 +77,7 @@ class GRUCell4RNMT(nn.Module):
 
 		self.osize = _osize
 
-	def forward(self, inpute, state):
+	def forward(self, inpute, state, **kwargs):
 
 		osize = list(state.size())
 		osize.insert(-1, 2)
@@ -99,7 +101,7 @@ class ATRCell(nn.Module):
 
 	# isize: input size of Feed-forward NN
 
-	def __init__(self, isize):
+	def __init__(self, isize, **kwargs):
 
 		super(ATRCell, self).__init__()
 
@@ -109,7 +111,7 @@ class ATRCell(nn.Module):
 	# x: input to the cell
 	# cell: cell to update
 
-	def forward(self, x, cell):
+	def forward(self, x, cell, **kwargs):
 
 		p, q = self.t1(x), self.t2(cell)
 

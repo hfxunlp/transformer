@@ -2,24 +2,27 @@
 
 import torch
 from torch import nn
-from modules.base import Linear, Dropout
-from modules.group.base import GroupLinear
-from modules.act import Custom_Act, LGLU, get_act
-from modules.hplstm.LGate import LGateFunc
-from utils.base import float2odd
 
-from modules.hplstm.base import HPLSTM as HPLSTMBase, BiHPLSTM as BiHPLSTMBase
+from modules.act import Custom_Act, LGLU, get_act
+from modules.base import Dropout
+from modules.group.base import GroupLinear
+from modules.hplstm.LGate import LGateFunc
+from modules.hplstm.base import BiHPLSTM as BiHPLSTMBase, HPLSTM as HPLSTMBase
+from utils.base import float2odd
+from utils.fmt.parser import parse_none
+from utils.torch.comp import torch_no_grad
 
 from cnfg.ihyp import *
 
 class MHPLSTMCore(nn.Module):
 
 	# use_glu leads to performance drop with MHPLSTM, disable by default
-	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, use_glu=None):
+	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, act_drop=None, custom_act=use_adv_act_default, enable_bias=enable_prev_ln_bias_default, enable_proj_bias=enable_proj_bias_default, use_glu=None, **kwargs):
 
 		super(MHPLSTMCore, self).__init__()
 
-		_osize = isize if osize is None else osize
+		_osize = parse_none(osize, isize)
+		_act_drop = parse_none(act_drop, dropout)
 
 		i_head_dim = float2odd(float(isize) / num_head)
 		i_hsize = i_head_dim * num_head
@@ -47,7 +50,8 @@ class MHPLSTMCore(nn.Module):
 			_.append(GroupLinear(_fhsize // 2, o_hsize, num_head, bias=enable_proj_bias, shuffle=False, trans_input=False, flatten_output=False))
 		if dropout > 0.0:
 			_.append(Dropout(dropout, inplace=True))
-			_.insert(_drop_ind, Dropout(dropout, inplace=inplace_after_Custom_Act))
+		if _act_drop > 0.0:
+			_.insert(_drop_ind, Dropout(_act_drop, inplace=inplace_after_Custom_Act))
 		self.trans_hid = nn.Sequential(*_)
 		self.trans_ifg = GroupLinear(i_hsize + i_hsize, o_hsize + o_hsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False)
 		self.trans_og = nn.Sequential(GroupLinear(i_hsize + o_hsize, o_hsize, num_head, bias=enable_bias, shuffle=False, trans_input=False, flatten_output=False), nn.LayerNorm((num_head, o_head_dim), eps=ieps_ln_default, elementwise_affine=enable_ln_parameters))
@@ -57,7 +61,7 @@ class MHPLSTMCore(nn.Module):
 
 		self.init_cx = nn.Parameter(torch.zeros(num_head, o_head_dim))
 
-	def forward(self, heads_input, states=None, head_mask=None):
+	def forward(self, heads_input, states=None, head_mask=None, **kwargs):
 
 		bsize, seql, nheads, adim = heads_input.size()
 		if states is None:
@@ -88,14 +92,14 @@ class MHPLSTMCore(nn.Module):
 
 	def fix_init(self):
 
-		with torch.no_grad():
+		with torch_no_grad():
 			self.init_cx.zero_()
 
 class HPLSTM(HPLSTMBase):
 
-	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, **kwargs):
+	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, act_drop=None, **kwargs):
 
-		_osize = isize if osize is None else osize
+		_osize = parse_none(osize, isize)
 
 		super(HPLSTM, self).__init__(isize, num_head=num_head, osize=_osize, dropout=dropout, **kwargs)
 
@@ -103,13 +107,13 @@ class HPLSTM(HPLSTMBase):
 		o_hsize = float2odd(float(_osize) / num_head) * num_head
 		_fhsize = float2odd(float(o_hsize * 4 if fhsize is None else fhsize) / num_head) * num_head
 
-		self.net = MHPLSTMCore(i_hsize, num_head=self.num_head, osize=o_hsize, fhsize=_fhsize, dropout=dropout)
+		self.net = MHPLSTMCore(i_hsize, num_head=self.num_head, osize=o_hsize, fhsize=_fhsize, dropout=dropout, act_drop=act_drop)
 
 class BiHPLSTM(BiHPLSTMBase):
 
-	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, **kwargs):
+	def __init__(self, isize, num_head=8, osize=None, fhsize=None, dropout=0.0, act_drop=None, **kwargs):
 
-		_osize = isize if osize is None else osize
+		_osize = parse_none(osize, isize)
 
 		super(BiHPLSTM, self).__init__(isize, num_head=num_head, osize=_osize, dropout=dropout, **kwargs)
 
@@ -117,4 +121,4 @@ class BiHPLSTM(BiHPLSTMBase):
 		o_hsize = float2odd(float(_osize) / num_head) * num_head
 		_fhsize = float2odd(float(o_hsize * 4 if fhsize is None else fhsize) / num_head) * num_head
 
-		self.net = MHPLSTMCore(i_hsize + i_hsize, num_head=self.num_head + self.num_head, osize=o_hsize + o_hsize, fhsize=_fhsize + _fhsize, dropout=dropout)
+		self.net = MHPLSTMCore(i_hsize + i_hsize, num_head=self.num_head + self.num_head, osize=o_hsize + o_hsize, fhsize=_fhsize + _fhsize, dropout=dropout, act_drop=act_drop)

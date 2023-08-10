@@ -1,6 +1,6 @@
 #encoding: utf-8
 
-from modules.base import ResSelfAttn as ResSelfAttnBase, ResCrossAttn as ResCrossAttnBase, PositionwiseFF as PositionwiseFFBase
+from modules.base import PositionwiseFF as PositionwiseFFBase, ResCrossAttn as ResCrossAttnBase, ResSelfAttn as ResSelfAttnBase
 
 from cnfg.ihyp import *
 
@@ -49,10 +49,10 @@ class PositionwiseFF(PositionwiseFFBase):
 	# isize: input dimension
 	# hsize: hidden dimension
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=True, **kwargs):
+	def __init__(self, isize, hsize=None, dropout=0.0, act_drop=None, norm_residual=True, **kwargs):
 
-		super(PositionwiseFF, self).__init__(isize, hsize=hsize, dropout=dropout, norm_residual=True, **kwargs)
+		super(PositionwiseFF, self).__init__(isize, hsize=hsize, dropout=dropout, act_drop=act_drop, norm_residual=True, **kwargs)
 
-	def forward(self, x):
+	def forward(self, x, **kwargs):
 
 		return self.normer(self.net(x) + x)

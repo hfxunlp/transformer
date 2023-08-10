@@ -2,13 +2,15 @@
 
 import sys
 
+from utils.fmt.base import sys_open
+
 def handle(srcf, rsf, el1=10, el2=9, el3=7):
 
 	acc_bsize = 0
 	odd_line = True
 	l1, l2, l3 = [], [], []
 	ens = "\n".encode("utf-8")
-	with open(srcf, "rb") as frd, open(rsf, "wb") as fwrt:
+	with sys_open(srcf, "rb") as frd, sys_open(rsf, "wb") as fwrt:
 		for line in frd:
 			tmp = line.strip()
 			if tmp:

@@ -1,12 +1,11 @@
 #encoding: utf-8
 
 import sys
-
 import torch
-from utils.h5serial import h5File
+from random import seed as rpyseed, shuffle
 
+from utils.h5serial import h5File
 from utils.tqdm import tqdm
-from random import shuffle, seed as rpyseed
 
 from cnfg.ihyp import tqdm_mininterval
 

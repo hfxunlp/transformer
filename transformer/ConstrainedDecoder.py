@@ -1,28 +1,29 @@
 #encoding: utf-8
 
 import torch
-from utils.sampler import SampleMax
-from utils.base import all_done, index_tensors, expand_bsize_for_beam, select_zero_
 from math import sqrt
 
-from cnfg.vocab.base import pad_id
-
 from transformer.Decoder import Decoder as DecoderBase
+from utils.base import index_tensors, select_zero_
+from utils.decode.beam import expand_bsize_for_beam
+from utils.sampler import SampleMax
+from utils.torch.comp import all_done
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import eos_id, pad_id
 
 class Decoder(DecoderBase):
 
-	def decode(self, inpute, src_pad_mask=None, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False, cons_inds=None):
+	def decode(self, inpute, src_pad_mask=None, beam_size=1, max_len=512, length_penalty=0.0, fill_pad=False, cons_inds=None, **kwargs):
 
 		if cons_inds is None:
 			_cons_inds = None
 		else:
 			_cons_inds = cons_inds.view(1, 1, -1).expand(inpute.size(0), 1, -1) if cons_inds.dim() == 1 else cons_inds.unsqueeze(1)
 
-		return self.beam_decode(inpute, src_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad, cons_inds=_cons_inds) if beam_size > 1 else self.greedy_decode(inpute, src_pad_mask, max_len, fill_pad=fill_pad, cons_inds=_cons_inds)
+		return self.beam_decode(inpute, src_pad_mask, beam_size, max_len, length_penalty, fill_pad=fill_pad, cons_inds=_cons_inds, **kwargs) if beam_size > 1 else self.greedy_decode(inpute, src_pad_mask, max_len, fill_pad=fill_pad, cons_inds=_cons_inds, **kwargs)
 
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False, cons_inds=None):
+	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False, cons_inds=None, **kwargs):
 
 		bsize = inpute.size(0)
 
@@ -50,7 +51,7 @@ class Decoder(DecoderBase):
 
 		trans = [wds]
 
-		done_trans = wds.eq(2)
+		done_trans = wds.eq(eos_id)
 
 		for i in range(1, max_len):
 
@@ -74,13 +75,13 @@ class Decoder(DecoderBase):
 
 			trans.append(wds.masked_fill(done_trans, pad_id) if fill_pad else wds)
 
-			done_trans = done_trans | wds.eq(2)
+			done_trans = done_trans | wds.eq(eos_id)
 			if all_done(done_trans, bsize):
 				break
 
 		return torch.cat(trans, 1)
 
-	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False, cons_inds=None):
+	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False, cons_inds=None, **kwargs):
 
 		bsize, seql = inpute.size()[:2]
 
@@ -89,14 +90,13 @@ class Decoder(DecoderBase):
 		real_bsize = bsize * beam_size
 
 		out = self.get_sos_emb(inpute)
-		isize = out.size(-1)
 
 		if length_penalty > 0.0:
 			lpv = out.new_ones(real_bsize, 1)
 			lpv_base = 6.0 ** length_penalty
 
 		if self.pemb is not None:
-			sqrt_isize = sqrt(isize)
+			sqrt_isize = sqrt(out.size(-1))
 			out = self.pemb.get_pos(0).add(out, alpha=sqrt_isize)
 		if self.drop is not None:
 			out = self.drop(out)
@@ -123,7 +123,7 @@ class Decoder(DecoderBase):
 		_inds_add_beam2 = torch.arange(0, bsizeb2, beam_size2, dtype=wds.dtype, device=wds.device).unsqueeze(1).expand(bsize, beam_size)
 		_inds_add_beam = torch.arange(0, real_bsize, beam_size, dtype=wds.dtype, device=wds.device).unsqueeze(1).expand(bsize, beam_size)
 
-		done_trans = wds.view(bsize, beam_size).eq(2)
+		done_trans = wds.view(bsize, beam_size).eq(eos_id)
 
 		self.repeat_cross_attn_buffer(beam_size)
 
@@ -177,7 +177,7 @@ class Decoder(DecoderBase):
 
 			trans = torch.cat((trans.index_select(0, _inds), wds.masked_fill(done_trans.view(real_bsize, 1), pad_id) if fill_pad else wds), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(2).squeeze(1)).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) | wds.eq(eos_id).squeeze(1)).view(bsize, beam_size)
 
 			_done = False
 			if length_penalty > 0.0:

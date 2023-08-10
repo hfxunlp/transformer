@@ -2,7 +2,7 @@
 
 import sys
 
-from utils.fmt.base import get_bi_ratio
+from utils.fmt.base import get_bi_ratio, sys_open
 
 def handle(srcfs, srcft):
 
@@ -11,7 +11,7 @@ def handle(srcfs, srcft):
 	bmeanratio = 0.0
 	omeanratio = 0.0
 	ndata = 0
-	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft:
+	with sys_open(srcfs, "rb") as fs, sys_open(srcft, "rb") as ft:
 		for sline, tline in zip(fs, ft):
 			sline, tline = sline.strip(), tline.strip()
 			if sline and tline:

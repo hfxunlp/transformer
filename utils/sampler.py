@@ -1,6 +1,6 @@
 #encoding: utf-8
 
-from utils.torch import multinomial
+from utils.torch.ext import multinomial
 
 def SampleMax(x, dim=-1, keepdim=False):
 

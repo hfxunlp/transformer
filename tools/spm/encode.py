@@ -3,8 +3,8 @@
 # portal from fairseq: https://github.com/pytorch/fairseq/blob/master/scripts/spm_encode.py
 
 import sys
-from contextlib import ExitStack
 from argparse import ArgumentParser
+from contextlib import ExitStack
 from sentencepiece import SentencePieceProcessor
 
 def main():

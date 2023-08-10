@@ -1,51 +1,51 @@
 #encoding: utf-8
 
 import torch
+from math import sqrt
+from numbers import Integral
 from torch import nn
 from torch.nn import functional as nnFunc
 
-from modules.base import ResSelfAttn as ResSelfAttnBase, ResCrossAttn as ResCrossAttnBase, PositionwiseFF as PositionwiseFFBase
-
-from math import sqrt
-from numbers import Integral
+from modules.base import PositionwiseFF as PositionwiseFFBase, ResCrossAttn as ResCrossAttnBase, ResSelfAttn as ResSelfAttnBase
+from utils.torch.comp import torch_no_grad
 
 from cnfg.ihyp import *
 
 class MBLinear(nn.Linear):
 
-	def __init__(self, in_features, out_features, nbias, bias=True):
+	def __init__(self, in_features, out_features, nbias, bias=True, **kwargs):
 
 		super(MBLinear, self).__init__(in_features, out_features, bias=False)
 
 		if bias:
 			self.bias = nn.Parameter(torch.zeros(nbias, out_features))
 
-	def forward(self, x, taskid):
+	def forward(self, x, taskid, **kwargs):
 
 		return nnFunc.linear(x, self.weight, None if self.bias is None else self.bias[taskid])
 
 	def fix_init(self):
 
 		if self.bias is not None:
-			with torch.no_grad():
+			with torch_no_grad():
 				self.bias.zero_()
 
 class MWLinear(MBLinear):
 
-	def __init__(self, in_features, out_features, nbias, bias=True):
+	def __init__(self, in_features, out_features, nbias, bias=True, **kwargs):
 
 		super(MWLinear, self).__init__(in_features, out_features, nbias, bias=False)
 
 		self.weight = nn.Parameter(torch.Tensor(nbias, out_features, in_features).uniform_(- sqrt(1.0 / in_features), sqrt(1.0 / in_features)))
 
-	def forward(self, x, taskid):
+	def forward(self, x, taskid, **kwargs):
 
 		return nnFunc.linear(x, self.weight[taskid], None if self.bias is None else self.bias[taskid])
 
 	def fix_init(self):
 
 		_isize = self.weight.size(-1)
-		with torch.no_grad():
+		with torch_no_grad():
 			self.weight.data.uniform_(- sqrt(1.0 / _isize), sqrt(1.0 / _isize))
 		super(MWLinear, self).fix_init()
 
@@ -62,7 +62,7 @@ class LayerNorm(nn.LayerNorm):
 
 		self.normalized_shape = self.normalized_shape[1:]
 
-	def forward(self, input, taskid=None):
+	def forward(self, input, taskid=None, **kwargs):
 
 		return nnFunc.layer_norm(input, self.normalized_shape, None if self.weight is None else self.weight[taskid], None if self.bias is None else self.bias[taskid], self.eps)
 
@@ -124,15 +124,13 @@ class ResCrossAttn(ResCrossAttnBase):
 
 class PositionwiseFF(PositionwiseFFBase):
 
-	def __init__(self, isize, hsize=None, dropout=0.0, norm_residual=norm_residual_default, ntask=None, **kwargs):
+	def __init__(self, isize, hsize=None, dropout=0.0, act_drop=None, norm_residual=norm_residual_default, ntask=None, **kwargs):
 
-		_hsize = isize * 4 if hsize is None else hsize
-
-		super(PositionwiseFF, self).__init__(isize, hsize=_hsize, dropout=dropout, norm_residual=norm_residual, **kwargs)
+		super(PositionwiseFF, self).__init__(isize, hsize=hsize, dropout=dropout, act_drop=act_drop, norm_residual=norm_residual, **kwargs)
 
 		self.normer = LayerNorm(isize, ntask=ntask, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters)
 
-	def forward(self, x, taskid=None):
+	def forward(self, x, taskid=None, **kwargs):
 
 		_out = self.normer(x, taskid=taskid)
 

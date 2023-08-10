@@ -2,7 +2,7 @@
 
 import sys
 
-from utils.fmt.base import ldvocab
+from utils.fmt.vocab.token import ldvocab
 
 def handle(srcfl):
 

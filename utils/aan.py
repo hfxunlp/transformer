@@ -1,6 +1,7 @@
 #encoding: utf-8
 
 from torch.nn import ModuleList
+
 from modules.aan import AverageAttn
 
 def share_aan_cache(netin):
@@ -14,6 +15,6 @@ def share_aan_cache(netin):
 					if _cache is None:
 						_cache = layer.w
 					else:
-						layer.w = _cache
+						layer.register_buffer("w", _cache, persistent=False)
 
 	return netin

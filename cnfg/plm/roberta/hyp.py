@@ -15,3 +15,6 @@ cache_len_default = 514
 
 # For BPE (using full vocabulary), the special <unk> token will never appear and thus can be removed from the vocabulary. Otherwise, it should be set to True.
 use_unk = True
+
+# learning rate
+init_lr = 1e-5

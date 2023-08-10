@@ -1,6 +1,7 @@
 #encoding: utf-8
 
 from torch.nn import ModuleList
+
 from modules.attn.retr import SelfAttn
 
 def share_retrattn_cache(netin):
@@ -15,6 +16,6 @@ def share_retrattn_cache(netin):
 						if _cache is None:
 							_cache = layer.csum
 						else:
-							layer.csum = _cache
+							layer.register_buffer("csum", _cache, persistent=False)
 
 	return netin

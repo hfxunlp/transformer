@@ -5,12 +5,12 @@
 """
 
 import sys
-
 import torch
 
-from utils.fmt.base import ldvocab, reverse_dict
 from utils.fmt.base4torch import load_emb_txt
-from utils.h5serial import h5save, h5load
+from utils.fmt.vocab.base import reverse_dict
+from utils.fmt.vocab.token import ldvocab
+from utils.h5serial import h5save
 
 def handle(vcbf, embf, rsf):
 

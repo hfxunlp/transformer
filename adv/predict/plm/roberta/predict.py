@@ -1,23 +1,23 @@
 #encoding: utf-8
 
 import sys
-
 import torch
 
-from utils.tqdm import tqdm
+from parallel.parallelMT import DataParallelMT
+from transformer.EnsembleNMT import NMT as Ensemble
+from transformer.Prompt.RoBERTa.NMT import NMT
+from utils.base import set_random_seed
+from utils.fmt.base import sys_open
+from utils.fmt.base4torch import parse_cuda_decode
+from utils.fmt.plm.base import fix_parameter_name
 from utils.h5serial import h5File
+from utils.io import load_model_cpu
+from utils.torch.comp import torch_autocast, torch_compile, torch_inference_mode
+from utils.tqdm import tqdm
 
 import cnfg.prompt.roberta.base as cnfg
 from cnfg.prompt.roberta.ihyp import *
 from cnfg.vocab.plm.roberta import vocab_size
-
-from transformer.Prompt.RoBERTa.NMT import NMT
-from transformer.EnsembleNMT import NMT as Ensemble
-from parallel.parallelMT import DataParallelMT
-
-from utils.base import *
-from utils.fmt.base4torch import parse_cuda_decode
-from utils.fmt.plm.base import fix_parameter_name
 
 def init_fixing(module):
 
@@ -29,15 +29,12 @@ def load_fixing(module):
 	if hasattr(module, "fix_load"):
 		module.fix_load()
 
-td = h5File(cnfg.test_data, "r")
-
-ntest = td["ndata"][()].item()
 nwordi = nwordt = vocab_size
 
 pre_trained_m = cnfg.pre_trained_m
 _num_args = len(sys.argv)
 if _num_args == 3:
-	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, fhsize=cnfg.ff_hsize, dropout=cnfg.drop, attn_drop=cnfg.attn_drop, global_emb=cnfg.share_emb, num_head=cnfg.nhead, xseql=cache_len_default, ahsize=cnfg.attn_hsize, norm_output=cnfg.norm_output, bindDecoderEmb=cnfg.bindDecoderEmb, forbidden_index=cnfg.forbidden_indexes, model_name=cnfg.model_name)
+	mymodel = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, fhsize=cnfg.ff_hsize, dropout=cnfg.drop, attn_drop=cnfg.attn_drop, act_drop=cnfg.act_drop, global_emb=cnfg.share_emb, num_head=cnfg.nhead, xseql=cache_len_default, ahsize=cnfg.attn_hsize, norm_output=cnfg.norm_output, bindDecoderEmb=cnfg.bindDecoderEmb, forbidden_index=cnfg.forbidden_indexes, model_name=cnfg.model_name)
 	if pre_trained_m is not None:
 		print("Load pre-trained model from: " + pre_trained_m)
 		mymodel.load_plm(fix_parameter_name(torch.load(pre_trained_m, map_location="cpu")))
@@ -51,7 +48,7 @@ if _num_args == 3:
 else:
 	models = []
 	for modelf in sys.argv[2:]:
-		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, fhsize=cnfg.ff_hsize, dropout=cnfg.drop, attn_drop=cnfg.attn_drop, global_emb=cnfg.share_emb, num_head=cnfg.nhead, xseql=cache_len_default, ahsize=cnfg.attn_hsize, norm_output=cnfg.norm_output, bindDecoderEmb=cnfg.bindDecoderEmb, forbidden_index=cnfg.forbidden_indexes, model_name=cnfg.model_name)
+		tmp = NMT(cnfg.isize, nwordi, nwordt, cnfg.nlayer, fhsize=cnfg.ff_hsize, dropout=cnfg.drop, attn_drop=cnfg.attn_drop, act_drop=cnfg.act_drop, global_emb=cnfg.share_emb, num_head=cnfg.nhead, xseql=cache_len_default, ahsize=cnfg.attn_hsize, norm_output=cnfg.norm_output, bindDecoderEmb=cnfg.bindDecoderEmb, forbidden_index=cnfg.forbidden_indexes, model_name=cnfg.model_name)
 		if pre_trained_m is not None:
 			print("Load pre-trained model from: " + pre_trained_m)
 			mymodel.load_plm(fix_parameter_name(torch.load(pre_trained_m, map_location="cpu")))
@@ -76,16 +73,17 @@ if cuda_device:
 	if multi_gpu:
 		mymodel = DataParallelMT(mymodel, device_ids=cuda_devices, output_device=cuda_device.index, host_replicate=True, gather_output=False)
 
-ens = "\n".encode("utf-8")
+mymodel = torch_compile(mymodel, *torch_compile_args, **torch_compile_kwargs)
 
-src_grp = td["src"]
-with open(sys.argv[1], "wb") as f, torch.no_grad():
-	for i in tqdm(range(ntest), mininterval=tqdm_mininterval):
+ens = "\n".encode("utf-8")
+with sys_open(sys.argv[1], "wb") as f, h5File(cnfg.test_data, "r") as td, torch_inference_mode():
+	src_grp = td["src"]
+	for i in tqdm(range(td["ndata"][()].item()), mininterval=tqdm_mininterval):
 		seq_batch = torch.from_numpy(src_grp[str(i)][()])
 		if cuda_device:
 			seq_batch = seq_batch.to(cuda_device, non_blocking=True)
 		seq_batch = seq_batch.long()
-		with autocast(enabled=use_amp):
+		with torch_autocast(enabled=use_amp):
 			output = mymodel(seq_batch)
 		if multi_gpu:
 			tmp = []
@@ -96,5 +94,3 @@ with open(sys.argv[1], "wb") as f, torch.no_grad():
 			output = output.argmax(-1).tolist()
 		f.write("\n".join([str(_) for _ in output]).encode("utf-8"))
 		f.write(ens)
-
-td.close()

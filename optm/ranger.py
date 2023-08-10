@@ -4,9 +4,11 @@ import torch
 from math import sqrt
 from torch.optim.optimizer import Optimizer
 
+from utils.torch.comp import torch_no_grad
+
 class Ranger(Optimizer):
 
-	def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0, N_sma_threshhold=5, steps=5, alpha=0.8, degenerated_to_sgd=True):
+	def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0, N_sma_threshhold=5, steps=5, alpha=0.8, degenerated_to_sgd=True, **kwargs):
 
 		defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay, buffer=[[None, None, None] for _ in range(10)])
 		super(Ranger, self).__init__(params, defaults)
@@ -18,7 +20,7 @@ class Ranger(Optimizer):
 		self.alpha = alpha
 		self.steps = steps
 
-	@torch.no_grad()
+	@torch_no_grad()
 	def step(self, closure=None):
 
 		if closure is None:

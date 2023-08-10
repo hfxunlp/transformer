@@ -1,7 +1,7 @@
 #encoding: utf-8
 
 import sys
-from os import walk, remove
+from os import remove, walk
 from os.path import join as pjoin
 
 def walk_path(ptws):

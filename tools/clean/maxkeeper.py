@@ -2,7 +2,7 @@
 
 import sys
 
-from utils.fmt.base import clean_liststr_lentok
+from utils.fmt.base import clean_liststr_lentok, sys_open
 
 def handle(srcfs, srcft, tgtfs, tgtft, max_len=256):
 
@@ -10,7 +10,7 @@ def handle(srcfs, srcft, tgtfs, tgtft, max_len=256):
 
 	data = {}
 
-	with open(srcfs, "rb") as fs, open(srcft, "rb") as ft:
+	with sys_open(srcfs, "rb") as fs, sys_open(srcft, "rb") as ft:
 		for ls, lt in zip(fs, ft):
 			ls, lt = ls.strip(), lt.strip()
 			if ls and lt:
@@ -48,7 +48,7 @@ def handle(srcfs, srcft, tgtfs, tgtft, max_len=256):
 
 	data = _clean
 	ens = "\n".encode("utf-8")
-	with open(tgtfs, "wb") as fs, open(tgtft, "wb") as ft:
+	with sys_open(tgtfs, "wb") as fs, sys_open(tgtft, "wb") as ft:
 		for lt, v in data.items():
 			if len(v) > 1:
 				rls = []

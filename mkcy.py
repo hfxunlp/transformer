@@ -1,12 +1,10 @@
 #encoding: utf-8
 
+from Cython.Build import cythonize
+from Cython.Compiler import Options
+from Cython.Distutils import build_ext
 from distutils.core import setup
 from distutils.extension import Extension
-
-from Cython.Build import cythonize
-from Cython.Distutils import build_ext
-from Cython.Compiler import Options
-
 from os import walk
 from os.path import join as pjoin
 
@@ -55,7 +53,7 @@ if __name__ == "__main__":
 
 	eccargs = ["-Ofast", "-march=native", "-pipe", "-fomit-frame-pointer"]
 
-	baselist = ["lrsch.py", "translator.py"]
+	baselist = ["lrsch.py"]
 	extlist = [Extension(get_name(pyf), [pyf], extra_compile_args=eccargs) for pyf in baselist]
 	for _mp in ("parallel/", "loss/", "optm/", "modules/", "transformer/", "utils/", "datautils/",):
 		_tmp = walk_path(_mp, eccargs)

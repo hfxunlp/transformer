@@ -2,11 +2,11 @@
 
 # this file interprets hyper-parameters assigned in cnfg/hyp.py
 
-from cnfg.hyp import *
-
 from math import inf
 
-from utils.fmt.parser import parse_none, parse_double_value_tuple
+from utils.fmt.parser import parse_double_value_tuple, parse_none
+
+from cnfg.hyp import *
 
 # C backend
 if use_c_backend is None:
@@ -19,7 +19,7 @@ bind_c_forward = use_c_backend
 
 # the use of deterministic algorithms
 use_deterministic = not performance_over_reproduction
-allow_fp16_reduction = use_deterministic
+allow_tf32 = allow_fp16_reduction = performance_over_reproduction
 
 # biases
 enable_prev_ln_bias_default = enable_proj_bias_default = not ease_optimization
@@ -42,8 +42,9 @@ relative_position_max_bucket_distance_encoder, relative_position_max_bucket_dist
 disable_std_pemb_encoder, disable_std_pemb_decoder = parse_double_value_tuple(disable_std_pemb)
 relpos_reduction_with_zeros = True
 
-# learning rate, override by the GoogleLR in most case
-init_lr = 1e-4
+# torch_compile args
+torch_compile_args = []
+torch_compile_kwargs = {"fullgraph": False, "dynamic": False}
 
 # hyper-parameters
 inf_default = inf

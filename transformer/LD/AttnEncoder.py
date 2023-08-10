@@ -1,11 +1,10 @@
 #encoding: utf-8
 
 import torch
+from math import ceil, sqrt
 from torch import nn
+
 from modules.LD import ATTNCombiner
-
-from math import sqrt, ceil
-
 from transformer.LD.Encoder import Encoder as EncoderBase
 
 from cnfg.ihyp import *
@@ -19,7 +18,7 @@ class Encoder(EncoderBase):
 		self.attn_emb = ATTNCombiner(isize, isize, dropout)
 		self.attns = nn.ModuleList([ATTNCombiner(isize, isize, dropout) for i in range(num_layer)])
 
-	def forward(self, inputs, mask=None):
+	def forward(self, inputs, mask=None, **kwargs):
 
 		def transform(lin, w, drop):
 
@@ -67,9 +66,8 @@ class Encoder(EncoderBase):
 			_rmask = _nmask.ge(_ntok)
 
 		out = self.wemb(inputs)
-		out = out * sqrt(out.size(-1))
 		if self.pemb is not None:
-			out = out + self.pemb(inputs, expand=False)
+			out = self.pemb(inputs, expand=False).add(out, alpha=sqrt(out.size(-1)))
 
 		#if _rmask is not None:
 			#_nele = (_ntok - _nmask).masked_fill(_nmask.eq(_ntok), 1).view(bsize, _nchk, 1).to(out, non_blocking=True)

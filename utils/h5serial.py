@@ -1,30 +1,30 @@
 #encoding: utf-8
 
-import torch
 import h5py
-from h5py import Dataset
+import torch
 from collections.abc import Iterator
 
-from utils.fmt.base import list2dict, dict_is_list
+from utils.fmt.base import dict_is_list, list2dict
 
-from cnfg.ihyp import *
+from cnfg.ihyp import h5_libver, h5modelwargs, hdf5_track_order, list_key_func
 
 try:
 	h5py.get_config().track_order = hdf5_track_order
 except Exception as e:
 	pass
 
-class h5File_ctx(h5py.File):
+if hasattr(h5py.File, "__enter__") and hasattr(h5py.File, "__exit__"):
+	h5File = h5py.File
+else:
+	class h5File(h5py.File):
 
-	def __enter__(self):
+		def __enter__(self):
 
-		return self
+			return self
 
-	def __exit__(self, *inputs, **kwargs):
+		def __exit__(self, *inputs, **kwargs):
 
-		self.close()
-
-h5File = h5py.File if hasattr(h5py.File, "__enter__") and hasattr(h5py.File, "__exit__") else h5File_ctx
+			self.close()
 
 def h5write_dict(gwrt, dtw, h5args=h5modelwargs):
 
@@ -37,10 +37,8 @@ def h5write_dict(gwrt, dtw, h5args=h5modelwargs):
 			gwrt.create_group(k)
 			h5write_list(gwrt[k], _v, h5args=h5args)
 		else:
-			if _v.device.type == "cpu":
-				gwrt.create_dataset(k, data=_v.numpy(), **h5args)
-			else:
-				gwrt.create_dataset(k, data=_v.cpu().numpy(), **h5args)
+			_ = _v if _v.device.type == "cpu" else _v.cpu()
+			gwrt.create_dataset(k, data=_.numpy(), **h5args)
 
 def h5write_list(gwrt, ltw, h5args=h5modelwargs):
 
@@ -72,7 +70,7 @@ def h5load_group(grd):
 
 	rsd = {}
 	for k, v in grd.items():
-		if isinstance(v, Dataset):
+		if isinstance(v, h5py.Dataset):
 			rsd[k] = torch.from_numpy(v[()])
 		else:
 			rsd[k] = h5load_group(v)

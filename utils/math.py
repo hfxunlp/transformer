@@ -1,6 +1,19 @@
 #encoding: utf-8
 
+from itertools import accumulate
 from math import log
+
+def pos_norm(x):
+
+	_s = sum(x)
+	if _s == 0.0:
+		_s = 1.0
+
+	return [_ / _s for _ in x]
+
+def cumsum(*args, **kwargs):
+
+	return list(accumulate(*args, **kwargs))
 
 def arcsigmoid(x):
 

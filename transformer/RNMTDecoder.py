@@ -5,37 +5,36 @@
 import torch
 from torch import nn
 
-from modules.base import *
-from utils.sampler import SampleMax
-from utils.base import all_done
-from modules.rnncells import *
-
-from cnfg.vocab.base import pad_id
-
+from modules.base import CrossAttn, Dropout, Linear
+from modules.rnncells import LSTMCell4RNMT, prepare_initState
 from transformer.Decoder import Decoder as DecoderBase
+from utils.fmt.parser import parse_none
+from utils.sampler import SampleMax
+from utils.torch.comp import all_done#, torch_no_grad
 
 from cnfg.ihyp import *
+from cnfg.vocab.base import eos_id, pad_id
 
 class FirstLayer(nn.Module):
 
 	# isize: input size
 	# osize: output size
-	def __init__(self, isize, osize=None, dropout=0.0):
+	def __init__(self, isize, osize=None, dropout=0.0, **kwargs):
 
 		super(FirstLayer, self).__init__()
 
-		osize = isize if osize is None else osize
+		_osize = parse_none(osize, isize)
 
-		self.net = LSTMCell4RNMT(isize, osize)
-		self.init_hx = nn.Parameter(torch.zeros(1, osize))
-		self.init_cx = nn.Parameter(torch.zeros(1, osize))
+		self.net = LSTMCell4RNMT(isize, _osize)
+		self.init_hx = nn.Parameter(torch.zeros(1, _osize))
+		self.init_cx = nn.Parameter(torch.zeros(1, _osize))
 
 		self.drop = Dropout(dropout, inplace=False) if dropout > 0.0 else None
 
 	# inputo: embedding of decoded translation (bsize, nquery, isize)
 	# query_unit: single query to decode, used to support decoding for given step
 
-	def forward(self, inputo, states=None, first_step=False):
+	def forward(self, inputo, states=None, first_step=False, **kwargs):
 
 		if states is None:
 			hx, cx = prepare_initState(self.init_hx, self.init_cx, inputo.size(0))
@@ -62,15 +61,15 @@ class DecoderLayer(nn.Module):
 
 	# isize: input size
 	# osize: output size
-	def __init__(self, isize, osize=None, dropout=0.0, residual=True):
+	def __init__(self, isize, osize=None, dropout=0.0, residual=True, **kwargs):
 
 		super(DecoderLayer, self).__init__()
 
-		osize = isize if osize is None else osize
+		_osize = parse_none(osize, isize)
 
-		self.net = LSTMCell4RNMT(isize + osize, osize)
-		self.init_hx = nn.Parameter(torch.zeros(1, osize))
-		self.init_cx = nn.Parameter(torch.zeros(1, osize))
+		self.net = LSTMCell4RNMT(isize + _osize, _osize)
+		self.init_hx = nn.Parameter(torch.zeros(1, _osize))
+		self.init_cx = nn.Parameter(torch.zeros(1, _osize))
 
 		self.drop = Dropout(dropout, inplace=False) if dropout > 0.0 else None
 
@@ -79,7 +78,7 @@ class DecoderLayer(nn.Module):
 	# inputo: embedding of decoded translation (bsize, nquery, isize)
 	# query_unit: single query to decode, used to support decoding for given step
 
-	def forward(self, inputo, attn, states=None, first_step=False):
+	def forward(self, inputo, attn, states=None, first_step=False, **kwargs):
 
 		if states is None:
 			hx, cx = prepare_initState(self.init_hx, self.init_cx, inputo.size(0))
@@ -117,11 +116,11 @@ class Decoder(DecoderBase):
 	# ahsize: number of hidden units for MultiHeadAttention
 	# bindemb: bind embedding and classifier weight
 
-	def __init__(self, isize, nwd, num_layer, dropout=0.0, attn_drop=0.0, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None, projector=True, **kwargs):
+	def __init__(self, isize, nwd, num_layer, dropout=0.0, attn_drop=0.0, act_drop=None, emb_w=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, bindemb=False, forbidden_index=None, projector=True, **kwargs):
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 
-		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize=isize, dropout=dropout, attn_drop=attn_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=_ahsize, norm_output=norm_output, bindemb=bindemb, forbidden_index=forbidden_index, **kwargs)
+		super(Decoder, self).__init__(isize, nwd, num_layer, fhsize=isize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, emb_w=emb_w, num_head=num_head, xseql=xseql, ahsize=_ahsize, norm_output=norm_output, bindemb=bindemb, forbidden_index=forbidden_index, **kwargs)
 
 		self.flayer = FirstLayer(isize, osize=isize, dropout=dropout)
 
@@ -141,9 +140,9 @@ class Decoder(DecoderBase):
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# inputo: decoded translation (bsize, nquery)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 
-	def forward(self, inpute, inputo, src_pad_mask=None):
+	def forward(self, inpute, inputo, src_pad_mask=None, **kwargs):
 
 		out = self.wemb(inputo)
 
@@ -159,7 +158,7 @@ class Decoder(DecoderBase):
 
 		# the following line of code is to mask <pad> for the decoder,
 		# which I think is useless, since only <pad> may pay attention to previous <pad> tokens, whos loss will be omitted by the loss function.
-		#_mask = torch.gt(_mask + inputo.eq(0).unsqueeze(1), 0)
+		#_mask = torch.gt(_mask + inputo.eq(pad_id).unsqueeze(1), 0)
 
 		for net in self.nets:
 			out = net(out, attn)
@@ -173,10 +172,10 @@ class Decoder(DecoderBase):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# max_len: maximum length to generate
 
-	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False):
+	def greedy_decode(self, inpute, src_pad_mask=None, max_len=512, fill_pad=False, sample=False, **kwargs):
 
 		bsize = inpute.size(0)
 
@@ -212,7 +211,7 @@ class Decoder(DecoderBase):
 
 		# done_trans: (bsize)
 
-		done_trans = wds.eq(2)
+		done_trans = wds.eq(eos_id)
 
 		for i in range(1, max_len):
 
@@ -237,7 +236,7 @@ class Decoder(DecoderBase):
 
 			trans.append(wds.masked_fill(done_trans, pad_id) if fill_pad else wds)
 
-			done_trans = done_trans | wds.eq(2)
+			done_trans = done_trans | wds.eq(eos_id)
 			if all_done(done_trans, bsize):
 				break
 
@@ -245,11 +244,11 @@ class Decoder(DecoderBase):
 
 	# inpute: encoded representation from encoder (bsize, seql, isize)
 	# src_pad_mask: mask for given encoding source sentence (bsize, 1, seql), see Encoder, generated with:
-	#	src_pad_mask = input.eq(0).unsqueeze(1)
+	#	src_pad_mask = input.eq(pad_id).unsqueeze(1)
 	# beam_size: beam size
 	# max_len: maximum length to generate
 
-	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False):
+	def beam_decode(self, inpute, src_pad_mask=None, beam_size=8, max_len=512, length_penalty=0.0, return_all=False, clip_beam=clip_beam_with_lp, fill_pad=False, **kwargs):
 
 		bsize, seql = inpute.size()[:2]
 
@@ -258,7 +257,6 @@ class Decoder(DecoderBase):
 		real_bsize = bsize * beam_size
 
 		out = self.get_sos_emb(inpute)
-		isize = out.size(-1)
 
 		if length_penalty > 0.0:
 			# lpv: length penalty vector for each beam (bsize * beam_size, 1)
@@ -302,7 +300,7 @@ class Decoder(DecoderBase):
 
 		# done_trans: (bsize, beam_size)
 
-		done_trans = wds.view(bsize, beam_size).eq(2)
+		done_trans = wds.view(bsize, beam_size).eq(eos_id)
 
 		# inpute: (bsize, seql, isize) => (bsize * beam_size, seql, isize)
 
@@ -384,7 +382,7 @@ class Decoder(DecoderBase):
 
 			trans = torch.cat((trans.index_select(0, _inds), (wds.masked_fill(done_trans.view(real_bsize), pad_id) if fill_pad else wds).unsqueeze(1)), 1)
 
-			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) & wds.eq(2)).view(bsize, beam_size)
+			done_trans = (done_trans.view(real_bsize).index_select(0, _inds) & wds.eq(eos_id)).view(bsize, beam_size)
 
 			# check early stop for beam search
 			# done_trans: (bsize, beam_size)
@@ -425,5 +423,5 @@ class Decoder(DecoderBase):
 	"""def fix_load(self):
 
 		if self.fbl is not None:
-			with torch.no_grad():
+			with torch_no_grad():
 				list(self.classifier.modules())[-1].bias.index_fill_(0, torch.as_tensor(self.fbl, dtype=torch.long, device=self.classifier.bias.device), -inf_default)"""

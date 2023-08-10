@@ -12,7 +12,7 @@ if not moses_scripts.endswith(sep):
 
 class ProcessWrapper:
 
-	def __init__(self, cmd=None):
+	def __init__(self, cmd=None, **kwargs):
 
 		self.process = None
 		self.cmd = [] if cmd is None else cmd
@@ -30,7 +30,7 @@ class ProcessWrapper:
 
 class LineProcessor(ProcessWrapper):
 
-	def __call__(self, input):
+	def __call__(self, input, **kwargs):
 
 		self.process.stdin.write(("%s\n" % input.strip()).encode("utf-8", "ignore"))
 		self.process.stdin.flush()
@@ -39,7 +39,7 @@ class LineProcessor(ProcessWrapper):
 
 class BatchProcessor(ProcessWrapper):
 
-	def __call__(self, input):
+	def __call__(self, input, **kwargs):
 
 		if isinstance(input, (list, tuple,)):
 			rs = []
@@ -58,14 +58,14 @@ class BatchProcessor(ProcessWrapper):
 class SentenceSplitter(ProcessWrapper):
 	"""Wrapper for standard Moses sentence splitter."""
 
-	def __init__(self, lang):
+	def __init__(self, lang, **kwargs):
 
 		ssplit_cmd = moses_scripts + sep.join(("ems", "support", "split-sentences.perl"))
 		self.cmd = [perl_exec, ssplit_cmd, "-b", "-q", "-l", lang]
 		self.process = None
 		self.start()
 
-	def __call__(self, input):
+	def __call__(self, input, **kwargs):
 
 		self.process.stdin.write((input.strip() + "\n<P>\n").encode("utf-8", "ignore"))
 		self.process.stdin.flush()
@@ -81,7 +81,7 @@ class Pretokenizer(BatchProcessor):
 	"""Pretokenizer wrapper.
 	The pretokenizer fixes known issues with the input.
 	"""
-	def __init__(self, lang):
+	def __init__(self, lang, **kwargs):
 
 		pretok_cmd = moses_scripts + sep.join(("tokenizer", "pre-tokenizer.perl"))
 		self.cmd = [perl_exec, pretok_cmd, "-b", "-q", "-l", lang]
@@ -93,7 +93,7 @@ class Tokenizer(BatchProcessor):
 	The pretokenizer fixes known issues with the input.
 	"""
 	# default args: ["-a", "-no-escape"]
-	def __init__(self, lang, args=["-a"]):
+	def __init__(self, lang, args=["-a"], **kwargs):
 
 		tok_cmd = moses_scripts + sep.join(("tokenizer", "tokenizer.perl"))
 		self.cmd = [perl_exec, tok_cmd, "-b", "-q", "-l", lang] + args
@@ -102,7 +102,7 @@ class Tokenizer(BatchProcessor):
 
 class Normalizepunctuation(BatchProcessor):
 
-	def __init__(self, lang):
+	def __init__(self, lang, **kwargs):
 
 		tok_cmd = moses_scripts + sep.join(("tokenizer", "normalize-punctuation.perl"))
 		self.cmd = [perl_exec, tok_cmd, "-b", "-q", "-l", lang]
@@ -111,7 +111,7 @@ class Normalizepunctuation(BatchProcessor):
 
 class Truecaser(BatchProcessor):
 	"""Truecaser wrapper."""
-	def __init__(self, model):
+	def __init__(self, model, **kwargs):
 
 		truecase_cmd = moses_scripts + sep.join(("recaser", "truecase.perl"))
 		self.cmd = [perl_exec, truecase_cmd, "-b", "--model", model]
@@ -130,7 +130,7 @@ class Detruecaser(BatchProcessor):
 class Detokenizer(BatchProcessor):
 
 	# default args: ["-a", "-no-escape"]
-	def __init__(self, lang):
+	def __init__(self, lang, **kwargs):
 
 		tok_cmd = moses_scripts + sep.join(("tokenizer", "detokenizer.perl"))
 		self.cmd = [perl_exec, tok_cmd, "-q", "-b", "-l", lang]

@@ -1,30 +1,30 @@
 #encoding: utf-8
 
 import torch
-from torch import nn
-from modules.base import *
-from modules.paradoc import GateResidual
 from math import sqrt
+from torch import nn
 
-from utils.base import mask_tensor_type
-
-from transformer.Encoder import EncoderLayer as EncoderLayerBase, Encoder as EncoderBase
+from modules.base import CrossAttn
+from modules.paradoc import GateResidual
+from transformer.Encoder import Encoder as EncoderBase, EncoderLayer as EncoderLayerBase
+from utils.fmt.parser import parse_none
+from utils.torch.comp import mask_tensor_type, torch_no_grad
 
 from cnfg.ihyp import *
 
 class CrossEncoderLayer(EncoderLayerBase):
 
-	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, ahsize=None, ncross=2, **kwargs):
+	def __init__(self, isize, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, ahsize=None, ncross=2, **kwargs):
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 
-		super(CrossEncoderLayer, self).__init__(isize, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, ahsize=_ahsize)
+		super(CrossEncoderLayer, self).__init__(isize, fhsize=fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, ahsize=_ahsize)
 
 		self.cattns = nn.ModuleList([CrossAttn(isize, _ahsize, isize, num_head, dropout=attn_drop) for i in range(ncross)])
 		self.cattn_ln = nn.ModuleList([nn.LayerNorm(isize, eps=ieps_ln_default, elementwise_affine=enable_ln_parameters) for i in range(ncross)])
 		self.grs = nn.ModuleList([GateResidual(isize) for i in range(ncross)])
 
-	def forward(self, inputs, inputc, mask=None, context_mask=None):
+	def forward(self, inputs, inputc, mask=None, context_mask=None, **kwargs):
 
 		_inputs = self.layer_normer(inputs)
 		context = self.attn(_inputs, mask=mask)
@@ -54,22 +54,21 @@ class CrossEncoderLayer(EncoderLayerBase):
 
 class CrossEncoder(EncoderBase):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, nprev_context=2, **kwargs):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, nprev_context=2, **kwargs):
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		super(CrossEncoder, self).__init__(isize, nwd, num_layer, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, num_head=num_head, xseql=xseql, ahsize=_ahsize, norm_output=norm_output)
+		super(CrossEncoder, self).__init__(isize, nwd, num_layer, fhsize=_fhsize, dropout=dropout, attn_drop=attn_drop, act_drop=act_drop, num_head=num_head, xseql=xseql, ahsize=_ahsize, norm_output=norm_output)
 
-		self.nets = nn.ModuleList([CrossEncoderLayer(isize, _fhsize, dropout, attn_drop, num_head, _ahsize) for i in range(num_layer)])
+		self.nets = nn.ModuleList([CrossEncoderLayer(isize, _fhsize, dropout, attn_drop, act_drop, num_head, _ahsize) for i in range(num_layer)])
 
-	def forward(self, inputs, inputc, mask=None, context_mask=None):
+	def forward(self, inputs, inputc, mask=None, context_mask=None, **kwargs):
 
 		out = self.wemb(inputs)
-		out = out * sqrt(out.size(-1))
 		if self.pemb is not None:
-			out = out + self.pemb(inputs, expand=False)
+			out = self.pemb(inputs, expand=False).add(out, alpha=sqrt(out.size(-1)))
 
 		if self.drop is not None:
 			out = self.drop(out)
@@ -94,22 +93,22 @@ class CrossEncoder(EncoderBase):
 
 class Encoder(nn.Module):
 
-	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, nprev_context=2, num_layer_context=1):
+	def __init__(self, isize, nwd, num_layer, fhsize=None, dropout=0.0, attn_drop=0.0, act_drop=None, num_head=8, xseql=cache_len_default, ahsize=None, norm_output=True, nprev_context=2, num_layer_context=1, **kwargs):
 
 		super(Encoder, self).__init__()
 
-		_ahsize = isize if ahsize is None else ahsize
+		_ahsize = parse_none(ahsize, isize)
 
 		_fhsize = _ahsize * 4 if fhsize is None else fhsize
 
-		self.context_enc = EncoderBase(isize, nwd, num_layer if num_layer_context is None else num_layer_context, _fhsize, dropout, attn_drop, num_head, xseql, _ahsize, norm_output)
-		self.enc = CrossEncoder(isize, nwd, num_layer, _fhsize, dropout, attn_drop, num_head, xseql, _ahsize, norm_output, nprev_context)
+		self.context_enc = EncoderBase(isize, nwd, num_layer if num_layer_context is None else num_layer_context, _fhsize, dropout, attn_drop, act_drop, num_head, xseql, _ahsize, norm_output)
+		self.enc = CrossEncoder(isize, nwd, num_layer, _fhsize, dropout, attn_drop, act_drop, num_head, xseql, _ahsize, norm_output, nprev_context)
 
 		_tmp_pad = torch.zeros(xseql, dtype=torch.long)
 		_tmp_pad[0] = 1
 		_tmp_pad = _tmp_pad.view(1, 1, xseql).repeat(1, nprev_context - 1, 1)
-		self.register_buffer("pad", _tmp_pad)
-		self.register_buffer("pad_mask", (1 - _tmp_pad).to(mask_tensor_type, non_blocking=True).unsqueeze(1))
+		self.register_buffer("pad", _tmp_pad, persistent=False)
+		self.register_buffer("pad_mask", (1 - _tmp_pad).to(mask_tensor_type, non_blocking=True).unsqueeze(1), persistent=False)
 		self.xseql = xseql
 
 		self.nprev_context = nprev_context
@@ -117,9 +116,9 @@ class Encoder(nn.Module):
 	# inputs: (bsize, _nsent, seql), nprev_context, ... , nsent - 1
 	# inputc: (bsize, _nsentc, seql), 0, 1, ... , nsent - 2
 	# mask: (bsize, 1, _nsent, seql), generated with:
-	#	mask = inputs.eq(0).unsqueeze(1)
+	#	mask = inputs.eq(pad_id).unsqueeze(1)
 	# where _nsent = nsent - self.nprev_context, _nsentc = nsent - 1
-	def forward(self, inputs, inputc, mask=None, context_mask=None):
+	def forward(self, inputs, inputc, mask=None, context_mask=None, **kwargs):
 
 		bsize, nsentc, seql = inputc.size()
 		_inputc = torch.cat((self.get_pad(seql).expand(bsize, -1, seql), inputc,), dim=1)
@@ -139,7 +138,7 @@ class Encoder(nn.Module):
 	def load_base(self, base_encoder):
 
 		self.enc.load_base(base_encoder)
-		with torch.no_grad():
+		with torch_no_grad():
 			self.context_enc.wemb.weight.copy_(base_encoder.wemb.weight)
 
 	def get_pad(self, seql):
@@ -150,6 +149,10 @@ class Encoder(nn.Module):
 
 		return self.pad_mask.narrow(-1, 0, seql) if seql <= self.xseql else torch.cat((self.pad_mask, self.pad_mask.new_ones(1, 1, self.nprev_context - 1, seql - self.xseql),), dim=-1)
 
+	def get_embedding_weight(self):
+
+		return self.enc.get_embedding_weight()
+
 	def update_vocab(self, indices):
 
-		self.context_enc.update_vocab(indices)
+		return self.enc.update_vocab(indices)

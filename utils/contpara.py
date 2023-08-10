@@ -2,14 +2,14 @@
 
 # WARNING: this file may create _contiguous_parameters to the model
 
-import torch
 from torch import nn
 
 from utils.base import filter_para_grad
+from utils.torch.comp import torch_no_grad
 
 class ContiguousParams(nn.Module):
 
-	def __init__(self, parameters=None, init_tensors=None):
+	def __init__(self, parameters=None, init_tensors=None, **kwargs):
 
 		super(ContiguousParams, self).__init__()
 
@@ -56,7 +56,7 @@ class ContiguousParams(nn.Module):
 
 	def bind(self, update=True):
 
-		with torch.no_grad():
+		with torch_no_grad():
 			for pl, weight in zip(self.pll, self.weights):
 				if len(pl) > 1:
 					lind = 0
@@ -73,7 +73,7 @@ class ContiguousParams(nn.Module):
 
 	def bind_data(self, update=True):
 
-		with torch.no_grad():
+		with torch_no_grad():
 			for pl, weight in zip(self.pll, self.weights):
 				if len(pl) > 1:
 					lind = 0

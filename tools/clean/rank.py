@@ -4,11 +4,11 @@
 
 import sys
 
-from utils.fmt.base import clean_str
+from utils.fmt.base import clean_str, sys_open
 
 def handle(srcf, tgtf, rankf, rssf, rstf, threshold):
 
-	with open(srcf, "rb") as frs, open(tgtf, "rb") as frt, open(rankf, "rb") as fs, open(rssf, "wb") as fws, open(rstf, "wb") as fwt:
+	with sys_open(srcf, "rb") as frs, sys_open(tgtf, "rb") as frt, sys_open(rankf, "rb") as fs, sys_open(rssf, "wb") as fws, sys_open(rstf, "wb") as fwt:
 
 		ndata = nkeep = 0
 

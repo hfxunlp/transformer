@@ -1,10 +1,11 @@
 #encoding: utf-8
 
 import torch
-
 from math import sqrt
+
 from utils.fmt.base import list_reader
-from utils.h5serial import h5save, h5load
+from utils.h5serial import h5load
+from utils.torch.comp import torch_no_grad
 
 def parse_cuda(use_cuda_arg, gpuid=None):
 
@@ -24,7 +25,7 @@ def parse_cuda(use_cuda_arg, gpuid=None):
 			multi_gpu = False
 		torch.cuda.set_device(cuda_device.index)
 	else:
-		use_cuda, cuda_device, cuda_devices, multi_gpu = False, False, None, False
+		use_cuda, cuda_device, cuda_devices, multi_gpu = False, None, None, False
 
 	return use_cuda, cuda_device, cuda_devices, multi_gpu
 
@@ -47,7 +48,7 @@ def parse_cuda_decode(use_cuda_arg, gpuid=None, multi_gpu_decoding=False):
 			multi_gpu = False
 		torch.cuda.set_device(cuda_device.index)
 	else:
-		use_cuda, cuda_device, cuda_devices, multi_gpu = False, False, None, False
+		use_cuda, cuda_device, cuda_devices, multi_gpu = False, None, None, False
 
 	return use_cuda, cuda_device, cuda_devices, multi_gpu
 
@@ -68,7 +69,7 @@ def load_emb(embf, embt, nword, scale_down_emb, freeze_emb):
 		_emb = _emb.narrow(0, 0, nword).contiguous()
 	if scale_down_emb:
 		_emb.div_(sqrt(embt.size(-1)))
-	with torch.no_grad():
+	with torch_no_grad():
 		embt.copy_(_emb)
 	if freeze_emb:
 		embt.requires_grad_(False)
